@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "index.js  --all",
+    "start": "node index.js --all",
     "visualize": "node scripts/visualize-cache.js",
     "visualize:signals": "node scripts/visualize-cache.js --signals-only"
   },

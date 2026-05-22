@@ -4,6 +4,7 @@
  * node index.js --all
  * node index.js --all --no-prefetch
  * node index.js --symbols VICUSDT --prefetch
+ * Dashboard: http://127.0.0.1:3877/  (--no-http to disable)
  */
 
 const fs = require("fs");
@@ -12,9 +13,11 @@ const WebSocket = require("ws");
 const {
   applyBarConfig,
   volSpikeMetrics: computeVolSpikeMetrics,
-  candleRangePct,
-  mean,
 } = require("./lib/signal-metrics");
+const {
+  startDashboard,
+  createDashboardPublisher,
+} = require("./lib/dashboard-server");
 
 const REST_BASE = "https://fapi.binance.com";
 const WS_STREAM_BASE = "wss://fstream.binance.com/stream";
@@ -49,6 +52,7 @@ applyBarConfig();
 const restLimiter = { chain: Promise.resolve() };
 let lastHitsPrintAt = 0;
 let prefetching = false;
+let dashboard = null;
 
 function volSpikeMetrics(ohlc) {
   return computeVolSpikeMetrics(ohlc, cfg);
@@ -291,6 +295,11 @@ function printHits(activeHits, force = false) {
     .sort((a, b) => b.rangeRatio - a.rangeRatio)
     .slice(0, cfg.maxHitsToPrint);
 
+  if (dashboard) {
+    dashboard.setMeta({ prefetching });
+    dashboard.publish(activeHits, force);
+  }
+
   console.clear();
   console.log(
     new Date().toISOString(),
@@ -324,13 +333,14 @@ function createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap) {
     if (pass) {
       activeHits.set(sym, { ...m, quoteVol24h: Math.round(qv) });
       if (!prev) {
-        console.log(
-          `NEW SPIKE\t${sym}\tclose ${m.close} > ${m.corridorHigh}\trange×${m.rangeRatio}`
-        );
+        const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
+        dashboard?.pushEvent("NEW", sym, detail);
+        console.log(`NEW SPIKE\t${sym}\t${detail}`);
         printHits(activeHits, true);
       }
     } else if (prev) {
       activeHits.delete(sym);
+      dashboard?.pushEvent("END", sym);
       console.log(`ENDED\t${sym}`);
       printHits(activeHits, true);
     }
@@ -406,6 +416,7 @@ function createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap) {
 
 async function prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap) {
   prefetching = true;
+  dashboard?.setMeta({ prefetching: true });
   let done = 0;
   let fromCache = 0;
   let fetched = 0;
@@ -444,6 +455,7 @@ async function prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteV
   }
 
   prefetching = false;
+  dashboard?.setMeta({ prefetching: false });
   printHits(activeHits, true);
   console.error(
     `Prefetch done: ${fromCache} from cache, ${fetched} from REST, ${failed} failed`
@@ -462,9 +474,9 @@ function evaluateAfterPrefetch(sym, buffers, activeHits, lastPass, quoteVolMap) 
     ...m,
     quoteVol24h: Math.round(quoteVolMap.get(sym) ?? 0),
   });
-  console.log(
-    `NEW SPIKE\t${sym}\tclose ${m.close} > ${m.corridorHigh}\trange×${m.rangeRatio}`
-  );
+  const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
+  dashboard?.pushEvent("NEW", sym, detail);
+  console.log(`NEW SPIKE\t${sym}\t${detail}`);
 }
 
 async function main() {
@@ -486,6 +498,16 @@ async function main() {
   const buffers = new Map();
   const activeHits = new Map();
   const lastPass = new Map();
+
+  dashboard = createDashboardPublisher(cfg);
+  dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
+
+  if (!flags.has("no-http")) {
+    const port = Number(kv.get("port")) || 3877;
+    const host = kv.get("host") || "127.0.0.1";
+    startDashboard(() => dashboard.buildState(activeHits), { port, host });
+    dashboard.publish(activeHits, true);
+  }
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +

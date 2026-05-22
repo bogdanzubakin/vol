@@ -7,6 +7,9 @@ node_modules/
 # Generated chart images
 charts/
 
+# Live dashboard snapshot (regenerated on each update)
+public/results.json
+
 # Environment & secrets
 .env
 .env.*

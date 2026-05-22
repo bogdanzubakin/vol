@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vol spike scanner</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px 24px 40px;
+    }
+    h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 6px; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 24px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 0.88rem;
+    }
+    .status span { color: var(--muted); }
+    .status strong { color: var(--text); }
+    .prefetch { color: var(--blue); }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    section h2 {
+      margin: 0;
+      padding: 12px 16px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 500; }
+    tr:hover td { background: rgba(56, 189, 248, 0.06); }
+    .sym { font-weight: 600; color: var(--blue); }
+    .pass { color: var(--green); }
+    .empty {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .events {
+      list-style: none;
+      margin: 0;
+      padding: 8px 0;
+      max-height: 520px;
+      overflow-y: auto;
+    }
+    .events li {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    .events .time { color: var(--muted); font-size: 0.75rem; }
+    .events .new { color: var(--green); }
+    .events .end { color: var(--red); }
+    .err {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--red);
+      color: #fecaca;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .chart-link { font-size: 0.75rem; margin-left: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Vol spike scanner</h1>
+  <p class="sub" id="subtitle">Loading…</p>
+
+  <div id="error" class="err"></div>
+
+  <div class="status" id="status"></div>
+
+  <div class="grid">
+    <section>
+      <h2>Active signals <span id="hitCount"></span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Close</th>
+              <th>2d high</th>
+              <th>Range×</th>
+              <th>Corridor %</th>
+              <th>Vol↑</th>
+              <th>Break</th>
+            </tr>
+          </thead>
+          <tbody id="hitsBody">
+            <tr><td colspan="7" class="empty">No active signals</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Recent events</h2>
+      <ul class="events" id="eventsList"></ul>
+    </section>
+  </div>
+
+  <script>
+    const fmt = (n, d = 4) => (n == null || Number.isNaN(n) ? "—" : Number(n).toFixed(d));
+    const yn = (v) => (v ? "Y" : "N");
+
+    function chartUrl(symbol, interval) {
+      return `/charts/${symbol}_${interval}.png`;
+    }
+
+    function render(state) {
+      const sub = document.getElementById("subtitle");
+      sub.textContent =
+        `${state.interval} · ${state.signalCandles} vol↑ candles · break ${state.corridorDays}d range high`;
+
+      document.getElementById("status").innerHTML = `
+        <div><span>Updated</span> <strong>${state.updatedAt?.slice(11, 19) ?? "—"}</strong></div>
+        <div><span>Symbols</span> <strong>${state.symbolCount ?? "—"}</strong></div>
+        <div><span>Active</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
+        <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${state.prefetching ? "running…" : "done"}</strong></div>
+      `;
+
+      document.getElementById("hitCount").textContent =
+        state.activeCount ? `(${state.activeCount})` : "";
+
+      const tbody = document.getElementById("hitsBody");
+      if (!state.hits?.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="7" class="empty">No active signals</td></tr>';
+      } else {
+        tbody.innerHTML = state.hits
+          .map((h) => {
+            const chart = chartUrl(h.symbol, state.interval);
+            return `<tr>
+              <td class="sym">${h.symbol}
+                <a class="chart-link" href="${chart}" target="_blank" title="Chart if generated">📈</a>
+              </td>
+              <td>${fmt(h.close, 6)}</td>
+              <td>${fmt(h.corridorHigh, 6)}</td>
+              <td class="pass">${fmt(h.rangeRatio, 2)}</td>
+              <td>${fmt(h.corridorWidthPct, 2)}%</td>
+              <td>${yn(h.volIncreasing)}</td>
+              <td>${yn(h.breaksCorridor)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      const ev = document.getElementById("eventsList");
+      if (!state.events?.length) {
+        ev.innerHTML = '<li class="empty">No events yet</li>';
+      } else {
+        ev.innerHTML = state.events
+          .map((e) => {
+            const cls = e.type === "NEW" ? "new" : e.type === "END" ? "end" : "";
+            return `<li>
+              <div class="time">${e.at?.slice(11, 19) ?? ""}</div>
+              <span class="${cls}">${e.type}</span> <strong>${e.symbol}</strong>
+              ${e.detail ? `<span class="time"> ${e.detail}</span>` : ""}
+            </li>`;
+          })
+          .join("");
+      }
+    }
+
+    async function poll() {
+      const errEl = document.getElementById("error");
+      try {
+        const res = await fetch("/api/state", { cache: "no-store" });
+        if (!res.ok) throw new Error(res.statusText);
+        const state = await res.json();
+        render(state);
+        errEl.style.display = "none";
+      } catch (e) {
+        errEl.textContent = `Cannot load results: ${e.message}. Is the scanner running?`;
+        errEl.style.display = "block";
+      }
+    }
+
+    poll();
+    setInterval(poll, 2000);
+  </script>
+</body>
+</html>
