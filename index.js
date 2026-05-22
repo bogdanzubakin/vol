@@ -480,8 +480,17 @@ function evaluateAfterPrefetch(sym, buffers, activeHits, lastPass, quoteVolMap) 
   console.log(`NEW SPIKE\t${sym}\t${detail}`);
 }
 
+function applyCloudDefaults(flags) {
+  if (!process.env.PORT) return;
+  if (!flags.has("no-prefetch")) {
+    console.error("Cloud (PORT set): skipping prefetch to avoid OOM");
+    flags.add("no-prefetch");
+  }
+}
+
 async function main() {
   const { flags, kv } = parseArgs(process.argv);
+  applyCloudDefaults(flags);
 
   const intervalArg = kv.get("interval");
   if (intervalArg) {
@@ -511,7 +520,14 @@ async function main() {
     dashboard.publish(activeHits, true);
   }
 
-  const symbols = await resolveSymbols(flags, kv);
+  let symbols = await resolveSymbols(flags, kv);
+  const defaultMax =
+    process.env.PORT && process.env.SCAN_ALL !== "1" ? 150 : 0;
+  const maxSymbols = Number(process.env.MAX_SYMBOLS || defaultMax);
+  if (maxSymbols > 0 && symbols.length > maxSymbols) {
+    console.error(`MAX_SYMBOLS=${maxSymbols}: using first ${maxSymbols} of ${symbols.length}`);
+    symbols = symbols.slice(0, maxSymbols);
+  }
   dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
 
   console.error(
