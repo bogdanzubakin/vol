@@ -483,8 +483,8 @@ function evaluateAfterPrefetch(sym, buffers, activeHits, lastPass, quoteVolMap) 
 function applyCloudDefaults(flags) {
   if (!process.env.PORT) return;
   if (!flags.has("no-prefetch")) {
-    console.error("Cloud (PORT set): skipping prefetch to avoid OOM");
-    flags.add("no-prefetch");
+    // console.error("Cloud (PORT set): skipping prefetch to avoid OOM");
+    // flags.add("no-prefetch");
   }
 }
 
