@@ -1,0 +1,21 @@
+{
+  "name": "volatility",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "index.js  --all",
+    "visualize": "node scripts/visualize-cache.js",
+    "visualize:signals": "node scripts/visualize-cache.js --signals-only"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chart.js": "^4.4.8",
+    "chartjs-node-canvas": "^5.0.0",
+    "chartjs-plugin-annotation": "^3.1.0",
+    "ws": "^8.20.1"
+  },
+  "keywords": [],
+  "description": ""
+}
