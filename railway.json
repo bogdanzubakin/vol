@@ -1,0 +1,8 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "startCommand": "node index.js --all",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 120
+  }
+}
