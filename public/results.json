@@ -1,0 +1,11 @@
+{
+  "updatedAt": "2026-05-22T14:28:33.924Z",
+  "symbolCount": 527,
+  "prefetching": false,
+  "interval": "1m",
+  "corridorDays": 2,
+  "signalCandles": 3,
+  "activeCount": 0,
+  "hits": [],
+  "events": []
+}

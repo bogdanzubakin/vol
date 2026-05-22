@@ -47,7 +47,7 @@ const cfg = {
   printHitsMinIntervalMs: 2000,
 };
 
-applyBarConfig();
+applyBarConfig(cfg);
 
 const restLimiter = { chain: Promise.resolve() };
 let lastHitsPrintAt = 0;
@@ -485,7 +485,7 @@ async function main() {
   const intervalArg = kv.get("interval");
   if (intervalArg) {
     cfg.interval = intervalArg;
-    applyBarConfig();
+    applyBarConfig(cfg);
   }
 
   const gapArg = kv.get("prefetch-gap-ms");
