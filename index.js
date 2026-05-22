@@ -17,6 +17,7 @@ const {
 const {
   startDashboard,
   createDashboardPublisher,
+  resolveListenOptions,
 } = require("./lib/dashboard-server");
 
 const REST_BASE = "https://fapi.binance.com";
@@ -491,7 +492,6 @@ async function main() {
   const gapArg = kv.get("prefetch-gap-ms");
   if (gapArg) cfg.restMinGapMs = Math.max(200, Number(gapArg) || cfg.restMinGapMs);
 
-  const symbols = await resolveSymbols(flags, kv);
   const wantPrefetch = !flags.has("no-prefetch");
 
   let quoteVolMap = new Map();
@@ -500,14 +500,19 @@ async function main() {
   const lastPass = new Map();
 
   dashboard = createDashboardPublisher(cfg);
-  dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
+  dashboard.setMeta({ symbolCount: 0, prefetching: false });
 
   if (!flags.has("no-http")) {
-    const port = Number(kv.get("port")) || 3877;
-    const host = kv.get("host") || "127.0.0.1";
+    const { port, host } = resolveListenOptions({
+      port: kv.has("port") ? Number(kv.get("port")) : undefined,
+      host: kv.get("host"),
+    });
     startDashboard(() => dashboard.buildState(activeHits), { port, host });
     dashboard.publish(activeHits, true);
   }
+
+  const symbols = await resolveSymbols(flags, kv);
+  dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +

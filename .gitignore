@@ -2,7 +2,7 @@
 node_modules/
 
 # Binance / scanner caches (large, local only)
-.cache/
+.cache/*
 
 # Generated chart images
 charts/
