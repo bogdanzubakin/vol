@@ -19,7 +19,8 @@ const { renderSymbolChart } = require("../lib/chart-render");
 
 const ROOT = path.join(__dirname, "..");
 const CACHE_DIR = path.join(ROOT, ".cache", "klines");
-const CACHE_RE = /^(.+)_(1m|15m|5m|1h|4h|1d)_(\d+)\.json$/;
+const CACHE_RE =
+  /^(.+)_(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|3d|1w|1M)(?:_(\d+))?\.json$/;
 
 const DEFAULTS = {
   outDir: path.join(ROOT, "charts"),
@@ -55,7 +56,7 @@ function listCacheEntries() {
         path: path.join(CACHE_DIR, file),
         symbol: m[1],
         interval: m[2],
-        limit: Number(m[3]),
+        limit: m[3] ? Number(m[3]) : null,
       };
     });
 }
@@ -66,7 +67,7 @@ function readCache(entry) {
     ...entry,
     savedAt: data.savedAt,
     interval: data.interval ?? entry.interval,
-    limit: data.limit ?? entry.limit,
+    limit: data.evalLimit ?? data.limit ?? entry.limit,
     bars: data.bars ?? [],
   };
 }

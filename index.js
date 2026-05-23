@@ -36,6 +36,10 @@ const {
   resolveTelegramConfig,
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
+const {
+  mergeBarsByOpenTime,
+  createKlineCacheStore,
+} = require("./lib/kline-cache");
 
 const REST_BASE = "https://fapi.binance.com";
 const WS_STREAM_BASE = "wss://fstream.binance.com/stream";
@@ -64,6 +68,9 @@ const cfg = {
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
   klineCacheExtraMs: 2 * 60 * 1000,
+  cacheMaxBars: 50_000,
+  klineCacheFlushMs: 60_000,
+  klineCacheWriteDebounceMs: 3000,
   prefetchPauseMs: 200,
   streamsPerSocket: 180,
   maxHitsToPrint: 40,
@@ -79,9 +86,14 @@ let lastHitsPrintAt = 0;
 let prefetching = false;
 let dashboard = null;
 let telegram = null;
+let klineCache = null;
 
-function volSpikeMetrics(ohlc) {
-  return computeVolSpikeMetrics(ohlc, cfg);
+function evalBars(sym, historyBuffers) {
+  return klineCache.evalWindow(historyBuffers.get(sym) ?? [], cfg.limit);
+}
+
+function volSpikeMetrics(sym, historyBuffers) {
+  return computeVolSpikeMetrics(evalBars(sym, historyBuffers), cfg);
 }
 
 function parseArgs(argv) {
@@ -199,40 +211,6 @@ async function resolveSymbols(flags, kv) {
   );
 }
 
-function klineCacheFile(symbol) {
-  return path.join(KLINES_CACHE_DIR, `${symbol}_${cfg.interval}_${cfg.limit}.json`);
-}
-
-function readKlineCache(symbol) {
-  try {
-    const raw = fs.readFileSync(klineCacheFile(symbol), "utf8");
-    const data = JSON.parse(raw);
-    if (data.interval !== cfg.interval || data.limit !== cfg.limit) return null;
-    if (!data.bars?.length) return null;
-
-    const last = data.bars[data.bars.length - 1];
-    const age = Date.now() - last.closeTime;
-    if (age > cfg.barMs + cfg.klineCacheExtraMs) return null;
-
-    return data.bars;
-  } catch {
-    return null;
-  }
-}
-
-function writeKlineCache(symbol, bars) {
-  fs.mkdirSync(KLINES_CACHE_DIR, { recursive: true });
-  fs.writeFileSync(
-    klineCacheFile(symbol),
-    JSON.stringify({
-      savedAt: Date.now(),
-      interval: cfg.interval,
-      limit: cfg.limit,
-      bars,
-    })
-  );
-}
-
 function chunk(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -278,12 +256,51 @@ async function fetchKlines(symbol, limit = cfg.limit) {
   return all.slice(-limit);
 }
 
-async function loadSymbolHistory(symbol) {
-  const cached = readKlineCache(symbol);
-  if (cached) return cached;
+async function fetchKlinesGap(symbol, startTime, endTime) {
+  if (startTime >= endTime) return [];
+  let cursor = startTime;
+  let merged = [];
 
-  const bars = await fetchKlines(symbol);
-  writeKlineCache(symbol, bars);
+  while (cursor < endTime) {
+    const params = {
+      symbol,
+      interval: cfg.interval,
+      limit: String(KLINE_MAX),
+      startTime: String(cursor),
+      endTime: String(endTime),
+    };
+    const rows = await getJson("/fapi/v1/klines", params);
+    if (!rows.length) break;
+
+    merged = mergeBarsByOpenTime(merged, parseKlines(rows));
+    const lastOpen = rows[rows.length - 1][0];
+    cursor = lastOpen + cfg.barMs;
+    if (rows.length < KLINE_MAX) break;
+  }
+
+  return merged;
+}
+
+async function loadSymbolHistory(symbol) {
+  const cached = klineCache.read(symbol) ?? [];
+  const fetched = await fetchKlines(symbol, cfg.limit);
+  let bars = mergeBarsByOpenTime(cached, fetched);
+
+  if (cached.length && fetched.length) {
+    const lastCached = cached[cached.length - 1];
+    const firstFetched = fetched[0];
+    if (lastCached.closeTime + cfg.barMs < firstFetched.openTime) {
+      const gap = await fetchKlinesGap(
+        symbol,
+        lastCached.closeTime + 1,
+        firstFetched.openTime - 1
+      );
+      bars = mergeBarsByOpenTime(cached, gap, fetched);
+    }
+  }
+
+  bars = klineCache.capBars(bars, cfg.cacheMaxBars);
+  klineCache.write(symbol, bars);
   return bars;
 }
 
@@ -299,16 +316,12 @@ function closedCandleFromKline(k) {
   };
 }
 
-function upsertCandle(buf, candle) {
-  const last = buf[buf.length - 1];
-  if (last && last.openTime === candle.openTime) {
-    buf[buf.length - 1] = candle;
-    return false;
-  }
-  if (last && candle.openTime < last.openTime) return false;
-  buf.push(candle);
-  if (buf.length > cfg.limit) buf.splice(0, buf.length - cfg.limit);
-  return true;
+function upsertHistoryCandle(historyBuffers, sym, candle) {
+  const buf = historyBuffers.get(sym) ?? [];
+  const appended = klineCache.upsertBar(buf, candle, cfg.cacheMaxBars);
+  historyBuffers.set(sym, buf);
+  if (appended) klineCache.schedulePersist(sym, buf);
+  return appended;
 }
 
 function printHits(activeHits, nearBreakHits, force = false) {
@@ -413,7 +426,7 @@ function applySymbolSignal(
 
 function reevaluateAllSymbols(
   symbols,
-  buffers,
+  historyBuffers,
   activeHits,
   nearBreakHits,
   lastPass,
@@ -430,8 +443,7 @@ function reevaluateAllSymbols(
       continue;
     }
 
-    const buf = buffers.get(sym) ?? [];
-    const m = volSpikeMetrics(buf);
+    const m = volSpikeMetrics(sym, historyBuffers);
     applySymbolSignal(
       sym,
       m,
@@ -447,7 +459,7 @@ function reevaluateAllSymbols(
 
 function createWsShards(
   symbols,
-  buffers,
+  historyBuffers,
   activeHits,
   nearBreakHits,
   lastPass,
@@ -471,8 +483,7 @@ function createWsShards(
       return;
     }
 
-    const buf = buffers.get(sym) ?? [];
-    const m = volSpikeMetrics(buf);
+    const m = volSpikeMetrics(sym, historyBuffers);
     const prevPass = lastPass.get(sym) ?? false;
     const prevNear = lastNearBreak.get(sym) ?? false;
 
@@ -520,10 +531,8 @@ function createWsShards(
 
         const sym = data.s;
         const candle = closedCandleFromKline(data.k);
-        const buf = buffers.get(sym) ?? [];
         const isClosed = Boolean(data.k?.x);
-        const appended = upsertCandle(buf, candle);
-        buffers.set(sym, buf);
+        const appended = upsertHistoryCandle(historyBuffers, sym, candle);
 
         if (isClosed && appended) evaluate(sym);
       });
@@ -562,7 +571,7 @@ function createWsShards(
 
 async function prefetchAllSymbols(
   symbols,
-  buffers,
+  historyBuffers,
   activeHits,
   nearBreakHits,
   lastPass,
@@ -578,21 +587,21 @@ async function prefetchAllSymbols(
   const t0 = Date.now();
 
   console.error(
-    `Prefetch ALL ${symbols.length} symbols (${cfg.prefetchDays}d, ${cfg.limit} × ${cfg.interval}, ` +
-      `cache: ${KLINES_CACHE_DIR})…`
+    `Prefetch ALL ${symbols.length} symbols (${cfg.prefetchDays}d eval window ${cfg.limit} × ${cfg.interval}, ` +
+      `cache up to ${cfg.cacheMaxBars} bars → ${KLINES_CACHE_DIR})…`
   );
 
   for (const sym of symbols) {
     try {
-      const cached = readKlineCache(sym);
-      const bars = cached ?? (await loadSymbolHistory(sym));
-      if (cached) fromCache++;
+      const hadCache = Boolean(klineCache.read(sym)?.length);
+      const bars = await loadSymbolHistory(sym);
+      if (hadCache) fromCache++;
       else fetched++;
 
-      buffers.set(sym, bars);
+      historyBuffers.set(sym, bars);
       evaluateAfterPrefetch(
         sym,
-        buffers,
+        historyBuffers,
         activeHits,
         nearBreakHits,
         lastPass,
@@ -602,7 +611,7 @@ async function prefetchAllSymbols(
     } catch (e) {
       failed++;
       console.error(`Prefetch failed ${sym}: ${e.message}`);
-      buffers.set(sym, buffers.get(sym) ?? []);
+      historyBuffers.set(sym, historyBuffers.get(sym) ?? []);
     }
 
     done++;
@@ -626,14 +635,14 @@ async function prefetchAllSymbols(
 
 function evaluateAfterPrefetch(
   sym,
-  buffers,
+  historyBuffers,
   activeHits,
   nearBreakHits,
   lastPass,
   lastNearBreak,
   quoteVolMap
 ) {
-  const m = volSpikeMetrics(buffers.get(sym) ?? []);
+  const m = volSpikeMetrics(sym, historyBuffers);
   if (!m) return;
 
   const prevPass = lastPass.get(sym) ?? false;
@@ -687,13 +696,22 @@ async function main() {
     applyBarConfig(cfg);
   }
 
+  klineCache = createKlineCacheStore({
+    dir: KLINES_CACHE_DIR,
+    interval: cfg.interval,
+    maxBars: cfg.cacheMaxBars,
+    evalLimit: cfg.limit,
+    flushMs: cfg.klineCacheFlushMs,
+    debounceMs: cfg.klineCacheWriteDebounceMs,
+  });
+
   const gapArg = kv.get("prefetch-gap-ms");
   if (gapArg) cfg.restMinGapMs = Math.max(200, Number(gapArg) || cfg.restMinGapMs);
 
   const wantPrefetch = !flags.has("no-prefetch");
 
   let quoteVolMap = new Map();
-  const buffers = new Map();
+  const historyBuffers = new Map();
   const activeHits = new Map();
   const nearBreakHits = new Map();
   const lastPass = new Map();
@@ -728,7 +746,7 @@ async function main() {
       const criteriaCatalog = new Map();
 
       let pairs = symbols.map((sym) => {
-        const buf = buffers.get(sym) ?? [];
+        const buf = historyBuffers.get(sym) ?? [];
         let evalBars;
         let signalBarAt = null;
         try {
@@ -743,7 +761,10 @@ async function main() {
           evalBars = [];
         }
 
-        const analysis = analyzeVolSpike(evalBars, cfg);
+        const analysis = analyzeVolSpike(
+          klineCache.evalWindow(evalBars, cfg.limit),
+          cfg
+        );
         const m = analysis.metrics;
         const checks = serializeChecks(analysis.checks);
         mergeCriteriaCatalog(criteriaCatalog, checks);
@@ -751,7 +772,7 @@ async function main() {
           symbol: sym,
           passes: analysis.passes,
           nearBreak: Boolean(m?.nearBreak),
-          bars: evalBars.length,
+          bars: buf.length,
           signalBarAt:
             signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
           failReasons: failedCheckLabels(analysis.checks),
@@ -801,7 +822,7 @@ async function main() {
       if (!symbols.includes(sym)) {
         throw new Error(`Unknown symbol: ${sym}`);
       }
-      const buf = buffers.get(sym) ?? [];
+      const buf = historyBuffers.get(sym) ?? [];
       if (!buf.length) throw new Error(`No bar data for ${sym}`);
       const { bars, atMs, signalBarAt } = barsForEvaluation(buf, searchParams);
       const analysis = analyzeVolSpike(bars, cfg);
@@ -821,10 +842,13 @@ async function main() {
       if (!symbols.includes(sym)) {
         throw new Error(`Unknown symbol: ${sym}`);
       }
-      const buf = buffers.get(sym) ?? [];
+      const buf = historyBuffers.get(sym) ?? [];
       if (!buf.length) throw new Error(`No bar data for ${sym}`);
       const { bars } = barsForEvaluation(buf, searchParams);
-      const m = volSpikeMetrics(bars);
+      const m = computeVolSpikeMetrics(
+        klineCache.evalWindow(bars, cfg.limit),
+        cfg
+      );
       if (!m) {
         throw new Error(`Insufficient history to build signal message for ${sym}`);
       }
@@ -886,7 +910,7 @@ async function main() {
   reevaluateAll = () =>
     reevaluateAllSymbols(
       symbols,
-      buffers,
+      historyBuffers,
       activeHits,
       nearBreakHits,
       lastPass,
@@ -896,14 +920,16 @@ async function main() {
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
-      `prefetch: ${cfg.prefetchDays}d (${cfg.limit} bars) | ` +
+      `eval window: ${cfg.limit} bars | cache max: ${cfg.cacheMaxBars} | ` +
       `live prefetch: ${wantPrefetch ? "yes" : "no"}`
   );
+
+  klineCache.startPeriodicFlush(historyBuffers);
 
   console.error(`WebSocket live on fstream (${cfg.interval})…`);
   const sockets = createWsShards(
     symbols,
-    buffers,
+    historyBuffers,
     activeHits,
     nearBreakHits,
     lastPass,
@@ -914,7 +940,7 @@ async function main() {
   if (wantPrefetch) {
     await prefetchAllSymbols(
       symbols,
-      buffers,
+      historyBuffers,
       activeHits,
       nearBreakHits,
       lastPass,
@@ -926,6 +952,9 @@ async function main() {
   }
 
   const shutdown = () => {
+    console.error("Flushing kline cache…");
+    klineCache.flushAll(historyBuffers);
+    klineCache.stop();
     sockets.forEach((s) => s.close());
     process.exit(0);
   };
