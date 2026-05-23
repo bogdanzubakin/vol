@@ -13,6 +13,7 @@ const WebSocket = require("ws");
 const {
   applyBarConfig,
   volSpikeMetrics: computeVolSpikeMetrics,
+  validateLiveConfigPatch,
 } = require("./lib/signal-metrics");
 const {
   startDashboard,
@@ -310,6 +311,37 @@ function printHits(activeHits, force = false) {
   console.table(rows);
 }
 
+function reevaluateAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap) {
+  for (const sym of symbols) {
+    const qv = quoteVolMap.get(sym) ?? 0;
+    if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
+      if (lastPass.get(sym)) activeHits.delete(sym);
+      lastPass.set(sym, false);
+      continue;
+    }
+
+    const buf = buffers.get(sym) ?? [];
+    const m = volSpikeMetrics(buf);
+    const pass = Boolean(m?.passes);
+    const prev = lastPass.get(sym) ?? false;
+
+    if (pass) {
+      activeHits.set(sym, { ...m, quoteVol24h: Math.round(qv) });
+      if (!prev) {
+        const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
+        dashboard?.pushEvent("NEW", sym, detail);
+        console.log(`NEW SPIKE\t${sym}\t${detail}`);
+      }
+    } else if (prev) {
+      activeHits.delete(sym);
+      dashboard?.pushEvent("END", sym);
+      console.log(`ENDED\t${sym}`);
+    }
+    lastPass.set(sym, pass);
+  }
+  printHits(activeHits, true);
+}
+
 function createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap) {
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
@@ -508,7 +540,10 @@ async function main() {
   const activeHits = new Map();
   const lastPass = new Map();
 
-  dashboard = createDashboardPublisher(cfg);
+  let symbols = [];
+  let reevaluateAll = () => {};
+
+  dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
 
   if (!flags.has("no-http")) {
@@ -516,11 +551,34 @@ async function main() {
       port: kv.has("port") ? Number(kv.get("port")) : undefined,
       host: kv.get("host"),
     });
-    startDashboard(() => dashboard.buildState(activeHits), { port, host });
+    startDashboard(() => dashboard.buildState(activeHits), {
+      port,
+      host,
+      onConfigUpdate: async (patch) => {
+        const updates = validateLiveConfigPatch(patch);
+        Object.assign(cfg, updates);
+        applyBarConfig(cfg);
+        dashboard.syncConfigFromCfg();
+        dashboard.pushEvent(
+          "CONFIG",
+          "scanner",
+          Object.entries(updates)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(" ")
+        );
+        console.error(
+          `Config updated: ${Object.entries(updates)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(", ")} | bars needed: ${cfg.limit}`
+        );
+        reevaluateAll();
+        return dashboard.buildState(activeHits);
+      },
+    });
     dashboard.publish(activeHits, true);
   }
 
-  let symbols = await resolveSymbols(flags, kv);
+  symbols = await resolveSymbols(flags, kv);
   const defaultMax =
     process.env.PORT && process.env.SCAN_ALL !== "1" ? 150 : 0;
   const maxSymbols = Number(process.env.MAX_SYMBOLS || defaultMax);
@@ -529,6 +587,9 @@ async function main() {
     symbols = symbols.slice(0, maxSymbols);
   }
   dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
+
+  reevaluateAll = () =>
+    reevaluateAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap);
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +

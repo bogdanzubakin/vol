@@ -1,11 +1,22 @@
 {
-  "updatedAt": "2026-05-22T14:28:33.924Z",
+  "updatedAt": "2026-05-23T07:10:14.869Z",
   "symbolCount": 527,
-  "prefetching": false,
+  "prefetching": true,
+  "configWritable": true,
   "interval": "1m",
   "corridorDays": 2,
   "signalCandles": 3,
+  "maxCorridorWidthPct": 20,
+  "minRangeMultiplier": 1,
+  "minCorridorRangePct": 0.02,
   "activeCount": 0,
   "hits": [],
-  "events": []
+  "events": [
+    {
+      "at": "2026-05-23T07:10:14.849Z",
+      "type": "CONFIG",
+      "symbol": "scanner",
+      "detail": "corridorDays=2 signalCandles=3 maxCorridorWidthPct=20 minRangeMultiplier=1 minCorridorRangePct=0.02"
+    }
+  ]
 }

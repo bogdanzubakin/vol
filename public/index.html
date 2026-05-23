@@ -108,6 +108,96 @@
     a { color: var(--blue); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .chart-link { font-size: 0.75rem; margin-left: 6px; }
+    .settings {
+      margin-bottom: 20px;
+    }
+    .settings h2 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .settings-form {
+      padding: 14px 16px 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .field input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 0.85rem;
+    }
+    .field input:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .field input:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+    .field .hint {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+    .settings-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      padding-top: 4px;
+    }
+    .btn {
+      background: var(--blue);
+      color: #0f172a;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn.secondary {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-weight: 500;
+    }
+    .config-msg {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .config-msg.ok { color: var(--green); }
+    .config-msg.err { color: #fecaca; }
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--green);
+    }
+    .badge.off {
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--muted);
+    }
+    .events .cfg { color: var(--blue); }
   </style>
 </head>
 <body>
@@ -117,6 +207,45 @@
   <div id="error" class="err"></div>
 
   <div class="status" id="status"></div>
+
+  <section class="settings">
+    <h2>
+      Indicator settings
+      <span id="configBadge" class="badge off">read-only</span>
+    </h2>
+    <form class="settings-form" id="configForm">
+      <div class="field">
+        <label for="corridorDays">Corridor days</label>
+        <input type="number" id="corridorDays" name="corridorDays" step="0.25" min="0.25" max="30" required />
+        <div class="hint">Lookback for range corridor</div>
+      </div>
+      <div class="field">
+        <label for="signalCandles">Signal candles</label>
+        <input type="number" id="signalCandles" name="signalCandles" step="1" min="2" max="12" required />
+        <div class="hint">Vol↑ bars before break</div>
+      </div>
+      <div class="field">
+        <label for="maxCorridorWidthPct">Max corridor width %</label>
+        <input type="number" id="maxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="20" required />
+        <div class="hint">Flat corridor threshold</div>
+      </div>
+      <div class="field">
+        <label for="minRangeMultiplier">Min range multiplier</label>
+        <input type="number" id="minRangeMultiplier" name="minRangeMultiplier" step="0.1" min="1" max="10" required />
+        <div class="hint">Signal vs avg corridor range</div>
+      </div>
+      <div class="field">
+        <label for="minCorridorRangePct">Min corridor range %</label>
+        <input type="number" id="minCorridorRangePct" name="minCorridorRangePct" step="0.001" min="0.001" max="5" required />
+        <div class="hint">Skip dead markets</div>
+      </div>
+      <div class="settings-actions">
+        <button type="submit" class="btn" id="applyConfig">Apply</button>
+        <button type="button" class="btn secondary" id="resetConfig">Reset</button>
+        <span class="config-msg" id="configMsg"></span>
+      </div>
+    </form>
+  </section>
 
   <div class="grid">
     <section>
@@ -150,15 +279,122 @@
   <script>
     const fmt = (n, d = 4) => (n == null || Number.isNaN(n) ? "—" : Number(n).toFixed(d));
     const yn = (v) => (v ? "Y" : "N");
+    const CONFIG_KEYS = [
+      "corridorDays",
+      "signalCandles",
+      "maxCorridorWidthPct",
+      "minRangeMultiplier",
+      "minCorridorRangePct",
+    ];
+
+    let formDirty = false;
+    let lastServerConfig = null;
 
     function chartUrl(symbol, interval) {
       return `/charts/${symbol}_${interval}.png`;
     }
 
+    function configFromState(state) {
+      const c = {};
+      for (const k of CONFIG_KEYS) {
+        if (state[k] != null) c[k] = state[k];
+      }
+      return c;
+    }
+
+    function syncConfigForm(state) {
+      const badge = document.getElementById("configBadge");
+      const writable = Boolean(state.configWritable);
+      badge.textContent = writable ? "live" : "read-only";
+      badge.className = writable ? "badge" : "badge off";
+
+      const applyBtn = document.getElementById("applyConfig");
+      const resetBtn = document.getElementById("resetConfig");
+      applyBtn.disabled = !writable;
+      resetBtn.disabled = !writable;
+      for (const k of CONFIG_KEYS) {
+        const el = document.getElementById(k);
+        if (el) el.disabled = !writable;
+      }
+
+      const server = configFromState(state);
+      if (!Object.keys(server).length) return;
+
+      lastServerConfig = server;
+      if (formDirty) return;
+
+      for (const k of CONFIG_KEYS) {
+        const el = document.getElementById(k);
+        if (el && server[k] != null) el.value = server[k];
+      }
+    }
+
+    function readConfigForm() {
+      const body = {};
+      for (const k of CONFIG_KEYS) {
+        const el = document.getElementById(k);
+        body[k] = Number(el.value);
+      }
+      return body;
+    }
+
+    function setConfigMsg(text, ok) {
+      const el = document.getElementById("configMsg");
+      el.textContent = text;
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    async function applyConfig(e) {
+      e.preventDefault();
+      setConfigMsg("");
+      const body = readConfigForm();
+      const applyBtn = document.getElementById("applyConfig");
+      applyBtn.disabled = true;
+      try {
+        const res = await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        formDirty = false;
+        render(data);
+        setConfigMsg("Applied — signals re-evaluated", true);
+      } catch (err) {
+        setConfigMsg(err.message, false);
+      } finally {
+        applyBtn.disabled = false;
+      }
+    }
+
+    function resetConfigForm() {
+      formDirty = false;
+      if (lastServerConfig) {
+        for (const k of CONFIG_KEYS) {
+          const el = document.getElementById(k);
+          if (el && lastServerConfig[k] != null) el.value = lastServerConfig[k];
+        }
+      }
+      setConfigMsg("");
+    }
+
+    document.getElementById("configForm").addEventListener("submit", applyConfig);
+    document.getElementById("resetConfig").addEventListener("click", resetConfigForm);
+    for (const k of CONFIG_KEYS) {
+      document.getElementById(k)?.addEventListener("input", () => {
+        formDirty = true;
+        setConfigMsg("");
+      });
+    }
+
     function render(state) {
+      syncConfigForm(state);
+
       const sub = document.getElementById("subtitle");
       sub.textContent =
-        `${state.interval} · ${state.signalCandles} vol↑ candles · break ${state.corridorDays}d range high`;
+        `${state.interval} · ${state.signalCandles} vol↑ candles · break ${state.corridorDays}d range high · ` +
+        `corridor ≤${state.maxCorridorWidthPct}% · range×≥${state.minRangeMultiplier}`;
 
       document.getElementById("status").innerHTML = `
         <div><span>Updated</span> <strong>${state.updatedAt?.slice(11, 19) ?? "—"}</strong></div>
@@ -199,7 +435,8 @@
       } else {
         ev.innerHTML = state.events
           .map((e) => {
-            const cls = e.type === "NEW" ? "new" : e.type === "END" ? "end" : "";
+            const cls =
+              e.type === "NEW" ? "new" : e.type === "END" ? "end" : e.type === "CONFIG" ? "cfg" : "";
             return `<li>
               <div class="time">${e.at?.slice(11, 19) ?? ""}</div>
               <span class="${cls}">${e.type}</span> <strong>${e.symbol}</strong>
