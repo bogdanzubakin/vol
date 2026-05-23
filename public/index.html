@@ -391,17 +391,6 @@
 
   <div class="status" id="status"></div>
 
-  <div class="evaluate-bar">
-    <div class="field">
-        <label for="evaluateAt">Backtest time (UTC+3)</label>
-        <input type="datetime-local" id="evaluateAt" step="60" />
-        <div class="hint">Pairs &amp; charts: signal check at this candle (UTC+3)</div>
-    </div>
-    <button type="button" class="btn secondary sm" id="evaluateAtNow">Now (live)</button>
-    <button type="button" class="btn sm" id="evaluateAtApply">Apply</button>
-    <span class="hint-inline" id="evaluateAtHint">Live — using latest candles</span>
-  </div>
-
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
@@ -508,6 +497,16 @@
 
   <div id="panel-pairs" class="tab-panel" role="tabpanel">
     <section>
+      <div class="evaluate-bar">
+        <div class="field">
+          <label for="evaluateAt">Backtest time (UTC+3)</label>
+          <input type="datetime-local" id="evaluateAt" step="60" />
+          <div class="hint">Evaluate pairs &amp; charts at this candle (UTC+3)</div>
+        </div>
+        <button type="button" class="btn secondary sm" id="evaluateAtNow">Now (live)</button>
+        <button type="button" class="btn sm" id="evaluateAtApply">Apply</button>
+        <span class="hint-inline" id="evaluateAtHint">Live — using latest candles</span>
+      </div>
       <h2>All pairs <span id="pairsCount"></span></h2>
       <div class="pairs-toolbar">
         <input type="search" id="pairsSearch" placeholder="Search symbol…" />
@@ -627,7 +626,7 @@
       const el = document.getElementById("evaluateAtHint");
       const at = evaluateAtIso();
       if (!at) {
-        el.textContent = "Live — using latest candles (scanner tab stays real-time)";
+        el.textContent = "Live — using latest candles";
         return;
       }
       const ms = parseDisplayIso(at);
