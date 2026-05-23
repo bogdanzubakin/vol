@@ -9,7 +9,12 @@
 
 const fs = require("fs");
 const path = require("path");
-const { createConfig, analyzeVolSpike } = require("../lib/signal-metrics");
+const {
+  createConfig,
+  analyzeVolSpike,
+  parseAtTime,
+  barsAtTime,
+} = require("../lib/signal-metrics");
 const { renderSymbolChart } = require("../lib/chart-render");
 
 const ROOT = path.join(__dirname, "..");
@@ -147,13 +152,27 @@ async function main() {
       signalCandles: Number(kv.get("signal-candles")) || 3,
     });
 
-    const analysis = analyzeVolSpike(cache.bars, cfg);
+    let bars = cache.bars;
+    const atParam = kv.get("at");
+    let evaluateBarAt = bars.length ? bars[bars.length - 1].closeTime : null;
+    if (atParam) {
+      const atMs = parseAtTime(atParam);
+      bars = barsAtTime(cache.bars, atMs);
+      if (!bars.length) {
+        skipped++;
+        continue;
+      }
+      evaluateBarAt = bars[bars.length - 1].closeTime;
+    }
+
+    const analysis = analyzeVolSpike(bars, cfg);
     if (flags.has("signals-only") && !analysis.passes) {
       skipped++;
       continue;
     }
 
-    const { file } = await renderSymbolChart(cache.symbol, cache.bars, cfg, analysis, {
+    const { file } = await renderSymbolChart(cache.symbol, bars, cfg, analysis, {
+      evaluateBarAt,
       windowBars: opts.windowBars,
       width: opts.width,
       height: opts.height,

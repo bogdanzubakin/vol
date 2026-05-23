@@ -1,15 +1,24 @@
 {
-  "updatedAt": "2026-05-23T08:02:53.764Z",
-  "symbolCount": 0,
-  "prefetching": false,
+  "updatedAt": "2026-05-23T09:18:37.759Z",
+  "symbolCount": 527,
+  "prefetching": true,
   "configWritable": true,
   "interval": "1m",
   "corridorDays": 2,
   "signalCandles": 3,
-  "maxCorridorWidthPct": 1.5,
+  "bullishLookbackCandles": 10,
+  "minBullishCandles": 3,
+  "maxCorridorWidthPct": 20,
   "minRangeMultiplier": 1.8,
   "minCorridorRangePct": 0.02,
   "activeCount": 0,
   "hits": [],
-  "events": []
+  "events": [
+    {
+      "at": "2026-05-23T09:18:37.727Z",
+      "type": "CONFIG",
+      "symbol": "scanner",
+      "detail": "corridorDays=2 signalCandles=3 bullishLookbackCandles=10 minBullishCandles=3 maxCorridorWidthPct=20 minRangeMultiplier=1.8 minCorridorRangePct=0.02"
+    }
+  ]
 }

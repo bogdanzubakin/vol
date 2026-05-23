@@ -322,6 +322,23 @@
       justify-content: center;
     }
     .modal-loading { padding: 48px; color: var(--muted); }
+    .evaluate-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 10px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    .evaluate-bar .field { margin: 0; min-width: 220px; }
+    .evaluate-bar .hint-inline {
+      font-size: 0.78rem;
+      color: var(--muted);
+      flex: 1 1 200px;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
@@ -334,6 +351,17 @@
   <div id="error" class="err"></div>
 
   <div class="status" id="status"></div>
+
+  <div class="evaluate-bar">
+    <div class="field">
+      <label for="evaluateAt">Backtest time</label>
+      <input type="datetime-local" id="evaluateAt" step="60" />
+      <div class="hint">Pairs &amp; charts: signal check at this candle</div>
+    </div>
+    <button type="button" class="btn secondary sm" id="evaluateAtNow">Now (live)</button>
+    <button type="button" class="btn sm" id="evaluateAtApply">Apply</button>
+    <span class="hint-inline" id="evaluateAtHint">Live — using latest candles</span>
+  </div>
 
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
@@ -356,6 +384,16 @@
         <label for="signalCandles">Signal candles</label>
         <input type="number" id="signalCandles" name="signalCandles" step="1" min="2" max="12" required />
         <div class="hint">Vol↑ bars before break</div>
+      </div>
+      <div class="field">
+        <label for="bullishLookbackCandles">Bullish lookback</label>
+        <input type="number" id="bullishLookbackCandles" name="bullishLookbackCandles" step="1" min="3" max="60" required />
+        <div class="hint">Candles checked for bullish count</div>
+      </div>
+      <div class="field">
+        <label for="minBullishCandles">Min bullish</label>
+        <input type="number" id="minBullishCandles" name="minBullishCandles" step="1" min="1" max="60" required />
+        <div class="hint">Required bullish (close &gt; open)</div>
       </div>
       <div class="field">
         <label for="maxCorridorWidthPct">Max corridor width %</label>
@@ -433,12 +471,13 @@
               <th>Range×</th>
               <th>Corridor %</th>
               <th>Bars</th>
+              <th>Signal bar</th>
               <th>Why not passing</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="pairsBody">
-            <tr><td colspan="8" class="empty">Open this tab to load pairs</td></tr>
+            <tr><td colspan="9" class="empty">Open this tab to load pairs</td></tr>
           </tbody>
         </table>
       </div>
@@ -460,9 +499,20 @@
   <script>
     const fmt = (n, d = 4) => (n == null || Number.isNaN(n) ? "—" : Number(n).toFixed(d));
     const yn = (v) => (v ? "Y" : "N");
+
+    function fmtBarTime(t) {
+      if (t == null) return "—";
+      const iso =
+        typeof t === "number"
+          ? new Date(t).toISOString()
+          : String(t);
+      return iso.slice(11, 19);
+    }
     const CONFIG_KEYS = [
       "corridorDays",
       "signalCandles",
+      "bullishLookbackCandles",
+      "minBullishCandles",
       "maxCorridorWidthPct",
       "minRangeMultiplier",
       "minCorridorRangePct",
@@ -484,6 +534,41 @@
       el.textContent = text;
       el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
     }
+
+    function evaluateAtIso() {
+      const el = document.getElementById("evaluateAt");
+      if (!el?.value) return "";
+      return new Date(el.value).toISOString();
+    }
+
+    function appendEvaluateAt(params) {
+      const at = evaluateAtIso();
+      if (at) params.set("at", at);
+      return params;
+    }
+
+    function syncEvaluateHint(extra) {
+      const el = document.getElementById("evaluateAtHint");
+      const at = evaluateAtIso();
+      if (!at) {
+        el.textContent = "Live — using latest candles (scanner tab stays real-time)";
+        return;
+      }
+      el.textContent =
+        `Historical @ ${at.slice(0, 16).replace("T", " ")} UTC` +
+        (extra ? ` · ${extra}` : "");
+    }
+
+    document.getElementById("evaluateAtNow").addEventListener("click", () => {
+      document.getElementById("evaluateAt").value = "";
+      syncEvaluateHint();
+      if (activeTab === "pairs") loadPairs();
+    });
+    document.getElementById("evaluateAtApply").addEventListener("click", () => {
+      syncEvaluateHint();
+      if (activeTab === "pairs") loadPairs();
+    });
+    document.getElementById("evaluateAt").addEventListener("change", syncEvaluateHint);
 
     function switchTab(name) {
       activeTab = name;
@@ -508,17 +593,23 @@
       const filter = document.getElementById("pairsFilter").value;
       const params = new URLSearchParams({ filter });
       if (q.trim()) params.set("q", q.trim());
+      appendEvaluateAt(params);
 
       try {
         const res = await fetch(`/api/pairs?${params}`, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPairs(data);
-        setPairsMsg(`Updated ${data.updatedAt?.slice(11, 19) ?? ""}`, true);
+        const mode =
+          data.mode === "historical" && data.evaluateBarAt
+            ? `as of ${data.evaluateBarAt.slice(0, 16).replace("T", " ")}`
+            : "live";
+        syncEvaluateHint(data.evaluateBarAt ? mode : "");
+        setPairsMsg(`Updated ${data.updatedAt?.slice(11, 19) ?? ""} · ${mode}`, true);
       } catch (e) {
         setPairsMsg(e.message, false);
         document.getElementById("pairsBody").innerHTML =
-          `<tr><td colspan="8" class="empty">${e.message}</td></tr>`;
+          `<tr><td colspan="9" class="empty">${e.message}</td></tr>`;
       }
     }
 
@@ -528,7 +619,7 @@
 
       const tbody = document.getElementById("pairsBody");
       if (!data.pairs?.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty">No pairs match</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">No pairs match</td></tr>';
         return;
       }
 
@@ -543,6 +634,7 @@
           const pill = p.passes
             ? '<span class="status-pill pass">PASS</span>'
             : '<span class="status-pill fail">no signal</span>';
+          const barAt = fmtBarTime(p.signalBarAt);
           return `<tr>
             <td class="sym">${p.symbol}</td>
             <td>${pill}</td>
@@ -550,6 +642,7 @@
             <td>${fmt(p.rangeRatio, 2)}</td>
             <td>${fmt(p.corridorWidthPct, 2)}${p.corridorWidthPct != null ? "%" : ""}</td>
             <td>${p.bars ?? "—"}</td>
+            <td class="time">${barAt}</td>
             <td>${reasons}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}">Chart</button></td>
           </tr>`;
@@ -575,13 +668,20 @@
       }
 
       try {
-        const res = await fetch(`/api/chart-data/${symbol}`, { cache: "no-store" });
+        const chartParams = appendEvaluateAt(new URLSearchParams());
+        const res = await fetch(
+          `/api/chart-data/${symbol}?${chartParams}`,
+          { cache: "no-store" }
+        );
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.error || res.statusText);
 
         const status = payload.passes ? "PASS" : "no signal";
+        const at = payload.evaluateBarAt
+          ? ` @ ${String(payload.evaluateBarAt).slice(0, 16).replace("T", " ")}`
+          : "";
         document.getElementById("chartModalTitle").textContent =
-          `${symbol} ${payload.interval} — ${status}`;
+          `${symbol} ${payload.interval}${at} — ${status}`;
 
         body.innerHTML = `
           <div class="modal-chart-wrap">

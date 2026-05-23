@@ -17,6 +17,8 @@ const {
   analyzeVolSpike,
   failedCheckLabels,
   pickLiveConfig,
+  parseAtTime,
+  barsAtTime,
 } = require("./lib/signal-metrics");
 const { getChartPayload } = require("./lib/chart-render");
 const {
@@ -37,7 +39,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cfg = {
   interval: "1m",
   corridorDays: 2,
+  prefetchDays: 3,
   signalCandles: 3,
+  bullishLookbackCandles: 10,
+  minBullishCandles: 3,
   maxCorridorWidthPct: 1.5,
   minRangeMultiplier: 1.8,
   minCorridorRangePct: 0.02,
@@ -461,7 +466,7 @@ async function prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteV
   const t0 = Date.now();
 
   console.error(
-    `Prefetch ALL ${symbols.length} symbols (${cfg.limit} × ${cfg.interval}, ` +
+    `Prefetch ALL ${symbols.length} symbols (${cfg.prefetchDays}d, ${cfg.limit} × ${cfg.interval}, ` +
       `cache: ${KLINES_CACHE_DIR})…`
   );
 
@@ -534,6 +539,12 @@ async function main() {
     applyBarConfig(cfg);
   }
 
+  const prefetchDaysArg = kv.get("prefetch-days");
+  if (prefetchDaysArg) {
+    cfg.prefetchDays = Math.max(1, Number(prefetchDaysArg) || cfg.prefetchDays);
+    applyBarConfig(cfg);
+  }
+
   const gapArg = kv.get("prefetch-gap-ms");
   if (gapArg) cfg.restMinGapMs = Math.max(200, Number(gapArg) || cfg.restMinGapMs);
 
@@ -547,19 +558,52 @@ async function main() {
   let symbols = [];
   let reevaluateAll = () => {};
 
+  function barsForEvaluation(buf, searchParams) {
+    const atRaw = searchParams?.get("at");
+    if (!atRaw) {
+      const bars = buf ?? [];
+      const signalBarAt = bars.length ? bars[bars.length - 1].closeTime : null;
+      return { bars, atMs: null, signalBarAt };
+    }
+    const atMs = parseAtTime(atRaw);
+    const bars = barsAtTime(buf, atMs);
+    if (!bars.length) {
+      throw new Error(`No candle data at or before ${new Date(atMs).toISOString()}`);
+    }
+    return { bars, atMs, signalBarAt: bars[bars.length - 1].closeTime };
+  }
+
   const scannerApi = {
     getPairs(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
       const filter = searchParams.get("filter") || "all";
+      let atMs = null;
+      let sampleBarAt = null;
 
       let pairs = symbols.map((sym) => {
         const buf = buffers.get(sym) ?? [];
-        const analysis = analyzeVolSpike(buf, cfg);
+        let evalBars;
+        let signalBarAt = null;
+        try {
+          const ev = barsForEvaluation(buf, searchParams);
+          evalBars = ev.bars;
+          signalBarAt = ev.signalBarAt;
+          if (ev.atMs != null) {
+            atMs = ev.atMs;
+            sampleBarAt = signalBarAt;
+          }
+        } catch {
+          evalBars = [];
+        }
+
+        const analysis = analyzeVolSpike(evalBars, cfg);
         const m = analysis.metrics;
         return {
           symbol: sym,
           passes: analysis.passes,
-          bars: buf.length,
+          bars: evalBars.length,
+          signalBarAt:
+            signalBarAt != null ? new Date(signalBarAt).toISOString() : null,
           failReasons: failedCheckLabels(analysis.checks),
           close: m?.close ?? null,
           corridorHigh: m?.corridorHigh ?? null,
@@ -579,20 +623,29 @@ async function main() {
 
       return {
         updatedAt: new Date().toISOString(),
+        mode: atMs != null ? "historical" : "live",
+        evaluateAt: atMs != null ? new Date(atMs).toISOString() : null,
+        evaluateBarAt:
+          sampleBarAt != null ? new Date(sampleBarAt).toISOString() : null,
         ...pickLiveConfig(cfg),
         pairCount: pairs.length,
         pairs,
       };
     },
-    getChartData(symbol) {
+    getChartData(symbol, searchParams) {
       const sym = String(symbol).toUpperCase();
       if (!symbols.includes(sym)) {
         throw new Error(`Unknown symbol: ${sym}`);
       }
       const buf = buffers.get(sym) ?? [];
       if (!buf.length) throw new Error(`No bar data for ${sym}`);
-      const analysis = analyzeVolSpike(buf, cfg);
-      return getChartPayload(sym, buf, cfg, analysis);
+      const { bars, atMs, signalBarAt } = barsForEvaluation(buf, searchParams);
+      const analysis = analyzeVolSpike(bars, cfg);
+      return getChartPayload(sym, bars, cfg, analysis, {
+        evaluateAt: atMs != null ? new Date(atMs).toISOString() : null,
+        evaluateBarAt:
+          signalBarAt != null ? new Date(signalBarAt).toISOString() : null,
+      });
     },
   };
 
@@ -608,7 +661,8 @@ async function main() {
       port,
       host,
       getPairs: (searchParams) => scannerApi.getPairs(searchParams),
-      getChartData: (symbol) => scannerApi.getChartData(symbol),
+      getChartData: (symbol, searchParams) =>
+        scannerApi.getChartData(symbol, searchParams),
       onConfigUpdate: async (patch) => {
         const updates = validateLiveConfigPatch(patch);
         Object.assign(cfg, updates);
@@ -648,7 +702,8 @@ async function main() {
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
-      `bars: ${cfg.limit} | prefetch: ${wantPrefetch ? "yes" : "no"}`
+      `prefetch: ${cfg.prefetchDays}d (${cfg.limit} bars) | ` +
+      `live prefetch: ${wantPrefetch ? "yes" : "no"}`
   );
 
   console.error(`WebSocket live on fstream (${cfg.interval})…`);
