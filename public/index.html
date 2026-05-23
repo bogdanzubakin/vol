@@ -381,7 +381,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
   <script src="/time-format.js"></script>
-  <script src="/chart-display.js?v=4"></script>
+  <script src="/chart-display.js?v=5"></script>
 </head>
 <body>
   <h1>Vol spike scanner</h1>
@@ -441,7 +441,7 @@
       </div>
       <div class="field">
         <label for="maxCorridorWidthPct">Max corridor width %</label>
-        <input type="number" id="maxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="20" required />
+        <input type="number" id="maxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="40" required />
         <div class="hint">Flat corridor threshold</div>
       </div>
       <div class="field">
@@ -453,6 +453,16 @@
         <label for="minCorridorRangePct">Min corridor range %</label>
         <input type="number" id="minCorridorRangePct" name="minCorridorRangePct" step="0.001" min="0.001" max="5" required />
         <div class="hint">Skip dead markets</div>
+      </div>
+      <div class="field">
+        <label for="minBreakVolumeMultiplier">Break volume ×</label>
+        <input type="number" id="minBreakVolumeMultiplier" name="minBreakVolumeMultiplier" step="0.1" min="1.1" max="20" required />
+        <div class="hint">Peak vol near break vs corridor avg</div>
+      </div>
+      <div class="field">
+        <label for="breakVolumeNearBars">Break volume window</label>
+        <input type="number" id="breakVolumeNearBars" name="breakVolumeNearBars" step="1" min="1" max="30" required />
+        <div class="hint">Bars before/after break to scan</div>
       </div>
       <div class="settings-actions">
         <button type="submit" class="btn" id="applyConfig">Apply</button>
@@ -579,6 +589,8 @@
       "maxCorridorWidthPct",
       "minRangeMultiplier",
       "minCorridorRangePct",
+      "minBreakVolumeMultiplier",
+      "breakVolumeNearBars",
     ];
 
     let formDirty = false;

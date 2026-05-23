@@ -1,5 +1,6 @@
-/** Price pane uses this fraction of chart height (top); range % uses the rest. */
-const PRICE_PANE_SHARE = 0.78;
+/** Volume strip at top; price pane below; range % at bottom. */
+const VOLUME_PANE_SHARE = 0.14;
+const PRICE_PANE_SHARE = 0.64;
 
 function safeChartArea(chart) {
   const area = chart?.chartArea;
@@ -11,21 +12,32 @@ function fitSplitPanes(chart) {
   const area = safeChartArea(chart);
   if (!area) return;
 
+  const yVolume = chart.scales.yVolume;
   const yPrice = chart.scales.yPrice;
   const yRange = chart.scales.yRange;
   if (!yPrice || !yRange) return;
 
+  const volumeH = yVolume ? Math.round(area.height * VOLUME_PANE_SHARE) : 0;
   const priceH = Math.round(area.height * PRICE_PANE_SHARE);
+  const rangeTop = area.top + volumeH + priceH;
 
-  yPrice.top = area.top;
-  yPrice.bottom = area.top + priceH;
+  if (yVolume && volumeH > 0) {
+    yVolume.top = area.top;
+    yVolume.bottom = area.top + volumeH;
+    yVolume.height = volumeH;
+    yVolume.left = area.left;
+    yVolume.width = area.width;
+  }
+
+  yPrice.top = area.top + volumeH;
+  yPrice.bottom = area.top + volumeH + priceH;
   yPrice.height = priceH;
   yPrice.left = area.left;
   yPrice.width = area.width;
 
-  yRange.top = area.top + priceH;
+  yRange.top = rangeTop;
   yRange.bottom = area.bottom;
-  yRange.height = area.bottom - yRange.top;
+  yRange.height = area.bottom - rangeTop;
   yRange.left = area.left;
   yRange.width = area.width;
 }
@@ -37,6 +49,7 @@ function applyChartDisplay(chartConfig) {
   const refit = (scale) => {
     if (scale?.chart) fitSplitPanes(scale.chart);
   };
+  if (scales.yVolume) scales.yVolume.afterFit = refit;
   scales.yPrice.afterFit = refit;
   scales.yRange.afterFit = refit;
 
@@ -79,7 +92,10 @@ function applyChartDisplay(chartConfig) {
         const max = yScale.max ?? min;
         return (min + max) / 2;
       }
-      const priceMidY = area.top + (area.height * PRICE_PANE_SHARE) / 2;
+      const volumeH = chart.scales.yVolume
+        ? area.height * VOLUME_PANE_SHARE
+        : 0;
+      const priceMidY = area.top + volumeH + (area.height * PRICE_PANE_SHARE) / 2;
       return yScale.getValueForPixel(priceMidY);
     };
 
@@ -93,5 +109,10 @@ function applyChartDisplay(chartConfig) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { applyChartDisplay, PRICE_PANE_SHARE, safeChartArea };
+  module.exports = {
+    applyChartDisplay,
+    VOLUME_PANE_SHARE,
+    PRICE_PANE_SHARE,
+    safeChartArea,
+  };
 }
