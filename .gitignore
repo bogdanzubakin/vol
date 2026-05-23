@@ -33,3 +33,5 @@ Thumbs.db
 # Optional test / coverage
 coverage/
 .nyc_output/
+/.cache/
+/node_modules/

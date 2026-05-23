@@ -9,9 +9,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
-const annotationPlugin = require("chartjs-plugin-annotation");
-const { createConfig, volSpikeMetrics, candleRangePct } = require("../lib/signal-metrics");
+const { createConfig, analyzeVolSpike } = require("../lib/signal-metrics");
+const { renderSymbolChart } = require("../lib/chart-render");
 
 const ROOT = path.join(__dirname, "..");
 const CACHE_DIR = path.join(ROOT, ".cache", "klines");
@@ -67,172 +66,9 @@ function readCache(entry) {
   };
 }
 
-function formatTime(ts) {
-  return new Date(ts).toISOString().slice(0, 16).replace("T", " ");
-}
-
-function sliceWindow(bars, corridorBars, signalCandles, windowBars) {
-  const need = corridorBars + signalCandles;
-  const tail = bars.slice(-Math.max(need, windowBars));
-  const corridorStart = Math.max(0, tail.length - need);
-  return { tail, corridorStart, signalStart: tail.length - signalCandles };
-}
-
-function statusLabel(m) {
-  if (!m) return "INSUFFICIENT DATA";
-  return m.passes ? "SIGNAL ✓" : "no signal";
-}
-
-function buildChartConfig(symbol, slice, meta, m, cfg) {
-  const labels = slice.tail.map((b) => formatTime(b.openTime));
-  const closes = slice.tail.map((b) => b.close);
-  const ranges = slice.tail.map((b) => candleRangePct(b));
-  const n = slice.tail.length;
-
-  const closeColors = slice.tail.map((_, i) => {
-    if (i >= slice.signalStart) {
-      return slice.tail[i].close >= slice.tail[i].open ? "#22c55e" : "#ef4444";
-    }
-    return "#64748b";
-  });
-
-  const rangeColors = slice.tail.map((_, i) => {
-    if (i >= slice.signalStart) return "rgba(34,197,94,0.85)";
-    if (i >= slice.corridorStart) return "rgba(56,189,248,0.35)";
-    return "rgba(100,116,139,0.25)";
-  });
-
-  const corridorHigh = m?.corridorHigh ?? Math.max(...closes);
-  const corridorLow = m?.corridorLow ?? Math.min(...closes);
-
-  const title = [
-    `${symbol} ${cfg.interval}`,
-    statusLabel(m),
-    m
-      ? `corridor ${corridorLow.toFixed(4)} – ${corridorHigh.toFixed(4)} (${m.corridorWidthPct}% wide)`
-      : "",
-    m ? `range×${m.rangeRatio} vol↑ ${m.volIncreasing ? "Y" : "N"} break ${m.breaksCorridor ? "Y" : "N"}` : "",
-  ]
-    .filter(Boolean)
-    .join("  |  ");
-
-  return {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        {
-          type: "line",
-          label: "Close",
-          data: closes,
-          yAxisID: "yPrice",
-          borderColor: "#e2e8f0",
-          backgroundColor: closeColors,
-          pointBackgroundColor: closeColors,
-          pointRadius: slice.tail.map((_, i) => (i >= slice.signalStart ? 5 : 0)),
-          pointHoverRadius: 6,
-          borderWidth: 1.5,
-          tension: 0.05,
-          order: 1,
-        },
-        {
-          type: "bar",
-          label: "Range %",
-          data: ranges,
-          yAxisID: "yRange",
-          backgroundColor: rangeColors,
-          borderWidth: 0,
-          order: 2,
-        },
-      ],
-    },
-    options: {
-      responsive: false,
-      animation: false,
-      plugins: {
-        legend: {
-          labels: { color: "#cbd5e1" },
-        },
-        title: {
-          display: true,
-          text: title,
-          color: "#f8fafc",
-          font: { size: 14 },
-        },
-        annotation: {
-          annotations: {
-            corridorBox: {
-              type: "box",
-              xMin: slice.corridorStart - 0.5,
-              xMax: slice.signalStart - 0.5,
-              yMin: corridorLow,
-              yMax: corridorHigh,
-              yScaleID: "yPrice",
-              backgroundColor: "rgba(56,189,248,0.08)",
-              borderColor: "rgba(56,189,248,0.45)",
-              borderWidth: 1,
-            },
-            corridorHighLine: {
-              type: "line",
-              yMin: corridorHigh,
-              yMax: corridorHigh,
-              yScaleID: "yPrice",
-              borderColor: "#38bdf8",
-              borderWidth: 2,
-              borderDash: [6, 4],
-              label: {
-                display: true,
-                content: `2d high ${corridorHigh.toFixed(6)}`,
-                color: "#7dd3fc",
-                backgroundColor: "rgba(15,23,42,0.8)",
-              },
-            },
-            corridorLowLine: {
-              type: "line",
-              yMin: corridorLow,
-              yMax: corridorLow,
-              yScaleID: "yPrice",
-              borderColor: "#475569",
-              borderWidth: 1,
-              borderDash: [4, 4],
-            },
-            signalRegion: {
-              type: "box",
-              xMin: slice.signalStart - 0.5,
-              xMax: n - 0.5,
-              backgroundColor: "rgba(34,197,94,0.1)",
-              borderColor: "rgba(34,197,94,0.6)",
-              borderWidth: 1,
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: "#94a3b8",
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 12,
-          },
-          grid: { color: "rgba(51,65,85,0.35)" },
-        },
-        yPrice: {
-          type: "linear",
-          position: "left",
-          ticks: { color: "#94a3b8" },
-          grid: { color: "rgba(51,65,85,0.35)" },
-        },
-        yRange: {
-          type: "linear",
-          position: "right",
-          ticks: { color: "#94a3b8" },
-          grid: { drawOnChartArea: false },
-          title: { display: true, text: "Range %", color: "#94a3b8" },
-        },
-      },
-    },
-  };
+function statusLabel(analysis) {
+  if (!analysis.metrics) return "INSUFFICIENT DATA";
+  return analysis.passes ? "SIGNAL ✓" : "no signal";
 }
 
 function writeGallery(outDir, items) {
@@ -292,13 +128,6 @@ async function main() {
     entries = entries.filter((e) => want.has(e.symbol));
   }
 
-  const renderer = new ChartJSNodeCanvas({
-    width: opts.width,
-    height: opts.height,
-    backgroundColour: "#0f172a",
-    plugins: { modern: [annotationPlugin] },
-  });
-
   const gallery = [];
   let done = 0;
   let skipped = 0;
@@ -318,31 +147,24 @@ async function main() {
       signalCandles: Number(kv.get("signal-candles")) || 3,
     });
 
-    const m = volSpikeMetrics(cache.bars, cfg);
-    if (flags.has("signals-only") && !m?.passes) {
+    const analysis = analyzeVolSpike(cache.bars, cfg);
+    if (flags.has("signals-only") && !analysis.passes) {
       skipped++;
       continue;
     }
 
-    const slice = sliceWindow(
-      cache.bars,
-      cfg.corridorBars,
-      cfg.signalCandles,
-      opts.windowBars
-    );
-
-    const chartConfig = buildChartConfig(cache.symbol, slice, cache, m, cfg);
-    const outFile = `${cache.symbol}_${cache.interval}.png`;
-    const outPath = path.join(opts.outDir, outFile);
-
-    const buffer = await renderer.renderToBuffer(chartConfig, "image/png");
-    fs.mkdirSync(opts.outDir, { recursive: true });
-    fs.writeFileSync(outPath, buffer);
+    const { file } = await renderSymbolChart(cache.symbol, cache.bars, cfg, analysis, {
+      windowBars: opts.windowBars,
+      width: opts.width,
+      height: opts.height,
+      chartsDir: opts.outDir,
+    });
+    const outPath = path.join(opts.outDir, file);
 
     gallery.push({
       symbol: cache.symbol,
-      file: outFile,
-      status: statusLabel(m),
+      file,
+      status: statusLabel(analysis),
     });
     done++;
     console.error(`Wrote ${outPath}`);

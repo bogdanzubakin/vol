@@ -198,7 +198,134 @@
       color: var(--muted);
     }
     .events .cfg { color: var(--blue); }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0;
+    }
+    .tab {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 10px 16px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .pairs-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+    }
+    .pairs-toolbar input,
+    .pairs-toolbar select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 0.85rem;
+    }
+    .pairs-toolbar input { min-width: 180px; }
+    .pairs-table-wrap {
+      max-height: calc(100vh - 340px);
+      overflow: auto;
+    }
+    .fail-reasons {
+      font-size: 0.75rem;
+      color: var(--muted);
+      max-width: 320px;
+      line-height: 1.35;
+    }
+    .fail-reasons li { margin: 2px 0; color: #fca5a5; }
+    .status-pill {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .status-pill.pass {
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--green);
+    }
+    .status-pill.fail {
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--muted);
+    }
+    .btn.sm {
+      padding: 5px 10px;
+      font-size: 0.78rem;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.85);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal.open { display: flex; }
+    .modal-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 96vw;
+      max-height: 96vh;
+      overflow: auto;
+      width: 100%;
+      max-width: 1480px;
+    }
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+      z-index: 1;
+    }
+    .modal-head h3 { margin: 0; font-size: 1rem; }
+    .modal-body { padding: 12px; text-align: center; }
+    .modal-body canvas {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      background: #0f172a;
+    }
+    .modal-chart-wrap {
+      overflow: auto;
+      max-height: calc(96vh - 120px);
+    }
+    .modal-actions {
+      padding: 12px 0 4px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    .modal-loading { padding: 48px; color: var(--muted); }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="/chart-display.js?v=4"></script>
 </head>
 <body>
   <h1>Vol spike scanner</h1>
@@ -208,6 +335,12 @@
 
   <div class="status" id="status"></div>
 
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
+    <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
+  </nav>
+
+  <div id="panel-scanner" class="tab-panel active" role="tabpanel">
   <section class="settings">
     <h2>
       Indicator settings
@@ -275,6 +408,54 @@
       <ul class="events" id="eventsList"></ul>
     </section>
   </div>
+  </div>
+
+  <div id="panel-pairs" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>All pairs <span id="pairsCount"></span></h2>
+      <div class="pairs-toolbar">
+        <input type="search" id="pairsSearch" placeholder="Search symbol…" />
+        <select id="pairsFilter">
+          <option value="all">All</option>
+          <option value="pass">Passing</option>
+          <option value="fail">Not passing</option>
+        </select>
+        <button type="button" class="btn secondary sm" id="pairsRefresh">Refresh</button>
+        <span class="config-msg" id="pairsMsg"></span>
+      </div>
+      <div class="pairs-table-wrap table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Status</th>
+              <th>Close</th>
+              <th>Range×</th>
+              <th>Corridor %</th>
+              <th>Bars</th>
+              <th>Why not passing</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="pairsBody">
+            <tr><td colspan="8" class="empty">Open this tab to load pairs</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div id="chartModal" class="modal" aria-hidden="true">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="chartModalTitle">Chart</h3>
+        <button type="button" class="btn secondary sm" id="chartModalClose">Close</button>
+      </div>
+      <div class="modal-body" id="chartModalBody">
+        <div class="modal-loading">Loading chart…</div>
+      </div>
+    </div>
+  </div>
 
   <script>
     const fmt = (n, d = 4) => (n == null || Number.isNaN(n) ? "—" : Number(n).toFixed(d));
@@ -289,10 +470,177 @@
 
     let formDirty = false;
     let lastServerConfig = null;
+    let activeTab = "scanner";
+    let pairsPollTimer = null;
+    let lastInterval = null;
+    let diagChartInstance = null;
 
-    function chartUrl(symbol, interval) {
-      return `/charts/${symbol}_${interval}.png`;
+    if (window.Chart && window["chartjs-plugin-annotation"]) {
+      Chart.register(window["chartjs-plugin-annotation"]);
     }
+
+    function setPairsMsg(text, ok) {
+      const el = document.getElementById("pairsMsg");
+      el.textContent = text;
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    function switchTab(name) {
+      activeTab = name;
+      document.querySelectorAll(".tab").forEach((t) => {
+        t.classList.toggle("active", t.dataset.tab === name);
+      });
+      document.querySelectorAll(".tab-panel").forEach((p) => {
+        p.classList.toggle("active", p.id === `panel-${name}`);
+      });
+      if (name === "pairs") {
+        loadPairs();
+        if (!pairsPollTimer) pairsPollTimer = setInterval(loadPairs, 5000);
+      }
+    }
+
+    document.querySelectorAll(".tab").forEach((t) => {
+      t.addEventListener("click", () => switchTab(t.dataset.tab));
+    });
+
+    async function loadPairs() {
+      const q = document.getElementById("pairsSearch").value;
+      const filter = document.getElementById("pairsFilter").value;
+      const params = new URLSearchParams({ filter });
+      if (q.trim()) params.set("q", q.trim());
+
+      try {
+        const res = await fetch(`/api/pairs?${params}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPairs(data);
+        setPairsMsg(`Updated ${data.updatedAt?.slice(11, 19) ?? ""}`, true);
+      } catch (e) {
+        setPairsMsg(e.message, false);
+        document.getElementById("pairsBody").innerHTML =
+          `<tr><td colspan="8" class="empty">${e.message}</td></tr>`;
+      }
+    }
+
+    function renderPairs(data) {
+      document.getElementById("pairsCount").textContent =
+        data.pairCount != null ? `(${data.pairCount})` : "";
+
+      const tbody = document.getElementById("pairsBody");
+      if (!data.pairs?.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No pairs match</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.pairs
+        .map((p) => {
+          const reasons =
+            p.passes || !p.failReasons?.length
+              ? "—"
+              : `<ul class="fail-reasons">${p.failReasons
+                  .map((r) => `<li>${r}</li>`)
+                  .join("")}</ul>`;
+          const pill = p.passes
+            ? '<span class="status-pill pass">PASS</span>'
+            : '<span class="status-pill fail">no signal</span>';
+          return `<tr>
+            <td class="sym">${p.symbol}</td>
+            <td>${pill}</td>
+            <td>${fmt(p.close, 6)}</td>
+            <td>${fmt(p.rangeRatio, 2)}</td>
+            <td>${fmt(p.corridorWidthPct, 2)}${p.corridorWidthPct != null ? "%" : ""}</td>
+            <td>${p.bars ?? "—"}</td>
+            <td>${reasons}</td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}">Chart</button></td>
+          </tr>`;
+        })
+        .join("");
+
+      tbody.querySelectorAll(".chart-btn").forEach((btn) => {
+        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+      });
+    }
+
+    async function openChart(symbol) {
+      const modal = document.getElementById("chartModal");
+      const body = document.getElementById("chartModalBody");
+      document.getElementById("chartModalTitle").textContent = `${symbol} — filter diagnostic`;
+      body.innerHTML = '<div class="modal-loading">Loading chart…</div>';
+      modal.classList.add("open");
+      modal.setAttribute("aria-hidden", "false");
+
+      if (diagChartInstance) {
+        diagChartInstance.destroy();
+        diagChartInstance = null;
+      }
+
+      try {
+        const res = await fetch(`/api/chart-data/${symbol}`, { cache: "no-store" });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || res.statusText);
+
+        const status = payload.passes ? "PASS" : "no signal";
+        document.getElementById("chartModalTitle").textContent =
+          `${symbol} ${payload.interval} — ${status}`;
+
+        body.innerHTML = `
+          <div class="modal-chart-wrap">
+            <canvas id="diagChart"></canvas>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn sm" id="downloadChart">Download PNG</button>
+          </div>`;
+
+        const canvas = document.getElementById("diagChart");
+        const chartConfig = applyChartDisplay(
+          JSON.parse(JSON.stringify(payload.chart))
+        );
+
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+        diagChartInstance = new Chart(canvas, {
+          ...chartConfig,
+          options: {
+            ...chartConfig.options,
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2.33,
+          },
+        });
+        diagChartInstance.update();
+
+        document.getElementById("downloadChart").addEventListener("click", () => {
+          const link = document.createElement("a");
+          link.href = canvas.toDataURL("image/png");
+          link.download = `${symbol}_${payload.interval}.png`;
+          link.click();
+        });
+      } catch (e) {
+        body.innerHTML = `<div class="modal-loading" style="color:#fecaca">${e.message}</div>`;
+      }
+    }
+
+    function closeChartModal() {
+      const modal = document.getElementById("chartModal");
+      modal.classList.remove("open");
+      modal.setAttribute("aria-hidden", "true");
+      if (diagChartInstance) {
+        diagChartInstance.destroy();
+        diagChartInstance = null;
+      }
+      document.getElementById("chartModalBody").innerHTML = "";
+    }
+
+    document.getElementById("chartModalClose").addEventListener("click", closeChartModal);
+    document.getElementById("chartModal").addEventListener("click", (e) => {
+      if (e.target.id === "chartModal") closeChartModal();
+    });
+    document.getElementById("pairsRefresh").addEventListener("click", loadPairs);
+    document.getElementById("pairsSearch").addEventListener("input", () => {
+      clearTimeout(window._pairsSearchTimer);
+      window._pairsSearchTimer = setTimeout(loadPairs, 300);
+    });
+    document.getElementById("pairsFilter").addEventListener("change", loadPairs);
 
     function configFromState(state) {
       const c = {};
@@ -390,6 +738,8 @@
 
     function render(state) {
       syncConfigForm(state);
+      lastInterval = state.interval;
+      if (activeTab === "pairs") loadPairs();
 
       const sub = document.getElementById("subtitle");
       sub.textContent =
@@ -413,10 +763,9 @@
       } else {
         tbody.innerHTML = state.hits
           .map((h) => {
-            const chart = chartUrl(h.symbol, state.interval);
             return `<tr>
               <td class="sym">${h.symbol}
-                <a class="chart-link" href="${chart}" target="_blank" title="Chart if generated">📈</a>
+                <button type="button" class="btn sm chart-btn" data-symbol="${h.symbol}" style="margin-left:6px">Chart</button>
               </td>
               <td>${fmt(h.close, 6)}</td>
               <td>${fmt(h.corridorHigh, 6)}</td>
@@ -427,6 +776,9 @@
             </tr>`;
           })
           .join("");
+        tbody.querySelectorAll(".chart-btn").forEach((btn) => {
+          btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+        });
       }
 
       const ev = document.getElementById("eventsList");

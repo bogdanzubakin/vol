@@ -14,7 +14,11 @@ const {
   applyBarConfig,
   volSpikeMetrics: computeVolSpikeMetrics,
   validateLiveConfigPatch,
+  analyzeVolSpike,
+  failedCheckLabels,
+  pickLiveConfig,
 } = require("./lib/signal-metrics");
+const { getChartPayload } = require("./lib/chart-render");
 const {
   startDashboard,
   createDashboardPublisher,
@@ -543,6 +547,55 @@ async function main() {
   let symbols = [];
   let reevaluateAll = () => {};
 
+  const scannerApi = {
+    getPairs(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      const filter = searchParams.get("filter") || "all";
+
+      let pairs = symbols.map((sym) => {
+        const buf = buffers.get(sym) ?? [];
+        const analysis = analyzeVolSpike(buf, cfg);
+        const m = analysis.metrics;
+        return {
+          symbol: sym,
+          passes: analysis.passes,
+          bars: buf.length,
+          failReasons: failedCheckLabels(analysis.checks),
+          close: m?.close ?? null,
+          corridorHigh: m?.corridorHigh ?? null,
+          rangeRatio: m?.rangeRatio ?? null,
+          corridorWidthPct: m?.corridorWidthPct ?? null,
+        };
+      });
+
+      if (q) pairs = pairs.filter((p) => p.symbol.includes(q));
+      if (filter === "pass") pairs = pairs.filter((p) => p.passes);
+      if (filter === "fail") pairs = pairs.filter((p) => !p.passes);
+
+      pairs.sort((a, b) => {
+        if (a.passes !== b.passes) return a.passes ? -1 : 1;
+        return (b.rangeRatio ?? 0) - (a.rangeRatio ?? 0);
+      });
+
+      return {
+        updatedAt: new Date().toISOString(),
+        ...pickLiveConfig(cfg),
+        pairCount: pairs.length,
+        pairs,
+      };
+    },
+    getChartData(symbol) {
+      const sym = String(symbol).toUpperCase();
+      if (!symbols.includes(sym)) {
+        throw new Error(`Unknown symbol: ${sym}`);
+      }
+      const buf = buffers.get(sym) ?? [];
+      if (!buf.length) throw new Error(`No bar data for ${sym}`);
+      const analysis = analyzeVolSpike(buf, cfg);
+      return getChartPayload(sym, buf, cfg, analysis);
+    },
+  };
+
   dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
 
@@ -554,6 +607,8 @@ async function main() {
     startDashboard(() => dashboard.buildState(activeHits), {
       port,
       host,
+      getPairs: (searchParams) => scannerApi.getPairs(searchParams),
+      getChartData: (symbol) => scannerApi.getChartData(symbol),
       onConfigUpdate: async (patch) => {
         const updates = validateLiveConfigPatch(patch);
         Object.assign(cfg, updates);
