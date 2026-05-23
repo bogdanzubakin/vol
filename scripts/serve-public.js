@@ -8,13 +8,14 @@
 const fs = require("fs");
 const path = require("path");
 const { startDashboard, RESULTS_JSON } = require("../lib/dashboard-server");
+const { nowIsoUtcPlus3 } = require("../lib/time-format");
 
 function readState() {
   try {
     return JSON.parse(fs.readFileSync(RESULTS_JSON, "utf8"));
   } catch {
     return {
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIsoUtcPlus3(),
       activeCount: 0,
       hits: [],
       events: [],

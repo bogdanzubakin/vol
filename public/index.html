@@ -76,6 +76,26 @@
     tr:hover td { background: rgba(56, 189, 248, 0.06); }
     .sym { font-weight: 600; color: var(--blue); }
     .pass { color: var(--green); }
+    .near { color: #fbbf24; }
+    tr.hit-active td { background: rgba(34, 197, 94, 0.04); }
+    tr.hit-near td { background: rgba(251, 191, 36, 0.06); }
+    .status-tag {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .status-tag.signal {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--green);
+    }
+    .status-tag.near {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
+    }
     .empty {
       padding: 32px 16px;
       text-align: center;
@@ -252,6 +272,20 @@
       line-height: 1.35;
     }
     .fail-reasons li { margin: 2px 0; color: #fca5a5; }
+    .criteria-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 0.72rem;
+      line-height: 1.35;
+      max-width: 280px;
+    }
+    .criteria-list li { margin: 2px 0; }
+    .criteria-list li.ok { color: #86efac; }
+    .criteria-list li.bad { color: #fca5a5; }
+    .criteria-list li.bonus { color: #fde68a; }
+    .criteria-list .detail { color: var(--muted); }
+    .criteria-col { min-width: 200px; max-width: 300px; }
     .status-pill {
       display: inline-block;
       font-size: 0.72rem;
@@ -266,6 +300,10 @@
     .status-pill.fail {
       background: rgba(148, 163, 184, 0.12);
       color: var(--muted);
+    }
+    .status-pill.near {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fbbf24;
     }
     .btn.sm {
       padding: 5px 10px;
@@ -342,6 +380,7 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="/time-format.js"></script>
   <script src="/chart-display.js?v=4"></script>
 </head>
 <body>
@@ -354,9 +393,9 @@
 
   <div class="evaluate-bar">
     <div class="field">
-      <label for="evaluateAt">Backtest time</label>
-      <input type="datetime-local" id="evaluateAt" step="60" />
-      <div class="hint">Pairs &amp; charts: signal check at this candle</div>
+        <label for="evaluateAt">Backtest time (UTC+3)</label>
+        <input type="datetime-local" id="evaluateAt" step="60" />
+        <div class="hint">Pairs &amp; charts: signal check at this candle (UTC+3)</div>
     </div>
     <button type="button" class="btn secondary sm" id="evaluateAtNow">Now (live)</button>
     <button type="button" class="btn sm" id="evaluateAtApply">Apply</button>
@@ -379,6 +418,11 @@
         <label for="corridorDays">Corridor days</label>
         <input type="number" id="corridorDays" name="corridorDays" step="0.25" min="0.25" max="30" required />
         <div class="hint">Lookback for range corridor</div>
+      </div>
+      <div class="field">
+        <label for="corridorExcludeMinutes">Corridor exclude (min)</label>
+        <input type="number" id="corridorExcludeMinutes" name="corridorExcludeMinutes" step="1" min="0" max="240" required />
+        <div class="hint">Ignore last N minutes before signal</div>
       </div>
       <div class="field">
         <label for="signalCandles">Signal candles</label>
@@ -420,7 +464,11 @@
 
   <div class="grid">
     <section>
-      <h2>Active signals <span id="hitCount"></span></h2>
+      <h2>Signals <span id="hitCount"></span></h2>
+      <p class="sub" style="margin: -8px 0 12px; font-size: 0.8rem">
+        <span class="status-tag signal">SIGNAL</span> full break ·
+        <span class="status-tag near">NEAR</span> all criteria except break (within gap %)
+      </p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -431,11 +479,11 @@
               <th>Range×</th>
               <th>Corridor %</th>
               <th>Vol↑</th>
-              <th>Break</th>
+              <th>Break / gap</th>
             </tr>
           </thead>
           <tbody id="hitsBody">
-            <tr><td colspan="7" class="empty">No active signals</td></tr>
+            <tr><td colspan="7" class="empty">No signals</td></tr>
           </tbody>
         </table>
       </div>
@@ -458,6 +506,14 @@
           <option value="pass">Passing</option>
           <option value="fail">Not passing</option>
         </select>
+        <select id="pairsCriterion" title="Filter by criterion">
+          <option value="">Any criterion</option>
+        </select>
+        <select id="pairsCriterionPass">
+          <option value="any">Pass or fail</option>
+          <option value="pass">Passing criterion</option>
+          <option value="fail">Failing criterion</option>
+        </select>
         <button type="button" class="btn secondary sm" id="pairsRefresh">Refresh</button>
         <span class="config-msg" id="pairsMsg"></span>
       </div>
@@ -473,11 +529,12 @@
               <th>Bars</th>
               <th>Signal bar</th>
               <th>Why not passing</th>
+              <th>Criteria</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="pairsBody">
-            <tr><td colspan="9" class="empty">Open this tab to load pairs</td></tr>
+            <tr><td colspan="10" class="empty">Open this tab to load pairs</td></tr>
           </tbody>
         </table>
       </div>
@@ -500,16 +557,22 @@
     const fmt = (n, d = 4) => (n == null || Number.isNaN(n) ? "—" : Number(n).toFixed(d));
     const yn = (v) => (v ? "Y" : "N");
 
+    function fmtTimeShort(t) {
+      const ms = parseDisplayIso(t);
+      return ms != null ? formatTimeShort(ms) : "—";
+    }
+
     function fmtBarTime(t) {
-      if (t == null) return "—";
-      const iso =
-        typeof t === "number"
-          ? new Date(t).toISOString()
-          : String(t);
-      return iso.slice(11, 19);
+      return fmtTimeShort(t);
+    }
+
+    function fmtDisplayDateTime(t) {
+      const ms = parseDisplayIso(t);
+      return ms != null ? formatDateTime(ms) : "—";
     }
     const CONFIG_KEYS = [
       "corridorDays",
+      "corridorExcludeMinutes",
       "signalCandles",
       "bullishLookbackCandles",
       "minBullishCandles",
@@ -538,7 +601,8 @@
     function evaluateAtIso() {
       const el = document.getElementById("evaluateAt");
       if (!el?.value) return "";
-      return new Date(el.value).toISOString();
+      const ms = datetimeLocalValueToUtcMs(el.value);
+      return ms != null ? new Date(ms).toISOString() : "";
     }
 
     function appendEvaluateAt(params) {
@@ -554,8 +618,9 @@
         el.textContent = "Live — using latest candles (scanner tab stays real-time)";
         return;
       }
+      const ms = parseDisplayIso(at);
       el.textContent =
-        `Historical @ ${at.slice(0, 16).replace("T", " ")} UTC` +
+        `Historical @ ${ms != null ? formatDateTime(ms) : at} ${TZ_LABEL}` +
         (extra ? ` · ${extra}` : "");
     }
 
@@ -588,28 +653,81 @@
       t.addEventListener("click", () => switchTab(t.dataset.tab));
     });
 
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function formatChecksList(checks) {
+      if (!checks?.length) return '<span class="time">—</span>';
+      return `<ul class="criteria-list">${checks
+        .map((c) => {
+          const mark = c.positiveOnly
+            ? c.pass
+              ? "+"
+              : "○"
+            : c.pass
+              ? "✓"
+              : "✗";
+          const cls = `${c.pass ? "ok" : "bad"}${c.positiveOnly ? " bonus" : ""}`;
+          const detail = c.detail
+            ? `<span class="detail"> — ${escapeHtml(c.detail)}</span>`
+            : "";
+          return `<li class="${cls}">${mark} ${escapeHtml(c.label)}${detail}</li>`;
+        })
+        .join("")}</ul>`;
+    }
+
+    function syncCriteriaFilterOptions(criteria) {
+      const sel = document.getElementById("pairsCriterion");
+      const prev = sel.value;
+      const opts =
+        '<option value="">Any criterion</option>' +
+        (criteria ?? [])
+          .map(
+            (c) =>
+              `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`
+          )
+          .join("");
+      sel.innerHTML = opts;
+      if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    }
+
     async function loadPairs() {
       const q = document.getElementById("pairsSearch").value;
       const filter = document.getElementById("pairsFilter").value;
+      const criterion = document.getElementById("pairsCriterion").value;
+      const criterionPass = document.getElementById("pairsCriterionPass").value;
       const params = new URLSearchParams({ filter });
       if (q.trim()) params.set("q", q.trim());
+      if (criterion) {
+        params.set("criterion", criterion);
+        params.set("criterionPass", criterionPass);
+      }
       appendEvaluateAt(params);
 
       try {
         const res = await fetch(`/api/pairs?${params}`, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
+        syncCriteriaFilterOptions(data.criteria);
         renderPairs(data);
         const mode =
           data.mode === "historical" && data.evaluateBarAt
-            ? `as of ${data.evaluateBarAt.slice(0, 16).replace("T", " ")}`
+            ? `as of ${fmtDisplayDateTime(data.evaluateBarAt)}`
             : "live";
         syncEvaluateHint(data.evaluateBarAt ? mode : "");
-        setPairsMsg(`Updated ${data.updatedAt?.slice(11, 19) ?? ""} · ${mode}`, true);
+        setPairsMsg(
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · ${mode}`,
+          true
+        );
       } catch (e) {
         setPairsMsg(e.message, false);
         document.getElementById("pairsBody").innerHTML =
-          `<tr><td colspan="9" class="empty">${e.message}</td></tr>`;
+          `<tr><td colspan="10" class="empty">${e.message}</td></tr>`;
       }
     }
 
@@ -619,7 +737,7 @@
 
       const tbody = document.getElementById("pairsBody");
       if (!data.pairs?.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty">No pairs match</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="empty">No pairs match</td></tr>';
         return;
       }
 
@@ -629,11 +747,13 @@
             p.passes || !p.failReasons?.length
               ? "—"
               : `<ul class="fail-reasons">${p.failReasons
-                  .map((r) => `<li>${r}</li>`)
+                  .map((r) => `<li>${escapeHtml(r)}</li>`)
                   .join("")}</ul>`;
           const pill = p.passes
             ? '<span class="status-pill pass">PASS</span>'
-            : '<span class="status-pill fail">no signal</span>';
+            : p.nearBreak
+              ? '<span class="status-pill near">NEAR</span>'
+              : '<span class="status-pill fail">no signal</span>';
           const barAt = fmtBarTime(p.signalBarAt);
           return `<tr>
             <td class="sym">${p.symbol}</td>
@@ -644,6 +764,7 @@
             <td>${p.bars ?? "—"}</td>
             <td class="time">${barAt}</td>
             <td>${reasons}</td>
+            <td class="criteria-col">${formatChecksList(p.checks)}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}">Chart</button></td>
           </tr>`;
         })
@@ -678,7 +799,7 @@
 
         const status = payload.passes ? "PASS" : "no signal";
         const at = payload.evaluateBarAt
-          ? ` @ ${String(payload.evaluateBarAt).slice(0, 16).replace("T", " ")}`
+          ? ` @ ${fmtDisplayDateTime(payload.evaluateBarAt)}`
           : "";
         document.getElementById("chartModalTitle").textContent =
           `${symbol} ${payload.interval}${at} — ${status}`;
@@ -741,6 +862,8 @@
       window._pairsSearchTimer = setTimeout(loadPairs, 300);
     });
     document.getElementById("pairsFilter").addEventListener("change", loadPairs);
+    document.getElementById("pairsCriterion").addEventListener("change", loadPairs);
+    document.getElementById("pairsCriterionPass").addEventListener("change", loadPairs);
 
     function configFromState(state) {
       const c = {};
@@ -847,32 +970,54 @@
         `corridor ≤${state.maxCorridorWidthPct}% · range×≥${state.minRangeMultiplier}`;
 
       document.getElementById("status").innerHTML = `
-        <div><span>Updated</span> <strong>${state.updatedAt?.slice(11, 19) ?? "—"}</strong></div>
+        <div><span>Updated</span> <strong>${fmtTimeShort(state.updatedAt) ?? "—"} ${TZ_LABEL}</strong></div>
         <div><span>Symbols</span> <strong>${state.symbolCount ?? "—"}</strong></div>
-        <div><span>Active</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
+        <div><span>Signals</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
+        <div><span>Near break</span> <strong class="near">${state.nearBreakCount ?? 0}</strong></div>
         <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${state.prefetching ? "running…" : "done"}</strong></div>
       `;
 
+      const signalN = state.activeCount ?? 0;
+      const nearN = state.nearBreakCount ?? 0;
       document.getElementById("hitCount").textContent =
-        state.activeCount ? `(${state.activeCount})` : "";
+        signalN + nearN ? `(${signalN} + ${nearN} near)` : "";
 
       const tbody = document.getElementById("hitsBody");
-      if (!state.hits?.length) {
-        tbody.innerHTML =
-          '<tr><td colspan="7" class="empty">No active signals</td></tr>';
+      const rows = [
+        ...(state.hits ?? []).map((h) => ({ ...h, signalStatus: "active" })),
+        ...(state.nearBreakHits ?? []).map((h) => ({ ...h, signalStatus: "near" })),
+      ].sort((a, b) => {
+        if (a.signalStatus !== b.signalStatus) {
+          return a.signalStatus === "active" ? -1 : 1;
+        }
+        if (a.signalStatus === "near") return (a.breakGapPct ?? 0) - (b.breakGapPct ?? 0);
+        return (b.rangeRatio ?? 0) - (a.rangeRatio ?? 0);
+      });
+
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">No signals</td></tr>';
       } else {
-        tbody.innerHTML = state.hits
+        tbody.innerHTML = rows
           .map((h) => {
-            return `<tr>
-              <td class="sym">${h.symbol}
+            const isNear = h.signalStatus === "near";
+            const tag = isNear
+              ? '<span class="status-tag near">NEAR</span>'
+              : '<span class="status-tag signal">SIGNAL</span>';
+            const rowCls = isNear ? "hit-near" : "hit-active";
+            const rangeCls = isNear ? "near" : "pass";
+            const breakCell = isNear
+              ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
+              : `<span class="pass">Y</span>`;
+            return `<tr class="${rowCls}">
+              <td class="sym">${tag}${h.symbol}
                 <button type="button" class="btn sm chart-btn" data-symbol="${h.symbol}" style="margin-left:6px">Chart</button>
               </td>
               <td>${fmt(h.close, 6)}</td>
               <td>${fmt(h.corridorHigh, 6)}</td>
-              <td class="pass">${fmt(h.rangeRatio, 2)}</td>
+              <td class="${rangeCls}">${fmt(h.rangeRatio, 2)}</td>
               <td>${fmt(h.corridorWidthPct, 2)}%</td>
               <td>${yn(h.volIncreasing)}</td>
-              <td>${yn(h.breaksCorridor)}</td>
+              <td>${breakCell}</td>
             </tr>`;
           })
           .join("");
@@ -888,9 +1033,17 @@
         ev.innerHTML = state.events
           .map((e) => {
             const cls =
-              e.type === "NEW" ? "new" : e.type === "END" ? "end" : e.type === "CONFIG" ? "cfg" : "";
+              e.type === "NEW"
+                ? "new"
+                : e.type === "END"
+                  ? "end"
+                  : e.type === "NEAR" || e.type === "END_NEAR"
+                    ? "near"
+                    : e.type === "CONFIG"
+                      ? "cfg"
+                      : "";
             return `<li>
-              <div class="time">${e.at?.slice(11, 19) ?? ""}</div>
+              <div class="time">${fmtTimeShort(e.at)} ${TZ_LABEL}</div>
               <span class="${cls}">${e.type}</span> <strong>${e.symbol}</strong>
               ${e.detail ? `<span class="time"> ${e.detail}</span>` : ""}
             </li>`;

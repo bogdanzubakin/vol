@@ -16,11 +16,14 @@ const {
   validateLiveConfigPatch,
   analyzeVolSpike,
   failedCheckLabels,
+  serializeChecks,
+  mergeCriteriaCatalog,
   pickLiveConfig,
   parseAtTime,
   barsAtTime,
 } = require("./lib/signal-metrics");
 const { getChartPayload } = require("./lib/chart-render");
+const { formatIsoUtcPlus3 } = require("./lib/time-format");
 const {
   startDashboard,
   createDashboardPublisher,
@@ -39,10 +42,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cfg = {
   interval: "1m",
   corridorDays: 2,
+  corridorExcludeMinutes: 15,
   prefetchDays: 3,
   signalCandles: 3,
   bullishLookbackCandles: 10,
   minBullishCandles: 3,
+  nearBreakMaxGapPct: 0.1,
   maxCorridorWidthPct: 1.5,
   minRangeMultiplier: 1.8,
   minCorridorRangePct: 0.02,
@@ -296,62 +301,147 @@ function upsertCandle(buf, candle) {
   return true;
 }
 
-function printHits(activeHits, force = false) {
+function printHits(activeHits, nearBreakHits, force = false) {
   const now = Date.now();
   if (!force && now - lastHitsPrintAt < cfg.printHitsMinIntervalMs) return;
   lastHitsPrintAt = now;
 
-  const rows = [...activeHits.entries()]
-    .map(([symbol, m]) => ({ symbol, ...m }))
-    .sort((a, b) => b.rangeRatio - a.rangeRatio)
+  const rows = [
+    ...[...activeHits.entries()].map(([symbol, m]) => ({
+      symbol,
+      status: "SIGNAL",
+      ...m,
+    })),
+    ...[...nearBreakHits.entries()].map(([symbol, m]) => ({
+      symbol,
+      status: "NEAR",
+      ...m,
+    })),
+  ]
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "SIGNAL" ? -1 : 1;
+      if (a.status === "NEAR") return a.breakGapPct - b.breakGapPct;
+      return b.rangeRatio - a.rangeRatio;
+    })
     .slice(0, cfg.maxHitsToPrint);
 
   if (dashboard) {
     dashboard.setMeta({ prefetching });
-    dashboard.publish(activeHits, force);
+    dashboard.publish(activeHits, nearBreakHits, force);
   }
 
   console.clear();
   console.log(
-    new Date().toISOString(),
+    formatIsoUtcPlus3(Date.now()),
     `${cfg.interval}: ${cfg.signalCandles} vol↑ bars break ${cfg.corridorDays}d range high` +
       (prefetching ? " (prefetching…)" : "")
   );
   console.table(rows);
 }
 
-function reevaluateAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap) {
+function applySymbolSignal(
+  sym,
+  m,
+  qv,
+  activeHits,
+  nearBreakHits,
+  lastPass,
+  lastNearBreak
+) {
+  const pass = Boolean(m?.passes);
+  const near = Boolean(m?.nearBreak);
+  const prevPass = lastPass.get(sym) ?? false;
+  const prevNear = lastNearBreak.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass) {
+    activeHits.set(sym, { ...m, signalStatus: "active", quoteVol24h: qvRounded });
+    nearBreakHits.delete(sym);
+    if (!prevPass) {
+      const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
+      dashboard?.pushEvent("NEW", sym, detail);
+      console.log(`NEW SPIKE\t${sym}\t${detail}`);
+    }
+    if (prevNear) {
+      dashboard?.pushEvent("END_NEAR", sym, "broke out");
+      console.log(`NEAR END\t${sym}\tbreak`);
+    }
+  } else if (near) {
+    nearBreakHits.set(sym, {
+      ...m,
+      signalStatus: "near",
+      quoteVol24h: qvRounded,
+    });
+    activeHits.delete(sym);
+    if (!prevNear) {
+      const detail = `${m.breakGapPct}% below ${m.corridorHigh} range×${m.rangeRatio}`;
+      dashboard?.pushEvent("NEAR", sym, detail);
+      console.log(`NEAR BREAK\t${sym}\t${detail}`);
+    }
+    if (prevPass) {
+      dashboard?.pushEvent("END", sym);
+      console.log(`ENDED\t${sym}`);
+    }
+  } else {
+    if (prevPass) {
+      activeHits.delete(sym);
+      dashboard?.pushEvent("END", sym);
+      console.log(`ENDED\t${sym}`);
+    }
+    if (prevNear) {
+      nearBreakHits.delete(sym);
+      dashboard?.pushEvent("END_NEAR", sym);
+      console.log(`NEAR END\t${sym}`);
+    }
+  }
+
+  lastPass.set(sym, pass);
+  lastNearBreak.set(sym, near);
+}
+
+function reevaluateAllSymbols(
+  symbols,
+  buffers,
+  activeHits,
+  nearBreakHits,
+  lastPass,
+  lastNearBreak,
+  quoteVolMap
+) {
   for (const sym of symbols) {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
       if (lastPass.get(sym)) activeHits.delete(sym);
+      if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
+      lastNearBreak.set(sym, false);
       continue;
     }
 
     const buf = buffers.get(sym) ?? [];
     const m = volSpikeMetrics(buf);
-    const pass = Boolean(m?.passes);
-    const prev = lastPass.get(sym) ?? false;
-
-    if (pass) {
-      activeHits.set(sym, { ...m, quoteVol24h: Math.round(qv) });
-      if (!prev) {
-        const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
-        dashboard?.pushEvent("NEW", sym, detail);
-        console.log(`NEW SPIKE\t${sym}\t${detail}`);
-      }
-    } else if (prev) {
-      activeHits.delete(sym);
-      dashboard?.pushEvent("END", sym);
-      console.log(`ENDED\t${sym}`);
-    }
-    lastPass.set(sym, pass);
+    applySymbolSignal(
+      sym,
+      m,
+      qv,
+      activeHits,
+      nearBreakHits,
+      lastPass,
+      lastNearBreak
+    );
   }
-  printHits(activeHits, true);
+  printHits(activeHits, nearBreakHits, true);
 }
 
-function createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap) {
+function createWsShards(
+  symbols,
+  buffers,
+  activeHits,
+  nearBreakHits,
+  lastPass,
+  lastNearBreak,
+  quoteVolMap
+) {
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
     symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
@@ -363,30 +453,32 @@ function createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap) {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
       if (lastPass.get(sym)) activeHits.delete(sym);
+      if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
+      lastNearBreak.set(sym, false);
       return;
     }
 
     const buf = buffers.get(sym) ?? [];
     const m = volSpikeMetrics(buf);
-    const pass = Boolean(m?.passes);
-    const prev = lastPass.get(sym) ?? false;
+    const prevPass = lastPass.get(sym) ?? false;
+    const prevNear = lastNearBreak.get(sym) ?? false;
 
-    if (pass) {
-      activeHits.set(sym, { ...m, quoteVol24h: Math.round(qv) });
-      if (!prev) {
-        const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
-        dashboard?.pushEvent("NEW", sym, detail);
-        console.log(`NEW SPIKE\t${sym}\t${detail}`);
-        printHits(activeHits, true);
-      }
-    } else if (prev) {
-      activeHits.delete(sym);
-      dashboard?.pushEvent("END", sym);
-      console.log(`ENDED\t${sym}`);
-      printHits(activeHits, true);
+    applySymbolSignal(
+      sym,
+      m,
+      qv,
+      activeHits,
+      nearBreakHits,
+      lastPass,
+      lastNearBreak
+    );
+
+    const pass = Boolean(m?.passes);
+    const near = Boolean(m?.nearBreak);
+    if (pass !== prevPass || near !== prevNear) {
+      printHits(activeHits, nearBreakHits, true);
     }
-    lastPass.set(sym, pass);
   };
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
@@ -456,7 +548,15 @@ function createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap) {
   return sockets;
 }
 
-async function prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap) {
+async function prefetchAllSymbols(
+  symbols,
+  buffers,
+  activeHits,
+  nearBreakHits,
+  lastPass,
+  lastNearBreak,
+  quoteVolMap
+) {
   prefetching = true;
   dashboard?.setMeta({ prefetching: true });
   let done = 0;
@@ -478,7 +578,15 @@ async function prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteV
       else fetched++;
 
       buffers.set(sym, bars);
-      evaluateAfterPrefetch(sym, buffers, activeHits, lastPass, quoteVolMap);
+      evaluateAfterPrefetch(
+        sym,
+        buffers,
+        activeHits,
+        nearBreakHits,
+        lastPass,
+        lastNearBreak,
+        quoteVolMap
+      );
     } catch (e) {
       failed++;
       console.error(`Prefetch failed ${sym}: ${e.message}`);
@@ -498,27 +606,37 @@ async function prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteV
 
   prefetching = false;
   dashboard?.setMeta({ prefetching: false });
-  printHits(activeHits, true);
+  printHits(activeHits, nearBreakHits, true);
   console.error(
     `Prefetch done: ${fromCache} from cache, ${fetched} from REST, ${failed} failed`
   );
 }
 
-function evaluateAfterPrefetch(sym, buffers, activeHits, lastPass, quoteVolMap) {
+function evaluateAfterPrefetch(
+  sym,
+  buffers,
+  activeHits,
+  nearBreakHits,
+  lastPass,
+  lastNearBreak,
+  quoteVolMap
+) {
   const m = volSpikeMetrics(buffers.get(sym) ?? []);
-  if (!m?.passes) return;
+  if (!m) return;
 
-  const prev = lastPass.get(sym) ?? false;
-  if (prev) return;
+  const prevPass = lastPass.get(sym) ?? false;
+  const prevNear = lastNearBreak.get(sym) ?? false;
+  if ((m.passes && prevPass) || (m.nearBreak && prevNear)) return;
 
-  lastPass.set(sym, true);
-  activeHits.set(sym, {
-    ...m,
-    quoteVol24h: Math.round(quoteVolMap.get(sym) ?? 0),
-  });
-  const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
-  dashboard?.pushEvent("NEW", sym, detail);
-  console.log(`NEW SPIKE\t${sym}\t${detail}`);
+  applySymbolSignal(
+    sym,
+    m,
+    quoteVolMap.get(sym) ?? 0,
+    activeHits,
+    nearBreakHits,
+    lastPass,
+    lastNearBreak
+  );
 }
 
 function applyCloudDefaults(flags) {
@@ -553,7 +671,9 @@ async function main() {
   let quoteVolMap = new Map();
   const buffers = new Map();
   const activeHits = new Map();
+  const nearBreakHits = new Map();
   const lastPass = new Map();
+  const lastNearBreak = new Map();
 
   let symbols = [];
   let reevaluateAll = () => {};
@@ -568,7 +688,7 @@ async function main() {
     const atMs = parseAtTime(atRaw);
     const bars = barsAtTime(buf, atMs);
     if (!bars.length) {
-      throw new Error(`No candle data at or before ${new Date(atMs).toISOString()}`);
+      throw new Error(`No candle data at or before ${formatIsoUtcPlus3(atMs)}`);
     }
     return { bars, atMs, signalBarAt: bars[bars.length - 1].closeTime };
   }
@@ -577,8 +697,11 @@ async function main() {
     getPairs(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
       const filter = searchParams.get("filter") || "all";
+      const criterion = searchParams.get("criterion") || "";
+      const criterionPass = searchParams.get("criterionPass") || "any";
       let atMs = null;
       let sampleBarAt = null;
+      const criteriaCatalog = new Map();
 
       let pairs = symbols.map((sym) => {
         const buf = buffers.get(sym) ?? [];
@@ -598,13 +721,17 @@ async function main() {
 
         const analysis = analyzeVolSpike(evalBars, cfg);
         const m = analysis.metrics;
+        const checks = serializeChecks(analysis.checks);
+        mergeCriteriaCatalog(criteriaCatalog, checks);
         return {
           symbol: sym,
           passes: analysis.passes,
+          nearBreak: Boolean(m?.nearBreak),
           bars: evalBars.length,
           signalBarAt:
-            signalBarAt != null ? new Date(signalBarAt).toISOString() : null,
+            signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
           failReasons: failedCheckLabels(analysis.checks),
+          checks,
           close: m?.close ?? null,
           corridorHigh: m?.corridorHigh ?? null,
           rangeRatio: m?.rangeRatio ?? null,
@@ -615,6 +742,15 @@ async function main() {
       if (q) pairs = pairs.filter((p) => p.symbol.includes(q));
       if (filter === "pass") pairs = pairs.filter((p) => p.passes);
       if (filter === "fail") pairs = pairs.filter((p) => !p.passes);
+      if (criterion) {
+        pairs = pairs.filter((p) => {
+          const ch = p.checks?.find((c) => c.id === criterion);
+          if (!ch) return false;
+          if (criterionPass === "pass") return ch.pass;
+          if (criterionPass === "fail") return !ch.pass;
+          return true;
+        });
+      }
 
       pairs.sort((a, b) => {
         if (a.passes !== b.passes) return a.passes ? -1 : 1;
@@ -622,13 +758,16 @@ async function main() {
       });
 
       return {
-        updatedAt: new Date().toISOString(),
+        updatedAt: formatIsoUtcPlus3(Date.now()),
         mode: atMs != null ? "historical" : "live",
-        evaluateAt: atMs != null ? new Date(atMs).toISOString() : null,
+        evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
         evaluateBarAt:
-          sampleBarAt != null ? new Date(sampleBarAt).toISOString() : null,
+          sampleBarAt != null ? formatIsoUtcPlus3(sampleBarAt) : null,
         ...pickLiveConfig(cfg),
         pairCount: pairs.length,
+        criteria: [...criteriaCatalog.values()].sort((a, b) =>
+          a.label.localeCompare(b.label)
+        ),
         pairs,
       };
     },
@@ -642,9 +781,9 @@ async function main() {
       const { bars, atMs, signalBarAt } = barsForEvaluation(buf, searchParams);
       const analysis = analyzeVolSpike(bars, cfg);
       return getChartPayload(sym, bars, cfg, analysis, {
-        evaluateAt: atMs != null ? new Date(atMs).toISOString() : null,
+        evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
         evaluateBarAt:
-          signalBarAt != null ? new Date(signalBarAt).toISOString() : null,
+          signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
       });
     },
   };
@@ -657,7 +796,7 @@ async function main() {
       port: kv.has("port") ? Number(kv.get("port")) : undefined,
       host: kv.get("host"),
     });
-    startDashboard(() => dashboard.buildState(activeHits), {
+    startDashboard(() => dashboard.buildState(activeHits, nearBreakHits), {
       port,
       host,
       getPairs: (searchParams) => scannerApi.getPairs(searchParams),
@@ -681,10 +820,10 @@ async function main() {
             .join(", ")} | bars needed: ${cfg.limit}`
         );
         reevaluateAll();
-        return dashboard.buildState(activeHits);
+        return dashboard.buildState(activeHits, nearBreakHits);
       },
     });
-    dashboard.publish(activeHits, true);
+    dashboard.publish(activeHits, nearBreakHits, true);
   }
 
   symbols = await resolveSymbols(flags, kv);
@@ -698,7 +837,15 @@ async function main() {
   dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
 
   reevaluateAll = () =>
-    reevaluateAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap);
+    reevaluateAllSymbols(
+      symbols,
+      buffers,
+      activeHits,
+      nearBreakHits,
+      lastPass,
+      lastNearBreak,
+      quoteVolMap
+    );
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
@@ -707,10 +854,26 @@ async function main() {
   );
 
   console.error(`WebSocket live on fstream (${cfg.interval})…`);
-  const sockets = createWsShards(symbols, buffers, activeHits, lastPass, quoteVolMap);
+  const sockets = createWsShards(
+    symbols,
+    buffers,
+    activeHits,
+    nearBreakHits,
+    lastPass,
+    lastNearBreak,
+    quoteVolMap
+  );
 
   if (wantPrefetch) {
-    await prefetchAllSymbols(symbols, buffers, activeHits, lastPass, quoteVolMap);
+    await prefetchAllSymbols(
+      symbols,
+      buffers,
+      activeHits,
+      nearBreakHits,
+      lastPass,
+      lastNearBreak,
+      quoteVolMap
+    );
   } else {
     console.error("Skipping prefetch (--no-prefetch). History will build from WebSocket only.");
   }
