@@ -663,9 +663,12 @@ async function main() {
   const { flags, kv } = parseArgs(process.argv);
   applyCloudDefaults(flags);
 
-  telegram = createTelegramNotifier(resolveTelegramConfig(flags, kv));
+  const tgConfig = resolveTelegramConfig(flags, kv);
+  telegram = createTelegramNotifier(tgConfig);
   if (telegram.enabled) {
     console.error(`Telegram alerts on → chat ${telegram.chatIdMasked}`);
+  } else if (tgConfig.misconfigured) {
+    console.error("Telegram misconfigured — fix TELEGRAM_CHAT_ID (see npm run telegram:chats)");
   } else if (!flags.has("no-telegram")) {
     console.error(
       "Telegram off (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in .env)"
@@ -790,6 +793,7 @@ async function main() {
           a.label.localeCompare(b.label)
         ),
         pairs,
+        telegramEnabled: Boolean(telegram?.enabled),
       };
     },
     getChartData(symbol, searchParams) {
@@ -807,6 +811,26 @@ async function main() {
           signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
       });
     },
+    async postTelegramSignal(symbol, searchParams) {
+      if (!telegram?.enabled) {
+        throw new Error(
+          "Telegram not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+        );
+      }
+      const sym = String(symbol).toUpperCase();
+      if (!symbols.includes(sym)) {
+        throw new Error(`Unknown symbol: ${sym}`);
+      }
+      const buf = buffers.get(sym) ?? [];
+      if (!buf.length) throw new Error(`No bar data for ${sym}`);
+      const { bars } = barsForEvaluation(buf, searchParams);
+      const m = volSpikeMetrics(bars);
+      if (!m) {
+        throw new Error(`Insufficient history to build signal message for ${sym}`);
+      }
+      await telegram.sendNewSignal(sym, m, cfg);
+      return { ok: true, symbol: sym };
+    },
   };
 
   dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
@@ -823,6 +847,8 @@ async function main() {
       getPairs: (searchParams) => scannerApi.getPairs(searchParams),
       getChartData: (symbol, searchParams) =>
         scannerApi.getChartData(symbol, searchParams),
+      postTelegramSignal: (symbol, searchParams) =>
+        scannerApi.postTelegramSignal(symbol, searchParams),
       onConfigUpdate: async (patch) => {
         const updates = validateLiveConfigPatch(patch);
         Object.assign(cfg, updates);

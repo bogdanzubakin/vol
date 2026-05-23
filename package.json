@@ -8,7 +8,8 @@
     "start:public": "node scripts/serve-public.js",
     "start:scanner": "node index.js --all",
     "visualize": "node scripts/visualize-cache.js",
-    "visualize:signals": "node scripts/visualize-cache.js --signals-only"
+    "visualize:signals": "node scripts/visualize-cache.js --signals-only",
+    "telegram:chats": "node scripts/telegram-chats.js"
   },
   "engines": {
     "node": ">=18"
