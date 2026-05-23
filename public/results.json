@@ -1,7 +1,7 @@
 {
-  "updatedAt": "2026-05-23T15:47:35+03:00",
-  "symbolCount": 527,
-  "prefetching": true,
+  "updatedAt": "2026-05-23T16:07:38+03:00",
+  "symbolCount": 0,
+  "prefetching": false,
   "configWritable": true,
   "interval": "1m",
   "corridorDays": 2,
@@ -9,7 +9,7 @@
   "signalCandles": 3,
   "bullishLookbackCandles": 10,
   "minBullishCandles": 3,
-  "maxCorridorWidthPct": 20,
+  "maxCorridorWidthPct": 15,
   "minRangeMultiplier": 1.8,
   "minCorridorRangePct": 0.02,
   "minBreakVolumeMultiplier": 2,
@@ -18,18 +18,5 @@
   "nearBreakCount": 0,
   "hits": [],
   "nearBreakHits": [],
-  "events": [
-    {
-      "at": "2026-05-23T15:47:35+03:00",
-      "type": "CONFIG",
-      "symbol": "scanner",
-      "detail": "corridorDays=2 corridorExcludeMinutes=15 signalCandles=3 bullishLookbackCandles=10 minBullishCandles=3 maxCorridorWidthPct=20 minRangeMultiplier=1.8 minCorridorRangePct=0.02 minBreakVolumeMultiplier=2 breakVolumeNearBars=3"
-    },
-    {
-      "at": "2026-05-23T15:47:31+03:00",
-      "type": "CONFIG",
-      "symbol": "scanner",
-      "detail": "corridorDays=2 corridorExcludeMinutes=15 signalCandles=3 bullishLookbackCandles=10 minBullishCandles=3 maxCorridorWidthPct=40 minRangeMultiplier=1.8 minCorridorRangePct=0.02 minBreakVolumeMultiplier=2 breakVolumeNearBars=3"
-    }
-  ]
+  "events": []
 }

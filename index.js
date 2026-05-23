@@ -5,6 +5,9 @@
  * node index.js --all --no-prefetch
  * node index.js --symbols VICUSDT --prefetch
  * Dashboard: http://127.0.0.1:3877/  (--no-http to disable)
+ *
+ * Telegram (optional): TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in `.env`
+ *   --no-telegram  disable   --telegram-near  also alert NEAR setups
  */
 
 const fs = require("fs");
@@ -29,6 +32,10 @@ const {
   createDashboardPublisher,
   resolveListenOptions,
 } = require("./lib/dashboard-server");
+const {
+  resolveTelegramConfig,
+  createTelegramNotifier,
+} = require("./lib/telegram-notify");
 
 const REST_BASE = "https://fapi.binance.com";
 const WS_STREAM_BASE = "wss://fstream.binance.com/stream";
@@ -71,6 +78,7 @@ const restLimiter = { chain: Promise.resolve() };
 let lastHitsPrintAt = 0;
 let prefetching = false;
 let dashboard = null;
+let telegram = null;
 
 function volSpikeMetrics(ohlc) {
   return computeVolSpikeMetrics(ohlc, cfg);
@@ -363,6 +371,7 @@ function applySymbolSignal(
       const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
       dashboard?.pushEvent("NEW", sym, detail);
       console.log(`NEW SPIKE\t${sym}\t${detail}`);
+      telegram?.onNewSignal(sym, m, cfg);
     }
     if (prevNear) {
       dashboard?.pushEvent("END_NEAR", sym, "broke out");
@@ -379,6 +388,7 @@ function applySymbolSignal(
       const detail = `${m.breakGapPct}% below ${m.corridorHigh} range×${m.rangeRatio}`;
       dashboard?.pushEvent("NEAR", sym, detail);
       console.log(`NEAR BREAK\t${sym}\t${detail}`);
+      telegram?.onNearSignal(sym, m, cfg);
     }
     if (prevPass) {
       dashboard?.pushEvent("END", sym);
@@ -652,6 +662,15 @@ function applyCloudDefaults(flags) {
 async function main() {
   const { flags, kv } = parseArgs(process.argv);
   applyCloudDefaults(flags);
+
+  telegram = createTelegramNotifier(resolveTelegramConfig(flags, kv));
+  if (telegram.enabled) {
+    console.error(`Telegram alerts on → chat ${telegram.chatIdMasked}`);
+  } else if (!flags.has("no-telegram")) {
+    console.error(
+      "Telegram off (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in .env)"
+    );
+  }
 
   const intervalArg = kv.get("interval");
   if (intervalArg) {
