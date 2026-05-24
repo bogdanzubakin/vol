@@ -75,13 +75,18 @@
     th { color: var(--muted); font-weight: 500; }
     tr:hover td { background: rgba(56, 189, 248, 0.06); }
     .sym { font-weight: 600; color: var(--blue); }
+    a.sym-link {
+      font-weight: 600;
+      color: var(--blue);
+      text-decoration: none;
+    }
+    a.sym-link:hover { text-decoration: underline; }
     .sym-cell {
       display: flex;
       align-items: center;
       gap: 6px;
       flex-wrap: wrap;
     }
-    .sym-cell .sym-name { font-weight: 600; color: var(--blue); }
     .telegram-btn {
       padding: 2px 7px;
       font-size: 0.72rem;
@@ -406,6 +411,7 @@
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
+    <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
   </nav>
 
   <div id="panel-scanner" class="tab-panel active" role="tabpanel">
@@ -562,6 +568,58 @@
     </section>
   </div>
 
+  <div id="panel-movers" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Fast movers <span id="moversCount"></span></h2>
+      <p class="sub" style="margin: -8px 0 12px; font-size: 0.8rem">
+        Avg candle size (high−low, not open−close) as % of price; spikes ≥ exclude × avg are dropped from the mean.
+      </p>
+      <form class="settings-form movers-settings" id="moversConfigForm">
+        <div class="field">
+          <label for="fastMoveLookbackCandles">Lookback candles</label>
+          <input type="number" id="fastMoveLookbackCandles" name="fastMoveLookbackCandles" step="1" min="2" max="120" value="10" required />
+          <div class="hint">Bars averaged for move %</div>
+        </div>
+        <div class="field">
+          <label for="minAvgMovePct">Min avg move %</label>
+          <input type="number" id="minAvgMovePct" name="minAvgMovePct" step="0.01" min="0.01" max="20" value="0.5" required />
+          <div class="hint">Min avg (H−L) % of price after exclusions</div>
+        </div>
+        <div class="field">
+          <label for="fastMoveExcludeMult">Exclude spike ×</label>
+          <input type="number" id="fastMoveExcludeMult" name="fastMoveExcludeMult" step="0.1" min="1.5" max="20" value="3" required />
+          <div class="hint">Drop candles with H−L % &gt; avg × this</div>
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm" id="moversApply">Apply</button>
+          <button type="button" class="btn secondary sm" id="moversRefresh">Refresh</button>
+          <span class="config-msg" id="moversMsg"></span>
+        </div>
+      </form>
+      <div class="pairs-toolbar" style="margin-top: 12px">
+        <input type="search" id="moversSearch" placeholder="Search symbol…" />
+      </div>
+      <div class="pairs-table-wrap table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Close</th>
+              <th>Avg move %</th>
+              <th>Used / excl.</th>
+              <th>Bars</th>
+              <th>Last bar</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="moversBody">
+            <tr><td colspan="7" class="empty">Open this tab to load fast movers</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <div id="chartModal" class="modal" aria-hidden="true">
     <div class="modal-box">
       <div class="modal-head">
@@ -608,6 +666,7 @@
     let lastServerConfig = null;
     let activeTab = "scanner";
     let pairsPollTimer = null;
+    let moversPollTimer = null;
     let lastInterval = null;
     let diagChartInstance = null;
 
@@ -670,6 +729,11 @@
         loadPairs();
         if (!pairsPollTimer) pairsPollTimer = setInterval(loadPairs, 5000);
       }
+      if (name === "movers") {
+        loadMoversConfigForm();
+        loadFastMovers();
+        if (!moversPollTimer) moversPollTimer = setInterval(loadFastMovers, 5000);
+      }
     }
 
     document.querySelectorAll(".tab").forEach((t) => {
@@ -682,6 +746,17 @@
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+    }
+
+    const BINANCE_FUTURES_BASE = "https://www.binance.bh/en/futures";
+
+    function binanceFuturesUrl(symbol) {
+      return `${BINANCE_FUTURES_BASE}/${encodeURIComponent(String(symbol).toUpperCase())}`;
+    }
+
+    function symLink(symbol) {
+      const s = escapeHtml(symbol);
+      return `<a class="sym-link" href="${binanceFuturesUrl(symbol)}" target="_blank" rel="noopener noreferrer">${s}</a>`;
     }
 
     function formatChecksList(checks) {
@@ -782,7 +857,7 @@
             ? `<button type="button" class="btn secondary sm telegram-btn" data-symbol="${escapeHtml(p.symbol)}" title="Send signal to Telegram">TG</button>`
             : "";
           return `<tr>
-            <td class="sym-cell"><span class="sym-name">${escapeHtml(p.symbol)}</span>${tgBtn}</td>
+            <td class="sym-cell">${symLink(p.symbol)}${tgBtn}</td>
             <td>${pill}</td>
             <td>${fmt(p.close, 6)}</td>
             <td>${fmt(p.rangeRatio, 2)}</td>
@@ -909,6 +984,110 @@
     document.getElementById("chartModal").addEventListener("click", (e) => {
       if (e.target.id === "chartModal") closeChartModal();
     });
+    const MOVERS_CONFIG_KEYS = [
+      "fastMoveLookbackCandles",
+      "minAvgMovePct",
+      "fastMoveExcludeMult",
+    ];
+
+    function loadMoversConfigForm() {
+      for (const k of MOVERS_CONFIG_KEYS) {
+        const v = localStorage.getItem(`movers_${k}`);
+        const el = document.getElementById(k);
+        if (el && v != null && v !== "") el.value = v;
+      }
+    }
+
+    function moversConfigParams() {
+      const params = new URLSearchParams();
+      for (const k of MOVERS_CONFIG_KEYS) {
+        const el = document.getElementById(k);
+        const param =
+          k === "fastMoveLookbackCandles"
+            ? "lookback"
+            : k === "fastMoveExcludeMult"
+              ? "excludeMult"
+              : k;
+        if (el) params.set(param, el.value);
+      }
+      return params;
+    }
+
+    function saveMoversConfigForm() {
+      for (const k of MOVERS_CONFIG_KEYS) {
+        const el = document.getElementById(k);
+        if (el) localStorage.setItem(`movers_${k}`, el.value);
+      }
+    }
+
+    function setMoversMsg(text, ok) {
+      const el = document.getElementById("moversMsg");
+      el.textContent = text;
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    async function loadFastMovers() {
+      const q = document.getElementById("moversSearch").value;
+      const params = moversConfigParams();
+      if (q.trim()) params.set("q", q.trim());
+
+      try {
+        const res = await fetch(`/api/fast-movers?${params}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderFastMovers(data);
+        setMoversMsg(
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg`,
+          true
+        );
+      } catch (e) {
+        setMoversMsg(e.message, false);
+        document.getElementById("moversBody").innerHTML =
+          `<tr><td colspan="7" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
+    function renderFastMovers(data) {
+      document.getElementById("moversCount").textContent =
+        data.pairCount != null ? `(${data.pairCount})` : "";
+
+      const tbody = document.getElementById("moversBody");
+      if (!data.movers?.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="7" class="empty">No fast movers match</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.movers
+        .map(
+          (p) => `<tr>
+            <td class="sym-cell">${symLink(p.symbol)}</td>
+            <td>${fmt(p.close, 6)}</td>
+            <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
+            <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
+            <td>${p.bars ?? "—"}</td>
+            <td class="time">${fmtBarTime(p.signalBarAt)}</td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
+          </tr>`
+        )
+        .join("");
+
+      tbody.querySelectorAll(".chart-btn").forEach((btn) => {
+        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+      });
+    }
+
+    document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveMoversConfigForm();
+      loadFastMovers();
+    });
+    document.getElementById("moversRefresh").addEventListener("click", loadFastMovers);
+    document.getElementById("moversSearch").addEventListener("input", () => {
+      clearTimeout(window._moversSearchTimer);
+      window._moversSearchTimer = setTimeout(loadFastMovers, 300);
+    });
+
     document.getElementById("pairsRefresh").addEventListener("click", loadPairs);
     document.getElementById("pairsSearch").addEventListener("input", () => {
       clearTimeout(window._pairsSearchTimer);
@@ -1062,7 +1241,7 @@
               ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
               : `<span class="pass">Y</span>`;
             return `<tr class="${rowCls}">
-              <td class="sym">${tag}${h.symbol}
+              <td class="sym">${tag}${symLink(h.symbol)}
                 <button type="button" class="btn sm chart-btn" data-symbol="${h.symbol}" style="margin-left:6px">Chart</button>
               </td>
               <td>${fmt(h.close, 6)}</td>

@@ -18,6 +18,7 @@ const {
   volSpikeMetrics: computeVolSpikeMetrics,
   validateLiveConfigPatch,
   analyzeVolSpike,
+  fastMoverMetrics,
   failedCheckLabels,
   serializeChecks,
   mergeCriteriaCatalog,
@@ -64,6 +65,9 @@ const cfg = {
   minCorridorRangePct: 0.02,
   minBreakVolumeMultiplier: 2,
   breakVolumeNearBars: 3,
+  fastMoveLookbackCandles: 10,
+  minAvgMovePct: 0.5,
+  fastMoveExcludeMult: 3,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -817,6 +821,77 @@ async function main() {
         telegramEnabled: Boolean(telegram?.enabled),
       };
     },
+    getFastMovers(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      const lookback = Math.max(
+        2,
+        Math.min(
+          120,
+          Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
+        )
+      );
+      const minAvgMovePct = Math.max(
+        0.01,
+        Math.min(
+          20,
+          Number(searchParams.get("minAvgMovePct")) || cfg.minAvgMovePct
+        )
+      );
+      const excludeMult = Math.max(
+        1.5,
+        Math.min(
+          20,
+          Number(searchParams.get("excludeMult")) || cfg.fastMoveExcludeMult
+        )
+      );
+      const moverOpts = {
+        fastMoveLookbackCandles: lookback,
+        minAvgMovePct,
+        fastMoveExcludeMult: excludeMult,
+      };
+
+      let movers = symbols
+        .map((sym) => {
+          const buf = historyBuffers.get(sym) ?? [];
+          let evalBars;
+          let signalBarAt = null;
+          try {
+            const ev = barsForEvaluation(buf, searchParams);
+            evalBars = ev.bars;
+            signalBarAt = ev.signalBarAt;
+          } catch {
+            return null;
+          }
+
+          const fm = fastMoverMetrics(evalBars, moverOpts);
+          if (!fm?.fastMover) return null;
+
+          return {
+            symbol: sym,
+            close: fm.close,
+            avgMovePct: fm.avgMovePct,
+            candlesUsed: fm.candlesUsed,
+            candlesExcluded: fm.candlesExcluded,
+            bars: buf.length,
+            signalBarAt:
+              signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
+          };
+        })
+        .filter(Boolean);
+
+      if (q) movers = movers.filter((p) => p.symbol.includes(q));
+      movers.sort((a, b) => b.avgMovePct - a.avgMovePct);
+
+      return {
+        updatedAt: formatIsoUtcPlus3(Date.now()),
+        lookback,
+        minAvgMovePct,
+        excludeMult,
+        pairCount: movers.length,
+        movers,
+        telegramEnabled: Boolean(telegram?.enabled),
+      };
+    },
     getChartData(symbol, searchParams) {
       const sym = String(symbol).toUpperCase();
       if (!symbols.includes(sym)) {
@@ -869,6 +944,7 @@ async function main() {
       port,
       host,
       getPairs: (searchParams) => scannerApi.getPairs(searchParams),
+      getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
       getChartData: (symbol, searchParams) =>
         scannerApi.getChartData(symbol, searchParams),
       postTelegramSignal: (symbol, searchParams) =>
