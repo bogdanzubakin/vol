@@ -1091,7 +1091,7 @@
         renderFastMovers(data);
         const ws = data.ws ?? {};
         const wsText = ws.lastUpdateAt
-          ? ` · stream ${fmtTimeShort(ws.lastUpdateAt)} (${ws.updates ?? 0} updates)`
+          ? ` · data ${fmtTimeShort(ws.lastUpdateAt)} (${ws.updates ?? 0} WS, ${ws.restRepairs ?? 0} REST)`
           : ` · stream waiting (${ws.connectedShards ?? 0}/${ws.shardCount ?? 0} shards)`;
         setMoversMsg(
           `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg${wsText}`,
@@ -1181,9 +1181,11 @@
         <div><span>Messages</span> <strong>${s.messages ?? 0}</strong></div>
         <div><span>Klines</span> <strong>${s.klineMessages ?? 0}</strong></div>
         <div><span>Updates</span> <strong>${s.updates ?? 0}</strong></div>
+        <div><span>REST repairs</span> <strong>${s.restRepairs ?? 0}</strong></div>
         <div><span>Last msg</span> <strong>${fmtTimeShort(s.lastMessageAt)} ${TZ_LABEL}</strong></div>
         <div><span>Last kline</span> <strong>${fmtTimeShort(s.lastKlineAt)} ${TZ_LABEL}</strong></div>
         <div><span>Last update</span> <strong>${fmtTimeShort(s.lastUpdateAt)} ${TZ_LABEL}</strong></div>
+        <div><span>Last REST repair</span> <strong>${fmtTimeShort(s.lastRestRepairAt)} ${TZ_LABEL}</strong></div>
         <div><span>Last error</span> <strong class="${s.lastError ? "bad" : ""}">${escapeHtml(s.lastError || "—")}</strong></div>
       `;
 

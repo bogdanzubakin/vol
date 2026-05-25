@@ -79,7 +79,10 @@ const cfg = {
   klineCacheFlushMs: 60_000,
   klineCacheWriteDebounceMs: 3000,
   prefetchPauseMs: 200,
-  streamsPerSocket: 180,
+  streamsPerSocket: 60,
+  staleSymbolRefreshMs: 30_000,
+  staleSymbolRefreshBatchSize: 30,
+  staleSymbolRefreshAfterBars: 3,
   maxHitsToPrint: 40,
   quoteVolRefreshMs: 15 * 60 * 1000,
   minQuoteVolume24h: 0,
@@ -338,6 +341,8 @@ const wsStats = {
   messages: 0,
   klineMessages: 0,
   updates: 0,
+  restRepairs: 0,
+  lastRestRepairAt: null,
   lastMessageAt: null,
   lastKlineAt: null,
   lastUpdateAt: null,
@@ -362,6 +367,7 @@ function wsDiagnostics() {
       lastMessageAt: formatMaybeIso(wsStats.lastMessageAt),
       lastKlineAt: formatMaybeIso(wsStats.lastKlineAt),
       lastUpdateAt: formatMaybeIso(wsStats.lastUpdateAt),
+      lastRestRepairAt: formatMaybeIso(wsStats.lastRestRepairAt),
     },
     shards: wsShardStats.map((s) => ({
       ...s,
@@ -387,6 +393,39 @@ function upsertHistoryCandle(historyBuffers, sym, candle) {
     klineCache.schedulePersist(sym, buf);
   }
   return result;
+}
+
+function applyRestRepairBars(historyBuffers, sym, bars) {
+  if (!bars?.length) return false;
+  const existing = historyBuffers.get(sym) ?? [];
+  const merged = klineCache.capBars(
+    mergeBarsByOpenTime(existing, bars),
+    memoryMaxBars()
+  );
+  const beforeLast = existing[existing.length - 1];
+  const afterLast = merged[merged.length - 1];
+  const changed =
+    !beforeLast ||
+    !afterLast ||
+    beforeLast.openTime !== afterLast.openTime ||
+    beforeLast.closeTime !== afterLast.closeTime ||
+    beforeLast.open !== afterLast.open ||
+    beforeLast.high !== afterLast.high ||
+    beforeLast.low !== afterLast.low ||
+    beforeLast.close !== afterLast.close ||
+    beforeLast.volume !== afterLast.volume ||
+    existing.length !== merged.length;
+
+  if (!changed) return false;
+
+  const now = Date.now();
+  historyBuffers.set(sym, merged);
+  liveUpdateAt.set(sym, now);
+  wsStats.restRepairs++;
+  wsStats.lastRestRepairAt = now;
+  wsStats.lastUpdateAt = now;
+  klineCache.schedulePersist(sym, merged);
+  return true;
 }
 
 function printHits(activeHits, nearBreakHits, force = false) {
@@ -681,6 +720,80 @@ function createWsShards(
   }
 
   return sockets;
+}
+
+function startStaleSymbolRefresh(
+  symbols,
+  historyBuffers,
+  activeHits,
+  nearBreakHits,
+  lastPass,
+  lastNearBreak,
+  quoteVolMap
+) {
+  let cursor = 0;
+  let running = false;
+
+  async function refreshTick() {
+    if (running || !symbols.length) return;
+    running = true;
+    try {
+      const now = Date.now();
+      const staleMs = cfg.barMs * cfg.staleSymbolRefreshAfterBars;
+      const batch = [];
+      let scanned = 0;
+
+      while (
+        scanned < symbols.length &&
+        batch.length < cfg.staleSymbolRefreshBatchSize
+      ) {
+        const sym = symbols[cursor % symbols.length];
+        cursor++;
+        scanned++;
+
+        const buf = historyBuffers.get(sym) ?? [];
+        const last = buf[buf.length - 1];
+        if (!last) continue;
+
+        const hasStreamUpdate = liveUpdateAt.has(sym);
+        const staleByBars = now - last.closeTime > staleMs;
+        if (!hasStreamUpdate || staleByBars) batch.push({ sym, last });
+      }
+
+      for (const { sym, last } of batch) {
+        try {
+          const hasStreamUpdate = liveUpdateAt.has(sym);
+          const bars = hasStreamUpdate
+            ? await fetchKlinesGap(sym, last.closeTime + 1, Date.now())
+            : await fetchKlines(
+                sym,
+                Math.max(cfg.fastMoveLookbackCandles ?? 10, 10)
+              );
+          if (applyRestRepairBars(historyBuffers, sym, bars)) {
+            const m = volSpikeMetrics(sym, historyBuffers);
+            // Keep signal state in sync for symbols repaired through REST fallback.
+            applySymbolSignal(
+              sym,
+              m,
+              quoteVolMap.get(sym) ?? 0,
+              activeHits,
+              nearBreakHits,
+              lastPass,
+              lastNearBreak
+            );
+          }
+        } catch (e) {
+          wsStats.lastError = `REST repair ${sym}: ${e.message}`;
+        }
+      }
+    } finally {
+      running = false;
+    }
+  }
+
+  const timer = setInterval(refreshTick, cfg.staleSymbolRefreshMs);
+  refreshTick();
+  return () => clearInterval(timer);
 }
 
 async function prefetchAllSymbols(
@@ -1148,6 +1261,15 @@ async function main() {
     lastNearBreak,
     quoteVolMap
   );
+  const stopStaleRefresh = startStaleSymbolRefresh(
+    symbols,
+    historyBuffers,
+    activeHits,
+    nearBreakHits,
+    lastPass,
+    lastNearBreak,
+    quoteVolMap
+  );
 
   if (wantPrefetch) {
     await prefetchAllSymbols(
@@ -1165,6 +1287,7 @@ async function main() {
 
   const shutdown = () => {
     console.error("Flushing kline cache…");
+    stopStaleRefresh();
     klineCache.flushAll(historyBuffers);
     klineCache.stop();
     sockets.forEach((s) => s.close());
