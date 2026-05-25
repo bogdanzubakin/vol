@@ -322,10 +322,10 @@ function closedCandleFromKline(k) {
 
 function upsertHistoryCandle(historyBuffers, sym, candle) {
   const buf = historyBuffers.get(sym) ?? [];
-  const appended = klineCache.upsertBar(buf, candle, cfg.cacheMaxBars);
+  const result = klineCache.upsertBar(buf, candle, cfg.cacheMaxBars);
   historyBuffers.set(sym, buf);
-  if (appended) klineCache.schedulePersist(sym, buf);
-  return appended;
+  if (result.updated) klineCache.schedulePersist(sym, buf);
+  return result;
 }
 
 function printHits(activeHits, nearBreakHits, force = false) {
@@ -536,9 +536,9 @@ function createWsShards(
         const sym = data.s;
         const candle = closedCandleFromKline(data.k);
         const isClosed = Boolean(data.k?.x);
-        const appended = upsertHistoryCandle(historyBuffers, sym, candle);
+        const change = upsertHistoryCandle(historyBuffers, sym, candle);
 
-        if (isClosed && appended) evaluate(sym);
+        if (isClosed && change.updated) evaluate(sym);
       });
 
       ws.on("close", async () => {

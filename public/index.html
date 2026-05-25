@@ -666,7 +666,7 @@
     let lastServerConfig = null;
     let activeTab = "scanner";
     let pairsPollTimer = null;
-    let moversPollTimer = null;
+    let fastMoversLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
 
@@ -732,7 +732,6 @@
       if (name === "movers") {
         loadMoversConfigForm();
         loadFastMovers();
-        if (!moversPollTimer) moversPollTimer = setInterval(loadFastMovers, 5000);
       }
     }
 
@@ -1027,6 +1026,8 @@
     }
 
     async function loadFastMovers() {
+      if (fastMoversLoading) return;
+      fastMoversLoading = true;
       const q = document.getElementById("moversSearch").value;
       const params = moversConfigParams();
       if (q.trim()) params.set("q", q.trim());
@@ -1044,6 +1045,8 @@
         setMoversMsg(e.message, false);
         document.getElementById("moversBody").innerHTML =
           `<tr><td colspan="7" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      } finally {
+        fastMoversLoading = false;
       }
     }
 
@@ -1195,6 +1198,7 @@
       syncConfigForm(state);
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
+      if (activeTab === "movers") loadFastMovers();
 
       const sub = document.getElementById("subtitle");
       sub.textContent =
