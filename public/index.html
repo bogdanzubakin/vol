@@ -73,6 +73,18 @@
       border-bottom: 1px solid var(--border);
     }
     th { color: var(--muted); font-weight: 500; }
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    th.sortable:hover { color: #e2e8f0; }
+    th.sortable .sort-mark {
+      display: inline-block;
+      min-width: 1em;
+      margin-left: 4px;
+      color: var(--blue);
+    }
     tr:hover td { background: rgba(56, 189, 248, 0.06); }
     .sym { font-weight: 600; color: var(--blue); }
     a.sym-link {
@@ -604,13 +616,13 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Close</th>
-              <th>Avg move %</th>
-              <th>Used / excl.</th>
-              <th>Bars</th>
-              <th>Last bar</th>
-              <th>Live update</th>
+              <th class="sortable" data-mover-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="close">Close <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="candlesUsed">Used / excl. <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="bars">Bars <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="signalBarAt">Last bar <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="liveUpdateAt">Live update <span class="sort-mark"></span></th>
               <th></th>
             </tr>
           </thead>
@@ -715,6 +727,8 @@
     let activeTab = "scanner";
     let pairsPollTimer = null;
     let fastMoversLoading = false;
+    let lastFastMovers = [];
+    let moversSort = { key: "avgMovePct", dir: "desc" };
     let wsDiagnosticsLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
@@ -1077,6 +1091,37 @@
       el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
     }
 
+    function moverSortValue(row, key) {
+      if (key === "symbol") return row.symbol ?? "";
+      if (key === "signalBarAt" || key === "liveUpdateAt") {
+        return parseDisplayIso(row[key]) ?? 0;
+      }
+      return Number(row[key] ?? 0);
+    }
+
+    function sortedFastMovers(rows) {
+      const { key, dir } = moversSort;
+      const sign = dir === "asc" ? 1 : -1;
+      return [...(rows ?? [])].sort((a, b) => {
+        const av = moverSortValue(a, key);
+        const bv = moverSortValue(b, key);
+        if (typeof av === "string" || typeof bv === "string") {
+          return String(av).localeCompare(String(bv)) * sign;
+        }
+        if (av !== bv) return (av - bv) * sign;
+        return String(a.symbol ?? "").localeCompare(String(b.symbol ?? ""));
+      });
+    }
+
+    function updateMoverSortHeaders() {
+      document.querySelectorAll("[data-mover-sort]").forEach((th) => {
+        const mark = th.querySelector(".sort-mark");
+        const active = th.dataset.moverSort === moversSort.key;
+        th.setAttribute("aria-sort", active ? (moversSort.dir === "asc" ? "ascending" : "descending") : "none");
+        if (mark) mark.textContent = active ? (moversSort.dir === "asc" ? "▲" : "▼") : "";
+      });
+    }
+
     async function loadFastMovers() {
       if (fastMoversLoading) return;
       fastMoversLoading = true;
@@ -1107,17 +1152,19 @@
     }
 
     function renderFastMovers(data) {
+      lastFastMovers = data.movers ?? [];
+      updateMoverSortHeaders();
       document.getElementById("moversCount").textContent =
         data.pairCount != null ? `(${data.pairCount})` : "";
 
       const tbody = document.getElementById("moversBody");
-      if (!data.movers?.length) {
+      if (!lastFastMovers.length) {
         tbody.innerHTML =
           '<tr><td colspan="8" class="empty">No fast movers match</td></tr>';
         return;
       }
 
-      tbody.innerHTML = data.movers
+      tbody.innerHTML = sortedFastMovers(lastFastMovers)
         .map(
           (p) => `<tr>
             <td class="sym-cell">${symLink(p.symbol)}</td>
@@ -1146,6 +1193,23 @@
     document.getElementById("moversSearch").addEventListener("input", () => {
       clearTimeout(window._moversSearchTimer);
       window._moversSearchTimer = setTimeout(loadFastMovers, 300);
+    });
+    document.querySelectorAll("[data-mover-sort]").forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.moverSort;
+        if (moversSort.key === key) {
+          moversSort = {
+            key,
+            dir: moversSort.dir === "asc" ? "desc" : "asc",
+          };
+        } else {
+          moversSort = {
+            key,
+            dir: key === "symbol" ? "asc" : "desc",
+          };
+        }
+        renderFastMovers({ pairCount: lastFastMovers.length, movers: lastFastMovers });
+      });
     });
 
     function setWsMsg(text, ok) {

@@ -87,6 +87,7 @@ const cfg = {
   quoteVolRefreshMs: 15 * 60 * 1000,
   minQuoteVolume24h: 0,
   printHitsMinIntervalMs: 2000,
+  signalNotifyCooldownMs: 60 * 60 * 1000,
 };
 
 applyBarConfig(cfg);
@@ -97,6 +98,7 @@ let prefetching = false;
 let dashboard = null;
 let telegram = null;
 let klineCache = null;
+const lastSignalNotifyAt = new Map();
 
 function evalBars(sym, historyBuffers) {
   return klineCache.evalWindow(historyBuffers.get(sym) ?? [], cfg.limit);
@@ -112,6 +114,14 @@ function memoryMaxBars() {
 
 function volSpikeMetrics(sym, historyBuffers) {
   return computeVolSpikeMetrics(evalBars(sym, historyBuffers), cfg);
+}
+
+function shouldNotifySignal(sym) {
+  const now = Date.now();
+  const last = lastSignalNotifyAt.get(sym) ?? 0;
+  if (now - last < cfg.signalNotifyCooldownMs) return false;
+  lastSignalNotifyAt.set(sym, now);
+  return true;
 }
 
 function parseArgs(argv) {
@@ -488,7 +498,11 @@ function applySymbolSignal(
       const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
       dashboard?.pushEvent("NEW", sym, detail);
       console.log(`NEW SPIKE\t${sym}\t${detail}`);
-      telegram?.onNewSignal(sym, m, cfg);
+      if (shouldNotifySignal(sym)) {
+        telegram?.onNewSignal(sym, m, cfg);
+      } else {
+        console.log(`SKIP NOTIFY\t${sym}\tsignal cooldown`);
+      }
     }
     if (prevNear) {
       dashboard?.pushEvent("END_NEAR", sym, "broke out");
