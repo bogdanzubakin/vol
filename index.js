@@ -43,7 +43,8 @@ const {
 } = require("./lib/kline-cache");
 
 const REST_BASE = "https://fapi.binance.com";
-const WS_STREAM_BASE = "wss://fstream.binance.com/stream";
+// DO NOT CHANGE BASE wss://stream.binance.com:443
+const WS_STREAM_BASE = "wss://stream.binance.com:443/stream";
 const KLINE_MAX = 1500;
 const CACHE_DIR = path.join(__dirname, ".cache");
 const EXCHANGE_INFO_CACHE = path.join(CACHE_DIR, "futures-exchangeInfo.json");
@@ -342,6 +343,37 @@ const wsStats = {
   lastUpdateAt: null,
   lastError: null,
 };
+const wsShardStats = [];
+
+function formatMaybeIso(ms) {
+  return ms != null ? formatIsoUtcPlus3(ms) : null;
+}
+
+function wsDiagnostics() {
+  const recentSymbols = [...liveUpdateAt.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 30)
+    .map(([symbol, at]) => ({ symbol, at: formatMaybeIso(at) }));
+
+  return {
+    updatedAt: formatIsoUtcPlus3(Date.now()),
+    summary: {
+      ...wsStats,
+      lastMessageAt: formatMaybeIso(wsStats.lastMessageAt),
+      lastKlineAt: formatMaybeIso(wsStats.lastKlineAt),
+      lastUpdateAt: formatMaybeIso(wsStats.lastUpdateAt),
+    },
+    shards: wsShardStats.map((s) => ({
+      ...s,
+      lastConnectAt: formatMaybeIso(s.lastConnectAt),
+      lastCloseAt: formatMaybeIso(s.lastCloseAt),
+      lastMessageAt: formatMaybeIso(s.lastMessageAt),
+      lastKlineAt: formatMaybeIso(s.lastKlineAt),
+      lastUpdateAt: formatMaybeIso(s.lastUpdateAt),
+    })),
+    recentSymbols,
+  };
+}
 
 function upsertHistoryCandle(historyBuffers, sym, candle) {
   const buf = historyBuffers.get(sym) ?? [];
@@ -505,6 +537,8 @@ function createWsShards(
     cfg.streamsPerSocket
   );
   wsStats.shardCount = batches.length;
+  wsStats.connectedShards = 0;
+  wsShardStats.length = 0;
   const sockets = [];
 
   const evaluate = (sym) => {
@@ -540,6 +574,24 @@ function createWsShards(
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
     const url = `${WS_STREAM_BASE}?streams=${batches[batchIdx].join("/")}`;
+    const shard = {
+      index: batchIdx,
+      streamCount: batches[batchIdx].length,
+      connected: false,
+      connects: 0,
+      closes: 0,
+      messages: 0,
+      klineMessages: 0,
+      updates: 0,
+      lastConnectAt: null,
+      lastCloseAt: null,
+      lastMessageAt: null,
+      lastKlineAt: null,
+      lastUpdateAt: null,
+      lastError: null,
+      sampleStreams: batches[batchIdx].slice(0, 8),
+    };
+    wsShardStats[batchIdx] = shard;
     let ws;
     let closed = false;
     let reconnectMs = 1000;
@@ -550,13 +602,19 @@ function createWsShards(
 
       ws.on("open", () => {
         reconnectMs = 1000;
-        wsStats.connectedShards++;
+        if (!shard.connected) wsStats.connectedShards++;
+        shard.connected = true;
+        shard.connects++;
+        shard.lastConnectAt = Date.now();
         console.error(`WS shard ${batchIdx} connected (${batches[batchIdx].length} streams)`);
       });
 
       ws.on("message", (raw) => {
+        const now = Date.now();
         wsStats.messages++;
-        wsStats.lastMessageAt = Date.now();
+        wsStats.lastMessageAt = now;
+        shard.messages++;
+        shard.lastMessageAt = now;
         let msg;
         try {
           msg = JSON.parse(raw.toString());
@@ -565,21 +623,33 @@ function createWsShards(
         }
         const data = msg.data ?? msg;
         if (data?.e !== "kline") return;
+        const klineAt = Date.now();
         wsStats.klineMessages++;
-        wsStats.lastKlineAt = Date.now();
+        wsStats.lastKlineAt = klineAt;
+        shard.klineMessages++;
+        shard.lastKlineAt = klineAt;
 
         const sym = (data.s || data.k?.s || "").toUpperCase();
         if (!sym) return;
         const candle = closedCandleFromKline(data.k);
         const isClosed = Boolean(data.k?.x);
         const change = upsertHistoryCandle(historyBuffers, sym, candle);
+        if (change.updated) {
+          shard.updates++;
+          shard.lastUpdateAt = wsStats.lastUpdateAt;
+        }
 
         if (isClosed && change.updated) evaluate(sym);
       });
 
       ws.on("close", async () => {
         if (closed) return;
-        wsStats.connectedShards = Math.max(0, wsStats.connectedShards - 1);
+        if (shard.connected) {
+          wsStats.connectedShards = Math.max(0, wsStats.connectedShards - 1);
+        }
+        shard.connected = false;
+        shard.closes++;
+        shard.lastCloseAt = Date.now();
         await sleep(reconnectMs);
         reconnectMs = Math.min(reconnectMs * 2, 60_000);
         connect();
@@ -587,6 +657,7 @@ function createWsShards(
 
       ws.on("error", (err) => {
         wsStats.lastError = err?.message || String(err);
+        shard.lastError = wsStats.lastError;
         console.error(`WS shard ${batchIdx} error: ${wsStats.lastError}`);
         try {
           ws.close();
@@ -1009,6 +1080,7 @@ async function main() {
       host,
       getPairs: (searchParams) => scannerApi.getPairs(searchParams),
       getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
+      getWsDiagnostics: () => wsDiagnostics(),
       getChartData: (symbol, searchParams) =>
         scannerApi.getChartData(symbol, searchParams),
       postTelegramSignal: (symbol, searchParams) =>

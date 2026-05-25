@@ -412,6 +412,7 @@
     <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
+    <button type="button" class="tab" data-tab="websockets" role="tab">WebSockets</button>
   </nav>
 
   <div id="panel-scanner" class="tab-panel active" role="tabpanel">
@@ -621,6 +622,52 @@
     </section>
   </div>
 
+  <div id="panel-websockets" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>WebSockets <span id="wsCount"></span></h2>
+      <p class="sub" style="margin: -8px 0 12px; font-size: 0.8rem">
+        Live Binance stream health by shard: connection state, message volume, kline updates, and last errors.
+      </p>
+      <div class="pairs-toolbar">
+        <button type="button" class="btn secondary sm" id="wsRefresh">Refresh</button>
+        <span class="config-msg" id="wsMsg"></span>
+      </div>
+      <div class="status" id="wsSummary"></div>
+      <div class="grid" style="margin-top: 14px">
+        <section>
+          <h2>Shard Details</h2>
+          <div class="pairs-table-wrap table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Shard</th>
+                  <th>State</th>
+                  <th>Streams</th>
+                  <th>Connects</th>
+                  <th>Closes</th>
+                  <th>Messages</th>
+                  <th>Klines</th>
+                  <th>Updates</th>
+                  <th>Last msg</th>
+                  <th>Last kline</th>
+                  <th>Last update</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody id="wsBody">
+                <tr><td colspan="12" class="empty">Open this tab to load WebSocket diagnostics</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section>
+          <h2>Recent Symbol Updates</h2>
+          <ul class="events" id="wsRecentSymbols"></ul>
+        </section>
+      </div>
+    </section>
+  </div>
+
   <div id="chartModal" class="modal" aria-hidden="true">
     <div class="modal-box">
       <div class="modal-head">
@@ -668,6 +715,7 @@
     let activeTab = "scanner";
     let pairsPollTimer = null;
     let fastMoversLoading = false;
+    let wsDiagnosticsLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
 
@@ -733,6 +781,9 @@
       if (name === "movers") {
         loadMoversConfigForm();
         loadFastMovers();
+      }
+      if (name === "websockets") {
+        loadWsDiagnostics();
       }
     }
 
@@ -1097,6 +1148,89 @@
       window._moversSearchTimer = setTimeout(loadFastMovers, 300);
     });
 
+    function setWsMsg(text, ok) {
+      const el = document.getElementById("wsMsg");
+      el.textContent = text;
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    async function loadWsDiagnostics() {
+      if (wsDiagnosticsLoading) return;
+      wsDiagnosticsLoading = true;
+      try {
+        const res = await fetch("/api/ws-diagnostics", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderWsDiagnostics(data);
+        setWsMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
+      } catch (e) {
+        setWsMsg(e.message, false);
+        document.getElementById("wsBody").innerHTML =
+          `<tr><td colspan="12" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      } finally {
+        wsDiagnosticsLoading = false;
+      }
+    }
+
+    function renderWsDiagnostics(data) {
+      const s = data.summary ?? {};
+      document.getElementById("wsCount").textContent =
+        s.shardCount != null ? `(${s.connectedShards ?? 0}/${s.shardCount} connected)` : "";
+      document.getElementById("wsSummary").innerHTML = `
+        <div><span>Connected</span> <strong class="${s.connectedShards ? "pass" : "bad"}">${s.connectedShards ?? 0}/${s.shardCount ?? 0}</strong></div>
+        <div><span>Messages</span> <strong>${s.messages ?? 0}</strong></div>
+        <div><span>Klines</span> <strong>${s.klineMessages ?? 0}</strong></div>
+        <div><span>Updates</span> <strong>${s.updates ?? 0}</strong></div>
+        <div><span>Last msg</span> <strong>${fmtTimeShort(s.lastMessageAt)} ${TZ_LABEL}</strong></div>
+        <div><span>Last kline</span> <strong>${fmtTimeShort(s.lastKlineAt)} ${TZ_LABEL}</strong></div>
+        <div><span>Last update</span> <strong>${fmtTimeShort(s.lastUpdateAt)} ${TZ_LABEL}</strong></div>
+        <div><span>Last error</span> <strong class="${s.lastError ? "bad" : ""}">${escapeHtml(s.lastError || "—")}</strong></div>
+      `;
+
+      const tbody = document.getElementById("wsBody");
+      if (!data.shards?.length) {
+        tbody.innerHTML = '<tr><td colspan="12" class="empty">No WebSocket shards yet</td></tr>';
+      } else {
+        tbody.innerHTML = data.shards
+          .map((shard) => {
+            const state = shard.connected
+              ? '<span class="status-pill pass">connected</span>'
+              : '<span class="status-pill fail">closed</span>';
+            return `<tr>
+              <td>#${shard.index}</td>
+              <td>${state}</td>
+              <td title="${escapeHtml((shard.sampleStreams ?? []).join(", "))}">${shard.streamCount ?? 0}</td>
+              <td>${shard.connects ?? 0}</td>
+              <td>${shard.closes ?? 0}</td>
+              <td>${shard.messages ?? 0}</td>
+              <td>${shard.klineMessages ?? 0}</td>
+              <td>${shard.updates ?? 0}</td>
+              <td class="time">${fmtTimeShort(shard.lastMessageAt)}</td>
+              <td class="time">${fmtTimeShort(shard.lastKlineAt)}</td>
+              <td class="time">${fmtTimeShort(shard.lastUpdateAt)}</td>
+              <td class="time">${escapeHtml(shard.lastError || "—")}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      const recent = document.getElementById("wsRecentSymbols");
+      if (!data.recentSymbols?.length) {
+        recent.innerHTML = '<li class="empty">No symbol updates yet</li>';
+      } else {
+        recent.innerHTML = data.recentSymbols
+          .map(
+            (r) => `<li>
+              <div class="time">${fmtTimeShort(r.at)} ${TZ_LABEL}</div>
+              <strong>${symLink(r.symbol)}</strong>
+            </li>`
+          )
+          .join("");
+      }
+    }
+
+    document.getElementById("wsRefresh").addEventListener("click", loadWsDiagnostics);
+
     document.getElementById("pairsRefresh").addEventListener("click", loadPairs);
     document.getElementById("pairsSearch").addEventListener("input", () => {
       clearTimeout(window._pairsSearchTimer);
@@ -1205,6 +1339,7 @@
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
       if (activeTab === "movers") loadFastMovers();
+      if (activeTab === "websockets") loadWsDiagnostics();
 
       const sub = document.getElementById("subtitle");
       sub.textContent =
