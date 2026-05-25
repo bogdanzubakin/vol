@@ -1038,8 +1038,12 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderFastMovers(data);
+        const ws = data.ws ?? {};
+        const wsText = ws.lastUpdateAt
+          ? ` · stream ${fmtTimeShort(ws.lastUpdateAt)} (${ws.updates ?? 0} updates)`
+          : ` · stream waiting (${ws.connectedShards ?? 0}/${ws.shardCount ?? 0} shards)`;
         setMoversMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg${wsText}`,
           true
         );
       } catch (e) {

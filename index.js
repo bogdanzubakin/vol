@@ -331,13 +331,27 @@ function closedCandleFromKline(k) {
 }
 
 const liveUpdateAt = new Map();
+const wsStats = {
+  shardCount: 0,
+  connectedShards: 0,
+  messages: 0,
+  klineMessages: 0,
+  updates: 0,
+  lastMessageAt: null,
+  lastKlineAt: null,
+  lastUpdateAt: null,
+  lastError: null,
+};
 
 function upsertHistoryCandle(historyBuffers, sym, candle) {
   const buf = historyBuffers.get(sym) ?? [];
   const result = klineCache.upsertBar(buf, candle, memoryMaxBars());
   historyBuffers.set(sym, buf);
   if (result.updated) {
-    liveUpdateAt.set(sym, Date.now());
+    const now = Date.now();
+    liveUpdateAt.set(sym, now);
+    wsStats.updates++;
+    wsStats.lastUpdateAt = now;
     klineCache.schedulePersist(sym, buf);
   }
   return result;
@@ -490,6 +504,7 @@ function createWsShards(
     symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
     cfg.streamsPerSocket
   );
+  wsStats.shardCount = batches.length;
   const sockets = [];
 
   const evaluate = (sym) => {
@@ -535,10 +550,13 @@ function createWsShards(
 
       ws.on("open", () => {
         reconnectMs = 1000;
+        wsStats.connectedShards++;
         console.error(`WS shard ${batchIdx} connected (${batches[batchIdx].length} streams)`);
       });
 
       ws.on("message", (raw) => {
+        wsStats.messages++;
+        wsStats.lastMessageAt = Date.now();
         let msg;
         try {
           msg = JSON.parse(raw.toString());
@@ -547,8 +565,10 @@ function createWsShards(
         }
         const data = msg.data ?? msg;
         if (data?.e !== "kline") return;
+        wsStats.klineMessages++;
+        wsStats.lastKlineAt = Date.now();
 
-        const sym = data.s || data.k?.s;
+        const sym = (data.s || data.k?.s || "").toUpperCase();
         if (!sym) return;
         const candle = closedCandleFromKline(data.k);
         const isClosed = Boolean(data.k?.x);
@@ -559,12 +579,15 @@ function createWsShards(
 
       ws.on("close", async () => {
         if (closed) return;
+        wsStats.connectedShards = Math.max(0, wsStats.connectedShards - 1);
         await sleep(reconnectMs);
         reconnectMs = Math.min(reconnectMs * 2, 60_000);
         connect();
       });
 
-      ws.on("error", () => {
+      ws.on("error", (err) => {
+        wsStats.lastError = err?.message || String(err);
+        console.error(`WS shard ${batchIdx} error: ${wsStats.lastError}`);
         try {
           ws.close();
         } catch {
@@ -915,6 +938,21 @@ async function main() {
         excludeMult,
         pairCount: movers.length,
         movers,
+        ws: {
+          ...wsStats,
+          lastMessageAt:
+            wsStats.lastMessageAt != null
+              ? formatIsoUtcPlus3(wsStats.lastMessageAt)
+              : null,
+          lastKlineAt:
+            wsStats.lastKlineAt != null
+              ? formatIsoUtcPlus3(wsStats.lastKlineAt)
+              : null,
+          lastUpdateAt:
+            wsStats.lastUpdateAt != null
+              ? formatIsoUtcPlus3(wsStats.lastUpdateAt)
+              : null,
+        },
         telegramEnabled: Boolean(telegram?.enabled),
       };
     },
