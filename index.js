@@ -72,7 +72,9 @@ const cfg = {
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
   klineCacheExtraMs: 2 * 60 * 1000,
+  // Disk history cap. Memory keeps only the live evaluation window.
   cacheMaxBars: 50_000,
+  memoryMaxBars: 0,
   klineCacheFlushMs: 60_000,
   klineCacheWriteDebounceMs: 3000,
   prefetchPauseMs: 200,
@@ -94,6 +96,14 @@ let klineCache = null;
 
 function evalBars(sym, historyBuffers) {
   return klineCache.evalWindow(historyBuffers.get(sym) ?? [], cfg.limit);
+}
+
+function memoryMaxBars() {
+  if (cfg.memoryMaxBars > 0) return cfg.memoryMaxBars;
+  return Math.min(
+    cfg.cacheMaxBars,
+    Math.max(cfg.limit, cfg.fastMoveLookbackCandles ?? 0, 6000)
+  );
 }
 
 function volSpikeMetrics(sym, historyBuffers) {
@@ -305,7 +315,7 @@ async function loadSymbolHistory(symbol) {
 
   bars = klineCache.capBars(bars, cfg.cacheMaxBars);
   klineCache.write(symbol, bars);
-  return bars;
+  return klineCache.capBars(bars, memoryMaxBars());
 }
 
 function closedCandleFromKline(k) {
@@ -322,7 +332,7 @@ function closedCandleFromKline(k) {
 
 function upsertHistoryCandle(historyBuffers, sym, candle) {
   const buf = historyBuffers.get(sym) ?? [];
-  const result = klineCache.upsertBar(buf, candle, cfg.cacheMaxBars);
+  const result = klineCache.upsertBar(buf, candle, memoryMaxBars());
   historyBuffers.set(sym, buf);
   if (result.updated) klineCache.schedulePersist(sym, buf);
   return result;
@@ -724,15 +734,21 @@ async function main() {
   let symbols = [];
   let reevaluateAll = () => {};
 
-  function barsForEvaluation(buf, searchParams) {
+  function barsForEvaluation(sym, searchParams) {
     const atRaw = searchParams?.get("at");
+    const buf = historyBuffers.get(sym) ?? [];
     if (!atRaw) {
       const bars = buf ?? [];
       const signalBarAt = bars.length ? bars[bars.length - 1].closeTime : null;
       return { bars, atMs: null, signalBarAt };
     }
     const atMs = parseAtTime(atRaw);
-    const bars = barsAtTime(buf, atMs);
+    const needsDisk =
+      !buf.length ||
+      buf[0].openTime > atMs ||
+      buf[buf.length - 1].closeTime < atMs;
+    const source = needsDisk ? klineCache.read(sym) ?? buf : buf;
+    const bars = klineCache.evalWindow(barsAtTime(source, atMs), cfg.limit);
     if (!bars.length) {
       throw new Error(`No candle data at or before ${formatIsoUtcPlus3(atMs)}`);
     }
@@ -754,7 +770,7 @@ async function main() {
         let evalBars;
         let signalBarAt = null;
         try {
-          const ev = barsForEvaluation(buf, searchParams);
+          const ev = barsForEvaluation(sym, searchParams);
           evalBars = ev.bars;
           signalBarAt = ev.signalBarAt;
           if (ev.atMs != null) {
@@ -856,7 +872,7 @@ async function main() {
           let evalBars;
           let signalBarAt = null;
           try {
-            const ev = barsForEvaluation(buf, searchParams);
+            const ev = barsForEvaluation(sym, searchParams);
             evalBars = ev.bars;
             signalBarAt = ev.signalBarAt;
           } catch {
@@ -899,7 +915,7 @@ async function main() {
       }
       const buf = historyBuffers.get(sym) ?? [];
       if (!buf.length) throw new Error(`No bar data for ${sym}`);
-      const { bars, atMs, signalBarAt } = barsForEvaluation(buf, searchParams);
+      const { bars, atMs, signalBarAt } = barsForEvaluation(sym, searchParams);
       const analysis = analyzeVolSpike(bars, cfg);
       return getChartPayload(sym, bars, cfg, analysis, {
         evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
@@ -919,7 +935,7 @@ async function main() {
       }
       const buf = historyBuffers.get(sym) ?? [];
       if (!buf.length) throw new Error(`No bar data for ${sym}`);
-      const { bars } = barsForEvaluation(buf, searchParams);
+      const { bars } = barsForEvaluation(sym, searchParams);
       const m = computeVolSpikeMetrics(
         klineCache.evalWindow(bars, cfg.limit),
         cfg
