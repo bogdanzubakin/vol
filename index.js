@@ -330,11 +330,16 @@ function closedCandleFromKline(k) {
   };
 }
 
+const liveUpdateAt = new Map();
+
 function upsertHistoryCandle(historyBuffers, sym, candle) {
   const buf = historyBuffers.get(sym) ?? [];
   const result = klineCache.upsertBar(buf, candle, memoryMaxBars());
   historyBuffers.set(sym, buf);
-  if (result.updated) klineCache.schedulePersist(sym, buf);
+  if (result.updated) {
+    liveUpdateAt.set(sym, Date.now());
+    klineCache.schedulePersist(sym, buf);
+  }
   return result;
 }
 
@@ -543,7 +548,8 @@ function createWsShards(
         const data = msg.data ?? msg;
         if (data?.e !== "kline") return;
 
-        const sym = data.s;
+        const sym = data.s || data.k?.s;
+        if (!sym) return;
         const candle = closedCandleFromKline(data.k);
         const isClosed = Boolean(data.k?.x);
         const change = upsertHistoryCandle(historyBuffers, sym, candle);
@@ -891,6 +897,10 @@ async function main() {
             bars: buf.length,
             signalBarAt:
               signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
+            liveUpdateAt:
+              liveUpdateAt.get(sym) != null
+                ? formatIsoUtcPlus3(liveUpdateAt.get(sym))
+                : null,
           };
         })
         .filter(Boolean);

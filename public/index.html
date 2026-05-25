@@ -609,11 +609,12 @@
               <th>Used / excl.</th>
               <th>Bars</th>
               <th>Last bar</th>
+              <th>Live update</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="moversBody">
-            <tr><td colspan="7" class="empty">Open this tab to load fast movers</td></tr>
+            <tr><td colspan="8" class="empty">Open this tab to load fast movers</td></tr>
           </tbody>
         </table>
       </div>
@@ -1044,7 +1045,7 @@
       } catch (e) {
         setMoversMsg(e.message, false);
         document.getElementById("moversBody").innerHTML =
-          `<tr><td colspan="7" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
       } finally {
         fastMoversLoading = false;
       }
@@ -1057,7 +1058,7 @@
       const tbody = document.getElementById("moversBody");
       if (!data.movers?.length) {
         tbody.innerHTML =
-          '<tr><td colspan="7" class="empty">No fast movers match</td></tr>';
+          '<tr><td colspan="8" class="empty">No fast movers match</td></tr>';
         return;
       }
 
@@ -1070,6 +1071,7 @@
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td>${p.bars ?? "—"}</td>
             <td class="time">${fmtBarTime(p.signalBarAt)}</td>
+            <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
           </tr>`
         )
