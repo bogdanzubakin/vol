@@ -69,6 +69,7 @@ const cfg = {
   fastMoveLookbackCandles: 10,
   minAvgMovePct: 0.5,
   fastMoveExcludeMult: 3,
+  topMoveMinPct: 5,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -1154,6 +1155,66 @@ async function main() {
         telegramEnabled: Boolean(telegram?.enabled),
       };
     },
+    getTopMovers(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      const minMovePct = Math.max(
+        0.1,
+        Math.min(1000, Number(searchParams.get("minMovePct")) || cfg.topMoveMinPct)
+      );
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+
+      let movers = symbols
+        .map((sym) => {
+          const buf = historyBuffers.get(sym) ?? [];
+          if (!buf.length) return null;
+
+          const latest = buf[buf.length - 1];
+          const cutoff = latest.closeTime - dayMs;
+          const needsDisk = buf[0].openTime > cutoff;
+          const source = needsDisk ? klineCache.read(sym) ?? buf : buf;
+          if (!source.length) return null;
+
+          let base = null;
+          for (const bar of source) {
+            if (bar.closeTime <= cutoff) base = bar;
+            else break;
+          }
+          if (!base) return null;
+          if (!base?.close || base.close <= 0 || !latest?.close) return null;
+
+          const movePct = ((latest.close - base.close) / base.close) * 100;
+          if (Math.abs(movePct) < minMovePct) return null;
+
+          return {
+            symbol: sym,
+            direction: movePct >= 0 ? "bullish" : "bearish",
+            movePct: +movePct.toFixed(3),
+            absMovePct: +Math.abs(movePct).toFixed(3),
+            fromClose: base.close,
+            close: latest.close,
+            fromAt: formatIsoUtcPlus3(base.closeTime),
+            lastBarAt: formatIsoUtcPlus3(latest.closeTime),
+            liveUpdateAt:
+              liveUpdateAt.get(sym) != null
+                ? formatIsoUtcPlus3(liveUpdateAt.get(sym))
+                : null,
+            bars: buf.length,
+          };
+        })
+        .filter(Boolean);
+
+      if (q) movers = movers.filter((p) => p.symbol.includes(q));
+      movers.sort((a, b) => b.absMovePct - a.absMovePct);
+
+      return {
+        updatedAt: formatIsoUtcPlus3(now),
+        windowHours: 24,
+        minMovePct,
+        pairCount: movers.length,
+        movers,
+      };
+    },
     getChartData(symbol, searchParams) {
       const sym = String(symbol).toUpperCase();
       if (!symbols.includes(sym)) {
@@ -1207,6 +1268,7 @@ async function main() {
       host,
       getPairs: (searchParams) => scannerApi.getPairs(searchParams),
       getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
+      getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
       getWsDiagnostics: () => wsDiagnostics(),
       getChartData: (symbol, searchParams) =>
         scannerApi.getChartData(symbol, searchParams),

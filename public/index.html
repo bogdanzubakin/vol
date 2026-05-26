@@ -105,6 +105,7 @@
       line-height: 1.2;
     }
     .pass { color: var(--green); }
+    .bad { color: #fca5a5; }
     .near { color: #fbbf24; }
     tr.hit-active td { background: rgba(34, 197, 94, 0.04); }
     tr.hit-near td { background: rgba(251, 191, 36, 0.06); }
@@ -424,6 +425,7 @@
     <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
+    <button type="button" class="tab" data-tab="topmovers" role="tab">Top movers</button>
     <button type="button" class="tab" data-tab="websockets" role="tab">WebSockets</button>
   </nav>
 
@@ -634,6 +636,50 @@
     </section>
   </div>
 
+  <div id="panel-topmovers" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Top movers <span id="topMoversCount"></span></h2>
+      <p class="sub" style="margin: -8px 0 12px; font-size: 0.8rem">
+        Pairs with absolute close-to-close price move above the threshold during the last 24 hours.
+      </p>
+      <form class="settings-form movers-settings" id="topMoversConfigForm">
+        <div class="field">
+          <label for="topMoveMinPct">Min 24h move %</label>
+          <input type="number" id="topMoveMinPct" name="topMoveMinPct" step="0.1" min="0.1" max="1000" value="5" required />
+          <div class="hint">Show pairs with |24h move| at least this %</div>
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm" id="topMoversApply">Apply</button>
+          <button type="button" class="btn secondary sm" id="topMoversRefresh">Refresh</button>
+          <span class="config-msg" id="topMoversMsg"></span>
+        </div>
+      </form>
+      <div class="pairs-toolbar" style="margin-top: 12px">
+        <input type="search" id="topMoversSearch" placeholder="Search symbol…" />
+      </div>
+      <div class="pairs-table-wrap table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Direction</th>
+              <th>Move %</th>
+              <th>From close</th>
+              <th>Close</th>
+              <th>From bar</th>
+              <th>Last bar</th>
+              <th>Live update</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="topMoversBody">
+            <tr><td colspan="9" class="empty">Open this tab to load top movers</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <div id="panel-websockets" class="tab-panel" role="tabpanel">
     <section>
       <h2>WebSockets <span id="wsCount"></span></h2>
@@ -729,6 +775,7 @@
     let fastMoversLoading = false;
     let lastFastMovers = [];
     let moversSort = { key: "avgMovePct", dir: "desc" };
+    let topMoversLoading = false;
     let wsDiagnosticsLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
@@ -795,6 +842,10 @@
       if (name === "movers") {
         loadMoversConfigForm();
         setMoversMsg("Click Refresh to update the table from collected live data", true);
+      }
+      if (name === "topmovers") {
+        loadTopMoversConfigForm();
+        loadTopMovers();
       }
       if (name === "websockets") {
         loadWsDiagnostics();
@@ -1210,6 +1261,107 @@
         }
         renderFastMovers({ pairCount: lastFastMovers.length, movers: lastFastMovers });
       });
+    });
+
+    const TOP_MOVERS_CONFIG_KEYS = ["topMoveMinPct"];
+
+    function loadTopMoversConfigForm() {
+      for (const k of TOP_MOVERS_CONFIG_KEYS) {
+        const v = localStorage.getItem(`topMovers_${k}`);
+        const el = document.getElementById(k);
+        if (el && v != null && v !== "") el.value = v;
+      }
+    }
+
+    function saveTopMoversConfigForm() {
+      for (const k of TOP_MOVERS_CONFIG_KEYS) {
+        const el = document.getElementById(k);
+        if (el) localStorage.setItem(`topMovers_${k}`, el.value);
+      }
+    }
+
+    function topMoversParams() {
+      const params = new URLSearchParams();
+      const min = document.getElementById("topMoveMinPct")?.value;
+      if (min != null && min !== "") params.set("minMovePct", min);
+      return params;
+    }
+
+    function setTopMoversMsg(text, ok) {
+      const el = document.getElementById("topMoversMsg");
+      el.textContent = text;
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    async function loadTopMovers() {
+      if (topMoversLoading) return;
+      topMoversLoading = true;
+      const q = document.getElementById("topMoversSearch").value;
+      const params = topMoversParams();
+      if (q.trim()) params.set("q", q.trim());
+
+      try {
+        const res = await fetch(`/api/top-movers?${params}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderTopMovers(data);
+        setTopMoversMsg(
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · |move| ≥${data.minMovePct}% over ${data.windowHours}h`,
+          true
+        );
+      } catch (e) {
+        setTopMoversMsg(e.message, false);
+        document.getElementById("topMoversBody").innerHTML =
+          `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      } finally {
+        topMoversLoading = false;
+      }
+    }
+
+    function renderTopMovers(data) {
+      document.getElementById("topMoversCount").textContent =
+        data.pairCount != null ? `(${data.pairCount})` : "";
+
+      const tbody = document.getElementById("topMoversBody");
+      if (!data.movers?.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="9" class="empty">No top movers match</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.movers
+        .map((p) => {
+          const bullish = p.direction === "bullish";
+          const dirMark = bullish ? "▲ bullish" : "▼ bearish";
+          const dirCls = bullish ? "pass" : "bad";
+          return `<tr>
+            <td class="sym-cell">${symLink(p.symbol)}</td>
+            <td class="${dirCls}">${dirMark}</td>
+            <td class="${dirCls}">${fmt(p.movePct, 3)}%</td>
+            <td>${fmt(p.fromClose, 6)}</td>
+            <td>${fmt(p.close, 6)}</td>
+            <td class="time">${fmtBarTime(p.fromAt)}</td>
+            <td class="time">${fmtBarTime(p.lastBarAt)}</td>
+            <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
+          </tr>`;
+        })
+        .join("");
+
+      tbody.querySelectorAll(".chart-btn").forEach((btn) => {
+        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+      });
+    }
+
+    document.getElementById("topMoversConfigForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveTopMoversConfigForm();
+      loadTopMovers();
+    });
+    document.getElementById("topMoversRefresh").addEventListener("click", loadTopMovers);
+    document.getElementById("topMoversSearch").addEventListener("input", () => {
+      clearTimeout(window._topMoversSearchTimer);
+      window._topMoversSearchTimer = setTimeout(loadTopMovers, 300);
     });
 
     function setWsMsg(text, ok) {
