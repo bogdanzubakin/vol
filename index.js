@@ -1255,7 +1255,12 @@ async function main() {
         .filter(Boolean);
 
       if (q) movers = movers.filter((p) => p.symbol.includes(q));
-      movers.sort((a, b) => b.absMovePct - a.absMovePct);
+      movers.sort((a, b) => {
+        if (a.direction !== b.direction) {
+          return a.direction === "bullish" ? -1 : 1;
+        }
+        return b.absMovePct - a.absMovePct;
+      });
 
       return {
         updatedAt: formatIsoUtcPlus3(now),
