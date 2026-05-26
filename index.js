@@ -821,12 +821,25 @@ async function prefetchAllSymbols(
   quoteVolMap
 ) {
   prefetching = true;
-  dashboard?.setMeta({ prefetching: true });
   let done = 0;
   let fromCache = 0;
   let fetched = 0;
   let failed = 0;
   const t0 = Date.now();
+  const publishPrefetchStatus = () => {
+    dashboard?.setMeta({
+      prefetching: true,
+      prefetchStatus: {
+        done,
+        total: symbols.length,
+        fromCache,
+        fetched,
+        failed,
+        elapsedSec: Math.round((Date.now() - t0) / 1000),
+      },
+    });
+  };
+  publishPrefetchStatus();
 
   console.error(
     `Prefetch ALL ${symbols.length} symbols (${cfg.prefetchDays}d eval window ${cfg.limit} × ${cfg.interval}, ` +
@@ -857,6 +870,7 @@ async function prefetchAllSymbols(
     }
 
     done++;
+    publishPrefetchStatus();
     if (done % 25 === 0 || done === symbols.length) {
       const elapsed = ((Date.now() - t0) / 1000).toFixed(0);
       console.error(
@@ -868,7 +882,17 @@ async function prefetchAllSymbols(
   }
 
   prefetching = false;
-  dashboard?.setMeta({ prefetching: false });
+  dashboard?.setMeta({
+    prefetching: false,
+    prefetchStatus: {
+      done,
+      total: symbols.length,
+      fromCache,
+      fetched,
+      failed,
+      elapsedSec: Math.round((Date.now() - t0) / 1000),
+    },
+  });
   printHits(activeHits, nearBreakHits, true);
   console.error(
     `Prefetch done: ${fromCache} from cache, ${fetched} from REST, ${failed} failed`

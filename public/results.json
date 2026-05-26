@@ -1,10 +1,11 @@
 {
-  "updatedAt": "2026-05-25T17:23:00+03:00",
-  "symbolCount": 527,
+  "updatedAt": "2026-05-26T10:39:22+03:00",
+  "symbolCount": 0,
   "prefetching": false,
+  "prefetchStatus": null,
   "configWritable": true,
   "interval": "1m",
-  "corridorDays": 3,
+  "corridorDays": 2,
   "corridorExcludeMinutes": 15,
   "signalCandles": 3,
   "bullishLookbackCandles": 10,
@@ -14,164 +15,9 @@
   "minCorridorRangePct": 0.02,
   "minBreakVolumeMultiplier": 2,
   "breakVolumeNearBars": 3,
-  "activeCount": 3,
+  "activeCount": 0,
   "nearBreakCount": 0,
-  "hits": [
-    {
-      "symbol": "HMSTRUSDT",
-      "signalStatus": "active",
-      "corridorHigh": 0.000152,
-      "corridorLow": 0.0001368,
-      "corridorWidthPct": 10.53,
-      "avgCorridorRange": 0.12232585527107355,
-      "close": 0.0001581,
-      "recentRangePct": 3.542,
-      "rangeRatio": 28.96,
-      "volIncreasing": false,
-      "volSpike": true,
-      "breakVolumeSpike": true,
-      "breakVolumeRatio": 151.43,
-      "avgCorridorVolume": 7702415.729272812,
-      "maxNearBreakVolume": 1166359340,
-      "breakVolumeNearBars": 3,
-      "minBreakVolumeMultiplier": 2,
-      "bullish": true,
-      "bullishCount": 6,
-      "bullishLookback": 10,
-      "minBullishCandles": 3,
-      "corridorFlat": true,
-      "breaksCorridor": true,
-      "passesExceptBreak": true,
-      "nearBreak": false,
-      "breakGapPct": 0,
-      "bars": 4345,
-      "passes": true,
-      "quoteVol24h": 0
-    },
-    {
-      "symbol": "TRXUSDT",
-      "signalStatus": "active",
-      "corridorHigh": 0.3718,
-      "corridorLow": 0.35815,
-      "corridorWidthPct": 3.74,
-      "avgCorridorRange": 0.023505438398487906,
-      "close": 0.3726,
-      "recentRangePct": 0.134,
-      "rangeRatio": 5.71,
-      "volIncreasing": false,
-      "volSpike": true,
-      "breakVolumeSpike": true,
-      "breakVolumeRatio": 6.85,
-      "avgCorridorVolume": 99296.40053240741,
-      "maxNearBreakVolume": 680084.1,
-      "breakVolumeNearBars": 3,
-      "minBreakVolumeMultiplier": 2,
-      "bullish": true,
-      "bullishCount": 5,
-      "bullishLookback": 10,
-      "minBullishCandles": 3,
-      "corridorFlat": true,
-      "breaksCorridor": true,
-      "passesExceptBreak": true,
-      "nearBreak": false,
-      "breakGapPct": 0,
-      "bars": 4345,
-      "passes": true,
-      "quoteVol24h": 0
-    },
-    {
-      "symbol": "FETUSDT",
-      "signalStatus": "active",
-      "corridorHigh": 0.218,
-      "corridorLow": 0.1911,
-      "corridorWidthPct": 13.15,
-      "avgCorridorRange": 0.1919050494420272,
-      "close": 0.2203,
-      "recentRangePct": 0.545,
-      "rangeRatio": 2.84,
-      "volIncreasing": false,
-      "volSpike": true,
-      "breakVolumeSpike": true,
-      "breakVolumeRatio": 2.71,
-      "avgCorridorVolume": 156141.31398148148,
-      "maxNearBreakVolume": 422933.8,
-      "breakVolumeNearBars": 3,
-      "minBreakVolumeMultiplier": 2,
-      "bullish": true,
-      "bullishCount": 5,
-      "bullishLookback": 10,
-      "minBullishCandles": 3,
-      "corridorFlat": true,
-      "breaksCorridor": true,
-      "passesExceptBreak": true,
-      "nearBreak": false,
-      "breakGapPct": 0,
-      "bars": 4345,
-      "passes": true,
-      "quoteVol24h": 0
-    }
-  ],
+  "hits": [],
   "nearBreakHits": [],
-  "events": [
-    {
-      "at": "2026-05-25T17:23:00+03:00",
-      "type": "END",
-      "symbol": "ORCAUSDT",
-      "detail": ""
-    },
-    {
-      "at": "2026-05-25T17:20:00+03:00",
-      "type": "NEW",
-      "symbol": "ORCAUSDT",
-      "detail": "close 1.492 > 1.491 range×3.93"
-    },
-    {
-      "at": "2026-05-25T17:19:00+03:00",
-      "type": "NEW",
-      "symbol": "FETUSDT",
-      "detail": "close 0.2207 > 0.218 range×1.89"
-    },
-    {
-      "at": "2026-05-25T17:16:58+03:00",
-      "type": "CONFIG",
-      "symbol": "scanner",
-      "detail": "corridorDays=3 corridorExcludeMinutes=15 signalCandles=3 bullishLookbackCandles=10 minBullishCandles=3 maxCorridorWidthPct=15 minRangeMultiplier=1.8 minCorridorRangePct=0.02 minBreakVolumeMultiplier=2 breakVolumeNearBars=3"
-    },
-    {
-      "at": "2026-05-25T17:14:00+03:00",
-      "type": "NEW",
-      "symbol": "TRXUSDT",
-      "detail": "close 0.372 > 0.3704 range×2.52"
-    },
-    {
-      "at": "2026-05-25T17:11:00+03:00",
-      "type": "NEW",
-      "symbol": "HMSTRUSDT",
-      "detail": "close 0.0001558 > 0.0001501 range×23.24"
-    },
-    {
-      "at": "2026-05-25T17:11:00+03:00",
-      "type": "END",
-      "symbol": "CAKEUSDT",
-      "detail": ""
-    },
-    {
-      "at": "2026-05-25T17:06:00+03:00",
-      "type": "END",
-      "symbol": "TRXUSDT",
-      "detail": ""
-    },
-    {
-      "at": "2026-05-25T17:04:00+03:00",
-      "type": "NEW",
-      "symbol": "CAKEUSDT",
-      "detail": "close 1.46 > 1.4457 range×2.24"
-    },
-    {
-      "at": "2026-05-25T17:03:00+03:00",
-      "type": "NEW",
-      "symbol": "TRXUSDT",
-      "detail": "close 0.3713 > 0.37028 range×3.8"
-    }
-  ]
+  "events": []
 }

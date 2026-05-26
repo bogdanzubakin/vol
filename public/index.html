@@ -1543,6 +1543,17 @@
       setConfigMsg("");
     }
 
+    function prefetchLabel(state) {
+      const p = state.prefetchStatus;
+      if (!p) return state.prefetching ? "running…" : "done";
+      const base = `${p.done ?? 0}/${p.total ?? state.symbolCount ?? "?"}`;
+      const detail = `cache ${p.fromCache ?? 0} · rest ${p.fetched ?? 0} · fail ${p.failed ?? 0}`;
+      const elapsed = p.elapsedSec != null ? ` · ${p.elapsedSec}s` : "";
+      return state.prefetching
+        ? `${base} done · ${detail}${elapsed}`
+        : `done ${base} · ${detail}${elapsed}`;
+    }
+
     document.getElementById("configForm").addEventListener("submit", applyConfig);
     document.getElementById("resetConfig").addEventListener("click", resetConfigForm);
     for (const k of CONFIG_KEYS) {
@@ -1568,7 +1579,7 @@
         <div><span>Symbols</span> <strong>${state.symbolCount ?? "—"}</strong></div>
         <div><span>Signals</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
         <div><span>Near break</span> <strong class="near">${state.nearBreakCount ?? 0}</strong></div>
-        <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${state.prefetching ? "running…" : "done"}</strong></div>
+        <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${prefetchLabel(state)}</strong></div>
       `;
 
       const signalN = state.activeCount ?? 0;
