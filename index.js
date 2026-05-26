@@ -1133,11 +1133,38 @@ async function main() {
 
           const fm = fastMoverMetrics(evalBars, moverOpts);
           if (!fm?.fastMover) return null;
+          const latest = buf[buf.length - 1];
+          const cutoff = latest ? latest.closeTime - 24 * 60 * 60 * 1000 : null;
+          const source =
+            cutoff != null && buf[0]?.openTime > cutoff
+              ? klineCache.read(sym) ?? buf
+              : buf;
+          let dayBase = null;
+          if (cutoff != null) {
+            for (const bar of source) {
+              if (bar.closeTime <= cutoff) dayBase = bar;
+              else break;
+            }
+          }
+          const move24hPct =
+            dayBase?.close > 0 && latest?.close
+              ? ((latest.close - dayBase.close) / dayBase.close) * 100
+              : null;
 
           return {
             symbol: sym,
             close: fm.close,
             avgMovePct: fm.avgMovePct,
+            direction24h:
+              move24hPct == null
+                ? null
+                : move24hPct >= 0
+                  ? "bullish"
+                  : "bearish",
+            move24hPct:
+              move24hPct == null ? null : +move24hPct.toFixed(3),
+            absMove24hPct:
+              move24hPct == null ? null : +Math.abs(move24hPct).toFixed(3),
             candlesUsed: fm.candlesUsed,
             candlesExcluded: fm.candlesExcluded,
             bars: buf.length,
