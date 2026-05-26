@@ -19,6 +19,7 @@ const {
   validateLiveConfigPatch,
   analyzeVolSpike,
   fastMoverMetrics,
+  minHistoryBars,
   failedCheckLabels,
   serializeChecks,
   mergeCriteriaCatalog,
@@ -102,14 +103,20 @@ let klineCache = null;
 const lastSignalNotifyAt = new Map();
 
 function evalBars(sym, historyBuffers) {
-  return klineCache.evalWindow(historyBuffers.get(sym) ?? [], cfg.limit);
+  return klineCache.evalWindow(historyBuffers.get(sym) ?? [], memoryMaxBars());
 }
 
 function memoryMaxBars() {
   if (cfg.memoryMaxBars > 0) return cfg.memoryMaxBars;
+  const dayBars = Math.ceil((24 * 60 * 60 * 1000) / cfg.barMs) + 5;
+  const liveNeed = Math.max(
+    minHistoryBars(cfg),
+    cfg.fastMoveLookbackCandles ?? 0,
+    dayBars
+  );
   return Math.min(
     cfg.cacheMaxBars,
-    Math.max(cfg.limit, cfg.fastMoveLookbackCandles ?? 0, 6000)
+    liveNeed + 50
   );
 }
 
@@ -329,7 +336,7 @@ async function loadSymbolHistory(symbol) {
   }
 
   bars = klineCache.capBars(bars, cfg.cacheMaxBars);
-  klineCache.write(symbol, bars);
+  klineCache.replace(symbol, bars);
   return klineCache.capBars(bars, memoryMaxBars());
 }
 
@@ -392,7 +399,7 @@ function wsDiagnostics() {
   };
 }
 
-function upsertHistoryCandle(historyBuffers, sym, candle) {
+function upsertHistoryCandle(historyBuffers, sym, candle, options = {}) {
   const buf = historyBuffers.get(sym) ?? [];
   const result = klineCache.upsertBar(buf, candle, memoryMaxBars());
   historyBuffers.set(sym, buf);
@@ -401,7 +408,7 @@ function upsertHistoryCandle(historyBuffers, sym, candle) {
     liveUpdateAt.set(sym, now);
     wsStats.updates++;
     wsStats.lastUpdateAt = now;
-    klineCache.schedulePersist(sym, buf);
+    if (options.persist) klineCache.schedulePersist(sym, buf);
   }
   return result;
 }
@@ -687,7 +694,9 @@ function createWsShards(
         if (!sym) return;
         const candle = closedCandleFromKline(data.k);
         const isClosed = Boolean(data.k?.x);
-        const change = upsertHistoryCandle(historyBuffers, sym, candle);
+        const change = upsertHistoryCandle(historyBuffers, sym, candle, {
+          persist: isClosed,
+        });
         if (change.updated) {
           shard.updates++;
           shard.lastUpdateAt = wsStats.lastUpdateAt;
