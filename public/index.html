@@ -621,9 +621,9 @@
               <th class="sortable" data-mover-sort="symbol">Symbol <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="close">Close <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="move24hPct">24h move <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="candlesUsed">Used / excl. <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="bars">Bars <span class="sort-mark"></span></th>
-              <th class="sortable" data-mover-sort="move24hPct">24h move <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="liveUpdateAt">Live update <span class="sort-mark"></span></th>
               <th></th>
             </tr>
@@ -1225,9 +1225,9 @@
             <td class="sym-cell">${symLink(p.symbol)}</td>
             <td>${fmt(p.close, 6)}</td>
             <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
+            <td class="${dirCls}">${dirMark}</td>
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td>${p.bars ?? "—"}</td>
-            <td class="${dirCls}">${dirMark}</td>
             <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
           </tr>`;
