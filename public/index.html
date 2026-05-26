@@ -794,7 +794,7 @@
       }
       if (name === "movers") {
         loadMoversConfigForm();
-        loadFastMovers();
+        setMoversMsg("Click Refresh to update the table from collected live data", true);
       }
       if (name === "websockets") {
         loadWsDiagnostics();
@@ -1404,7 +1404,6 @@
       syncConfigForm(state);
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
-      if (activeTab === "movers") loadFastMovers();
       if (activeTab === "websockets") loadWsDiagnostics();
 
       const sub = document.getElementById("subtitle");
