@@ -1,8 +1,15 @@
 {
-  "updatedAt": "2026-05-26T16:40:13+03:00",
-  "symbolCount": 0,
-  "prefetching": false,
-  "prefetchStatus": null,
+  "updatedAt": "2026-05-26T16:45:00+03:00",
+  "symbolCount": 527,
+  "prefetching": true,
+  "prefetchStatus": {
+    "done": 98,
+    "total": 527,
+    "fromCache": 98,
+    "fetched": 0,
+    "failed": 0,
+    "elapsedSec": 287
+  },
   "configWritable": true,
   "interval": "1m",
   "corridorDays": 2,
@@ -19,5 +26,18 @@
   "nearBreakCount": 0,
   "hits": [],
   "nearBreakHits": [],
-  "events": []
+  "events": [
+    {
+      "at": "2026-05-26T16:45:00+03:00",
+      "type": "END",
+      "symbol": "GRTUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T16:42:58+03:00",
+      "type": "NEW",
+      "symbol": "GRTUSDT",
+      "detail": "close 0.02937 > 0.02928 range×2.37"
+    }
+  ]
 }

@@ -1,20 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0f172a"/>
-      <stop offset="1" stop-color="#1e293b"/>
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#dbeafe"/>
     </linearGradient>
     <linearGradient id="profit" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#22c55e"/>
-      <stop offset="1" stop-color="#a3e635"/>
+      <stop offset="0" stop-color="#15803d"/>
+      <stop offset="1" stop-color="#16a34a"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <path d="M12 45h40" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
-  <path d="M14 42 26 31l8 6 15-20" fill="none" stroke="url(#profit)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M48 17h-9m9 0v9" fill="none" stroke="#a3e635" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M23 17v24" stroke="#38bdf8" stroke-width="3" stroke-linecap="round"/>
-  <rect x="18" y="23" width="10" height="12" rx="2" fill="#38bdf8"/>
-  <path d="M36 25v21" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>
-  <rect x="31" y="29" width="10" height="10" rx="2" fill="#22c55e"/>
+  <rect width="64" height="64" rx="10" fill="url(#bg)"/>
+  <path d="M5 51h54" stroke="#94a3b8" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M7 48 22 32l10 7 23-30" fill="none" stroke="#064e3b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity=".18"/>
+  <path d="M7 48 22 32l10 7 23-30" fill="none" stroke="url(#profit)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M55 9H43m12 0v12" fill="none" stroke="#15803d" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 9v40" stroke="#0369a1" stroke-width="5" stroke-linecap="round"/>
+  <rect x="14" y="18" width="14" height="18" rx="2.5" fill="#0284c7"/>
+  <path d="M39 22v33" stroke="#166534" stroke-width="5" stroke-linecap="round"/>
+  <rect x="32" y="28" width="14" height="15" rx="2.5" fill="#16a34a"/>
 </svg>
