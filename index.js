@@ -1185,6 +1185,34 @@ async function main() {
         0.1,
         Math.min(1000, Number(searchParams.get("minMovePct")) || cfg.topMoveMinPct)
       );
+      const fastLookback = Math.max(
+        2,
+        Math.min(
+          120,
+          Number(searchParams.get("fastLookback")) ||
+            cfg.fastMoveLookbackCandles
+        )
+      );
+      const fastMinAvgMovePct = Math.max(
+        0.01,
+        Math.min(
+          20,
+          Number(searchParams.get("fastMinAvgMovePct")) || cfg.minAvgMovePct
+        )
+      );
+      const fastExcludeMult = Math.max(
+        1.5,
+        Math.min(
+          20,
+          Number(searchParams.get("fastExcludeMult")) ||
+            cfg.fastMoveExcludeMult
+        )
+      );
+      const fastMoverOpts = {
+        fastMoveLookbackCandles: fastLookback,
+        minAvgMovePct: fastMinAvgMovePct,
+        fastMoveExcludeMult: fastExcludeMult,
+      };
       const now = Date.now();
       const dayMs = 24 * 60 * 60 * 1000;
 
@@ -1209,21 +1237,19 @@ async function main() {
 
           const movePct = ((latest.close - base.close) / base.close) * 100;
           if (Math.abs(movePct) < minMovePct) return null;
+          const fm = fastMoverMetrics(
+            klineCache.evalWindow(source, Math.max(cfg.limit, fastLookback)),
+            fastMoverOpts
+          );
 
           return {
             symbol: sym,
             direction: movePct >= 0 ? "bullish" : "bearish",
             movePct: +movePct.toFixed(3),
             absMovePct: +Math.abs(movePct).toFixed(3),
-            fromClose: base.close,
-            close: latest.close,
-            fromAt: formatIsoUtcPlus3(base.closeTime),
-            lastBarAt: formatIsoUtcPlus3(latest.closeTime),
-            liveUpdateAt:
-              liveUpdateAt.get(sym) != null
-                ? formatIsoUtcPlus3(liveUpdateAt.get(sym))
-                : null,
-            bars: buf.length,
+            avgMovePct: fm?.avgMovePct ?? null,
+            candlesUsed: fm?.candlesUsed ?? null,
+            candlesExcluded: fm?.candlesExcluded ?? null,
           };
         })
         .filter(Boolean);
@@ -1235,6 +1261,9 @@ async function main() {
         updatedAt: formatIsoUtcPlus3(now),
         windowHours: 24,
         minMovePct,
+        fastLookback,
+        fastMinAvgMovePct,
+        fastExcludeMult,
         pairCount: movers.length,
         movers,
       };

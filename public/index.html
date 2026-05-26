@@ -664,16 +664,13 @@
               <th>Symbol</th>
               <th>Direction</th>
               <th>Move %</th>
-              <th>From close</th>
-              <th>Close</th>
-              <th>From bar</th>
-              <th>Last bar</th>
-              <th>Live update</th>
+              <th>Fast avg move %</th>
+              <th>Used / excl.</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="topMoversBody">
-            <tr><td colspan="9" class="empty">Open this tab to load top movers</td></tr>
+            <tr><td colspan="6" class="empty">Open this tab to load top movers</td></tr>
           </tbody>
         </table>
       </div>
@@ -1284,6 +1281,17 @@
       const params = new URLSearchParams();
       const min = document.getElementById("topMoveMinPct")?.value;
       if (min != null && min !== "") params.set("minMovePct", min);
+      const fastMap = {
+        fastMoveLookbackCandles: "fastLookback",
+        minAvgMovePct: "fastMinAvgMovePct",
+        fastMoveExcludeMult: "fastExcludeMult",
+      };
+      for (const [key, param] of Object.entries(fastMap)) {
+        const stored = localStorage.getItem(`movers_${key}`);
+        const fallback = document.getElementById(key)?.value;
+        const value = stored ?? fallback;
+        if (value != null && value !== "") params.set(param, value);
+      }
       return params;
     }
 
@@ -1306,13 +1314,13 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderTopMovers(data);
         setTopMoversMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · |move| ≥${data.minMovePct}% over ${data.windowHours}h`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · |move| ≥${data.minMovePct}% over ${data.windowHours}h · fast avg ${data.fastLookback} bars`,
           true
         );
       } catch (e) {
         setTopMoversMsg(e.message, false);
         document.getElementById("topMoversBody").innerHTML =
-          `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="6" class="empty">${escapeHtml(e.message)}</td></tr>`;
       } finally {
         topMoversLoading = false;
       }
@@ -1325,7 +1333,7 @@
       const tbody = document.getElementById("topMoversBody");
       if (!data.movers?.length) {
         tbody.innerHTML =
-          '<tr><td colspan="9" class="empty">No top movers match</td></tr>';
+          '<tr><td colspan="6" class="empty">No top movers match</td></tr>';
         return;
       }
 
@@ -1338,11 +1346,8 @@
             <td class="sym-cell">${symLink(p.symbol)}</td>
             <td class="${dirCls}">${dirMark}</td>
             <td class="${dirCls}">${fmt(p.movePct, 3)}%</td>
-            <td>${fmt(p.fromClose, 6)}</td>
-            <td>${fmt(p.close, 6)}</td>
-            <td class="time">${fmtBarTime(p.fromAt)}</td>
-            <td class="time">${fmtBarTime(p.lastBarAt)}</td>
-            <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
+            <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
+            <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
           </tr>`;
         })
