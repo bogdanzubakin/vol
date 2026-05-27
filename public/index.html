@@ -96,6 +96,12 @@
     }
     .dir-long { color: var(--green); font-weight: 600; }
     .dir-short { color: var(--red); font-weight: 600; }
+    .dir-tri {
+      display: inline-block;
+      width: 10px;
+      margin-right: 4px;
+      font-weight: 700;
+    }
     .pnl-pos { color: var(--green); font-weight: 600; }
     .pnl-neg { color: var(--red); font-weight: 600; }
     .status {
@@ -1945,6 +1951,12 @@
       return `${sign}${Number(n).toFixed(2)}`;
     }
 
+    function fmtPct(n, d = 2) {
+      if (n == null || Number.isNaN(n)) return "—";
+      const sign = n >= 0 ? "+" : "";
+      return `${sign}${Number(n).toFixed(d)}%`;
+    }
+
     function renderPositions(data) {
       const meta = document.getElementById("positionsMeta");
       const body = document.getElementById("positionsBody");
@@ -1983,17 +1995,20 @@
       }
 
       body.innerHTML = `<div class="table-wrap"><table class="positions-table">
-        <thead><tr><th>Pair</th><th>Dir</th><th>PNL</th></tr></thead>
+        <thead><tr><th>Pair</th><th>PNL</th><th>ROI</th></tr></thead>
         <tbody>${data.positions
           .map((p) => {
             const dirCls =
               p.direction === "LONG" ? "dir-long" : "dir-short";
             const pnlCls =
               p.pnl == null ? "" : p.pnl >= 0 ? "pnl-pos" : "pnl-neg";
+            const roiCls =
+              p.roiPct == null ? "" : p.roiPct >= 0 ? "pnl-pos" : "pnl-neg";
+            const dirTri = p.direction === "LONG" ? "▲" : "▼";
             return `<tr>
-              <td class="sym">${symLink(p.symbol)}</td>
-              <td class="${dirCls}">${p.direction}</td>
+              <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(p.symbol)}</td>
               <td class="${pnlCls}">${fmtPnl(p.pnl)}</td>
+              <td class="${roiCls}">${fmtPct(p.roiPct, 3)}</td>
             </tr>`;
           })
           .join("")}</tbody></table></div>`;
