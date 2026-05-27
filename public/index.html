@@ -1733,7 +1733,14 @@
     document.getElementById("topMoversConfigForm").addEventListener("submit", (e) => {
       e.preventDefault();
       saveTopMoversConfigForm();
-      loadTopMovers();
+      applyLivePatch({
+        topMoveMinPct: Number(document.getElementById("topMoveMinPct").value),
+      })
+        .then(() => {
+          setTopMoversMsg("Applied to live scanner", true);
+          loadTopMovers();
+        })
+        .catch((err) => setTopMoversMsg(err.message, false));
     });
     document.getElementById("topMoversRefresh").addEventListener("click", loadTopMovers);
     document.getElementById("topMoversSearch").addEventListener("input", () => {
