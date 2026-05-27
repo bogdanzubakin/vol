@@ -109,6 +109,7 @@
     .bad { color: #fca5a5; }
     .near { color: #fbbf24; }
     tr.hit-active td { background: rgba(34, 197, 94, 0.04); }
+    tr.hit-ended td { background: rgba(148, 163, 184, 0.06); }
     tr.hit-near td { background: rgba(251, 191, 36, 0.06); }
     .status-tag {
       display: inline-block;
@@ -500,12 +501,14 @@
       <h2>Signals <span id="hitCount"></span></h2>
       <p class="sub" style="margin: -8px 0 12px; font-size: 0.8rem">
         <span class="status-tag signal">SIGNAL</span> full break ·
-        <span class="status-tag near">NEAR</span> all criteria except break (within gap %)
+        <span class="status-tag near">NEAR</span> all criteria except break (within gap %) ·
+        signals stay <strong>24h</strong> after trigger (newest first)
       </p>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
+              <th>Triggered</th>
               <th>Symbol</th>
               <th>Close</th>
               <th>2d high</th>
@@ -516,7 +519,7 @@
             </tr>
           </thead>
           <tbody id="hitsBody">
-            <tr><td colspan="7" class="empty">No signals</td></tr>
+            <tr><td colspan="8" class="empty">No signals</td></tr>
           </tbody>
         </table>
       </div>
@@ -1596,38 +1599,47 @@
         <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${prefetchLabel(state)}</strong></div>
       `;
 
-      const signalN = state.activeCount ?? 0;
+      const signalN = state.signalHistoryCount ?? state.hits?.length ?? 0;
+      const activeN = state.activeCount ?? 0;
       const nearN = state.nearBreakCount ?? 0;
       document.getElementById("hitCount").textContent =
-        signalN + nearN ? `(${signalN} + ${nearN} near)` : "";
+        signalN + nearN
+          ? `(${activeN} live · ${signalN} in 24h${nearN ? ` · ${nearN} near` : ""})`
+          : "";
 
       const tbody = document.getElementById("hitsBody");
-      const rows = [
-        ...(state.hits ?? []).map((h) => ({ ...h, signalStatus: "active" })),
-        ...(state.nearBreakHits ?? []).map((h) => ({ ...h, signalStatus: "near" })),
-      ].sort((a, b) => {
-        if (a.signalStatus !== b.signalStatus) {
-          return a.signalStatus === "active" ? -1 : 1;
-        }
-        if (a.signalStatus === "near") return (a.breakGapPct ?? 0) - (b.breakGapPct ?? 0);
-        return (b.rangeRatio ?? 0) - (a.rangeRatio ?? 0);
-      });
+      const signalRows = [...(state.hits ?? [])].sort(
+        (a, b) => (b.triggeredAt ?? 0) - (a.triggeredAt ?? 0)
+      );
+      const nearRows = [...(state.nearBreakHits ?? [])]
+        .map((h) => ({ ...h, signalStatus: "near" }))
+        .sort((a, b) => (a.breakGapPct ?? 0) - (b.breakGapPct ?? 0));
+      const rows = [...signalRows, ...nearRows];
 
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty">No signals</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No signals</td></tr>';
       } else {
         tbody.innerHTML = rows
           .map((h) => {
             const isNear = h.signalStatus === "near";
+            const isEnded = h.signalStatus === "ended";
             const tag = isNear
               ? '<span class="status-tag near">NEAR</span>'
-              : '<span class="status-tag signal">SIGNAL</span>';
-            const rowCls = isNear ? "hit-near" : "hit-active";
-            const rangeCls = isNear ? "near" : "pass";
+              : isEnded
+                ? '<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag signal">SIGNAL</span>'
+                : '<span class="status-tag signal">SIGNAL</span>';
+            const rowCls = isNear ? "hit-near" : isEnded ? "hit-ended" : "hit-active";
+            const rangeCls = isNear ? "near" : isEnded ? "" : "pass";
             const breakCell = isNear
               ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
-              : `<span class="pass">Y</span>`;
+              : isEnded
+                ? `<span class="time">ended</span>`
+                : `<span class="pass">Y</span>`;
+            const triggeredCell = isNear
+              ? "—"
+              : `<span class="time">${fmtDisplayDateTime(h.triggeredAtIso ?? h.triggeredAt)} ${TZ_LABEL}</span>`;
             return `<tr class="${rowCls}">
+              <td>${triggeredCell}</td>
               <td class="sym">${tag}${symLink(h.symbol)}
                 <button type="button" class="btn sm chart-btn" data-symbol="${h.symbol}" style="margin-left:6px">Chart</button>
               </td>

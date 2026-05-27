@@ -47,6 +47,7 @@ const REST_BASE = "https://fapi.binance.com";
 // DO NOT CHANGE BASE wss://stream.binance.com:443
 const WS_STREAM_BASE = "wss://stream.binance.com:443/stream";
 const KLINE_MAX = 1500;
+const SIGNAL_RETENTION_MS = 24 * 60 * 60 * 1000;
 const CACHE_DIR = path.join(__dirname, ".cache");
 const EXCHANGE_INFO_CACHE = path.join(CACHE_DIR, "futures-exchangeInfo.json");
 const KLINES_CACHE_DIR = path.join(CACHE_DIR, "klines");
@@ -446,15 +447,43 @@ function applyRestRepairBars(historyBuffers, sym, bars) {
   return true;
 }
 
-function printHits(activeHits, nearBreakHits, force = false) {
+function pruneSignalHistory(signalHistory) {
+  const cutoff = Date.now() - SIGNAL_RETENTION_MS;
+  for (const [sym, rec] of signalHistory) {
+    if ((rec.triggeredAt ?? 0) < cutoff) signalHistory.delete(sym);
+  }
+}
+
+function markSignalEnded(sym, activeHits, signalHistory, m) {
+  const live = activeHits.get(sym);
+  const rec = signalHistory.get(sym);
+  if (!live && !rec) return;
+  const triggeredAt =
+    rec?.triggeredAt ?? live?.triggeredAt ?? Date.now();
+  signalHistory.set(sym, {
+    ...(rec ?? live ?? {}),
+    ...(m ?? {}),
+    triggeredAt,
+    ended: true,
+    endedAt: Date.now(),
+    signalStatus: "ended",
+    quoteVol24h: live?.quoteVol24h ?? rec?.quoteVol24h,
+  });
+  activeHits.delete(sym);
+}
+
+function printHits(activeHits, nearBreakHits, signalHistory, force = false) {
   const now = Date.now();
   if (!force && now - lastHitsPrintAt < cfg.printHitsMinIntervalMs) return;
   lastHitsPrintAt = now;
 
+  pruneSignalHistory(signalHistory);
+
   const rows = [
-    ...[...activeHits.entries()].map(([symbol, m]) => ({
+    ...[...signalHistory.entries()].map(([symbol, m]) => ({
       symbol,
-      status: "SIGNAL",
+      status: m.ended ? "ENDED" : "SIGNAL",
+      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
       ...m,
     })),
     ...[...nearBreakHits.entries()].map(([symbol, m]) => ({
@@ -464,15 +493,19 @@ function printHits(activeHits, nearBreakHits, force = false) {
     })),
   ]
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "SIGNAL" ? -1 : 1;
-      if (a.status === "NEAR") return a.breakGapPct - b.breakGapPct;
-      return b.rangeRatio - a.rangeRatio;
+      if (a.status === "NEAR" && b.status === "NEAR") {
+        return a.breakGapPct - b.breakGapPct;
+      }
+      if (a.status === "NEAR") return 1;
+      if (b.status === "NEAR") return -1;
+      return (b.triggeredAt ? Date.parse(b.triggeredAt) : 0) -
+        (a.triggeredAt ? Date.parse(a.triggeredAt) : 0);
     })
     .slice(0, cfg.maxHitsToPrint);
 
   if (dashboard) {
     dashboard.setMeta({ prefetching });
-    dashboard.publish(activeHits, nearBreakHits, force);
+    dashboard.publish(activeHits, nearBreakHits, signalHistory, force);
   }
 
   console.clear();
@@ -490,6 +523,7 @@ function applySymbolSignal(
   qv,
   activeHits,
   nearBreakHits,
+  signalHistory,
   lastPass,
   lastNearBreak
 ) {
@@ -500,7 +534,21 @@ function applySymbolSignal(
   const qvRounded = Math.round(qv);
 
   if (pass) {
-    activeHits.set(sym, { ...m, signalStatus: "active", quoteVol24h: qvRounded });
+    const existing = signalHistory.get(sym);
+    const triggeredAt = !prevPass
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        activeHits.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...m,
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    activeHits.set(sym, row);
+    signalHistory.set(sym, row);
     nearBreakHits.delete(sym);
     if (!prevPass) {
       const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
@@ -522,20 +570,22 @@ function applySymbolSignal(
       signalStatus: "near",
       quoteVol24h: qvRounded,
     });
-    activeHits.delete(sym);
+    if (prevPass) {
+      markSignalEnded(sym, activeHits, signalHistory, m);
+      dashboard?.pushEvent("END", sym);
+      console.log(`ENDED\t${sym}`);
+    } else {
+      activeHits.delete(sym);
+    }
     if (!prevNear) {
       const detail = `${m.breakGapPct}% below ${m.corridorHigh} range×${m.rangeRatio}`;
       dashboard?.pushEvent("NEAR", sym, detail);
       console.log(`NEAR BREAK\t${sym}\t${detail}`);
       telegram?.onNearSignal(sym, m, cfg);
     }
-    if (prevPass) {
-      dashboard?.pushEvent("END", sym);
-      console.log(`ENDED\t${sym}`);
-    }
   } else {
     if (prevPass) {
-      activeHits.delete(sym);
+      markSignalEnded(sym, activeHits, signalHistory, m);
       dashboard?.pushEvent("END", sym);
       console.log(`ENDED\t${sym}`);
     }
@@ -555,6 +605,7 @@ function reevaluateAllSymbols(
   historyBuffers,
   activeHits,
   nearBreakHits,
+  signalHistory,
   lastPass,
   lastNearBreak,
   quoteVolMap
@@ -562,7 +613,9 @@ function reevaluateAllSymbols(
   for (const sym of symbols) {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
-      if (lastPass.get(sym)) activeHits.delete(sym);
+      if (lastPass.get(sym)) {
+        markSignalEnded(sym, activeHits, signalHistory, null);
+      }
       if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
       lastNearBreak.set(sym, false);
@@ -576,11 +629,12 @@ function reevaluateAllSymbols(
       qv,
       activeHits,
       nearBreakHits,
+      signalHistory,
       lastPass,
       lastNearBreak
     );
   }
-  printHits(activeHits, nearBreakHits, true);
+  printHits(activeHits, nearBreakHits, signalHistory, true);
 }
 
 function createWsShards(
@@ -588,6 +642,7 @@ function createWsShards(
   historyBuffers,
   activeHits,
   nearBreakHits,
+  signalHistory,
   lastPass,
   lastNearBreak,
   quoteVolMap
@@ -605,7 +660,9 @@ function createWsShards(
   const evaluate = (sym) => {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
-      if (lastPass.get(sym)) activeHits.delete(sym);
+      if (lastPass.get(sym)) {
+        markSignalEnded(sym, activeHits, signalHistory, null);
+      }
       if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
       lastNearBreak.set(sym, false);
@@ -622,6 +679,7 @@ function createWsShards(
       qv,
       activeHits,
       nearBreakHits,
+      signalHistory,
       lastPass,
       lastNearBreak
     );
@@ -629,7 +687,7 @@ function createWsShards(
     const pass = Boolean(m?.passes);
     const near = Boolean(m?.nearBreak);
     if (pass !== prevPass || near !== prevNear) {
-      printHits(activeHits, nearBreakHits, true);
+      printHits(activeHits, nearBreakHits, signalHistory, true);
     }
   };
 
@@ -751,6 +809,7 @@ function startStaleSymbolRefresh(
   historyBuffers,
   activeHits,
   nearBreakHits,
+  signalHistory,
   lastPass,
   lastNearBreak,
   quoteVolMap
@@ -802,6 +861,7 @@ function startStaleSymbolRefresh(
               quoteVolMap.get(sym) ?? 0,
               activeHits,
               nearBreakHits,
+              signalHistory,
               lastPass,
               lastNearBreak
             );
@@ -825,6 +885,7 @@ async function prefetchAllSymbols(
   historyBuffers,
   activeHits,
   nearBreakHits,
+  signalHistory,
   lastPass,
   lastNearBreak,
   quoteVolMap
@@ -868,6 +929,7 @@ async function prefetchAllSymbols(
         historyBuffers,
         activeHits,
         nearBreakHits,
+        signalHistory,
         lastPass,
         lastNearBreak,
         quoteVolMap
@@ -902,7 +964,7 @@ async function prefetchAllSymbols(
       elapsedSec: Math.round((Date.now() - t0) / 1000),
     },
   });
-  printHits(activeHits, nearBreakHits, true);
+  printHits(activeHits, nearBreakHits, signalHistory, true);
   console.error(
     `Prefetch done: ${fromCache} from cache, ${fetched} from REST, ${failed} failed`
   );
@@ -913,6 +975,7 @@ function evaluateAfterPrefetch(
   historyBuffers,
   activeHits,
   nearBreakHits,
+  signalHistory,
   lastPass,
   lastNearBreak,
   quoteVolMap
@@ -930,6 +993,7 @@ function evaluateAfterPrefetch(
     quoteVolMap.get(sym) ?? 0,
     activeHits,
     nearBreakHits,
+    signalHistory,
     lastPass,
     lastNearBreak
   );
@@ -989,6 +1053,7 @@ async function main() {
   const historyBuffers = new Map();
   const activeHits = new Map();
   const nearBreakHits = new Map();
+  const signalHistory = new Map();
   const lastPass = new Map();
   const lastNearBreak = new Map();
 
@@ -1357,39 +1422,42 @@ async function main() {
       port: kv.has("port") ? Number(kv.get("port")) : undefined,
       host: kv.get("host"),
     });
-    startDashboard(() => dashboard.buildState(activeHits, nearBreakHits), {
-      port,
-      host,
-      getPairs: (searchParams) => scannerApi.getPairs(searchParams),
-      getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
-      getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
-      getWsDiagnostics: () => wsDiagnostics(),
-      getChartData: (symbol, searchParams) =>
-        scannerApi.getChartData(symbol, searchParams),
-      postTelegramSignal: (symbol, searchParams) =>
-        scannerApi.postTelegramSignal(symbol, searchParams),
-      onConfigUpdate: async (patch) => {
-        const updates = validateLiveConfigPatch(patch);
-        Object.assign(cfg, updates);
-        applyBarConfig(cfg);
-        dashboard.syncConfigFromCfg();
-        dashboard.pushEvent(
-          "CONFIG",
-          "scanner",
-          Object.entries(updates)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(" ")
-        );
-        console.error(
-          `Config updated: ${Object.entries(updates)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(", ")} | bars needed: ${cfg.limit}`
-        );
-        reevaluateAll();
-        return dashboard.buildState(activeHits, nearBreakHits);
-      },
-    });
-    dashboard.publish(activeHits, nearBreakHits, true);
+    startDashboard(
+      () => dashboard.buildState(activeHits, nearBreakHits, signalHistory),
+      {
+        port,
+        host,
+        getPairs: (searchParams) => scannerApi.getPairs(searchParams),
+        getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
+        getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
+        getWsDiagnostics: () => wsDiagnostics(),
+        getChartData: (symbol, searchParams) =>
+          scannerApi.getChartData(symbol, searchParams),
+        postTelegramSignal: (symbol, searchParams) =>
+          scannerApi.postTelegramSignal(symbol, searchParams),
+        onConfigUpdate: async (patch) => {
+          const updates = validateLiveConfigPatch(patch);
+          Object.assign(cfg, updates);
+          applyBarConfig(cfg);
+          dashboard.syncConfigFromCfg();
+          dashboard.pushEvent(
+            "CONFIG",
+            "scanner",
+            Object.entries(updates)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(" ")
+          );
+          console.error(
+            `Config updated: ${Object.entries(updates)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(", ")} | bars needed: ${cfg.limit}`
+          );
+          reevaluateAll();
+          return dashboard.buildState(activeHits, nearBreakHits, signalHistory);
+        },
+      }
+    );
+    dashboard.publish(activeHits, nearBreakHits, signalHistory, true);
   }
 
   symbols = await resolveSymbols(flags, kv);
@@ -1408,6 +1476,7 @@ async function main() {
       historyBuffers,
       activeHits,
       nearBreakHits,
+      signalHistory,
       lastPass,
       lastNearBreak,
       quoteVolMap
@@ -1427,6 +1496,7 @@ async function main() {
     historyBuffers,
     activeHits,
     nearBreakHits,
+    signalHistory,
     lastPass,
     lastNearBreak,
     quoteVolMap
@@ -1436,6 +1506,7 @@ async function main() {
     historyBuffers,
     activeHits,
     nearBreakHits,
+    signalHistory,
     lastPass,
     lastNearBreak,
     quoteVolMap
@@ -1447,6 +1518,7 @@ async function main() {
       historyBuffers,
       activeHits,
       nearBreakHits,
+      signalHistory,
       lastPass,
       lastNearBreak,
       quoteVolMap
