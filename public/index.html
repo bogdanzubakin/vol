@@ -922,7 +922,7 @@
       }
       if (name === "fastcorridor") {
         loadFastCorridorConfigForm();
-        setFastCorridorMsg("Click Refresh to update the table from collected live data", true);
+        loadFastCorridor();
       }
       if (name === "websockets") {
         loadWsDiagnostics();
@@ -1815,6 +1815,7 @@
       syncConfigForm(state);
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
+      if (activeTab === "fastcorridor") loadFastCorridor();
       if (activeTab === "websockets") loadWsDiagnostics();
 
       const sub = document.getElementById("subtitle");
