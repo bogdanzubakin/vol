@@ -1783,7 +1783,6 @@ async function main() {
         getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
         getFastCorridor: (searchParams) => scannerApi.getFastCorridor(searchParams),
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
-        getWsDiagnostics: () => wsDiagnostics(),
         getChartData: (symbol, searchParams) =>
           scannerApi.getChartData(symbol, searchParams),
         postTelegramSignal: (symbol, searchParams) =>
