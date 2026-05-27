@@ -132,12 +132,27 @@ function volSpikeMetrics(sym, historyBuffers) {
   return computeVolSpikeMetrics(evalBars(sym, historyBuffers), cfg);
 }
 
-function shouldNotifySignal(sym) {
+function shouldNotifySignal(sym, kind = "spike") {
   const now = Date.now();
-  const last = lastSignalNotifyAt.get(sym) ?? 0;
+  const key = kind === "spike" ? sym : `${sym}:${kind}`;
+  const last = lastSignalNotifyAt.get(key) ?? 0;
   if (now - last < cfg.signalNotifyCooldownMs) return false;
-  lastSignalNotifyAt.set(sym, now);
+  lastSignalNotifyAt.set(key, now);
   return true;
+}
+
+function fastCorridorOpts() {
+  return {
+    fastMoveLookbackCandles: cfg.fastMoveLookbackCandles,
+    minAvgMovePct: cfg.minAvgMovePct,
+    fastMoveExcludeMult: cfg.fastMoveExcludeMult,
+    minCorridorWidthPct: cfg.fastCorridorMinWidthPct,
+    maxCorridorWidthPct: cfg.fastCorridorMaxWidthPct,
+    corridorWidthTolerancePct: cfg.fastCorridorWidthTolerancePct,
+    minHalfWaves: cfg.fastCorridorMinHalfWaves,
+    halfWaveFraction: cfg.fastCorridorHalfWaveFraction,
+    halfWaveLookbackCandles: cfg.fastCorridorHalfWaveLookback,
+  };
 }
 
 function parseArgs(argv) {
@@ -470,6 +485,7 @@ function markSignalEnded(sym, activeHits, signalHistory, m) {
   signalHistory.set(sym, {
     ...(rec ?? live ?? {}),
     ...(m ?? {}),
+    signalKind: "spike",
     triggeredAt,
     ended: true,
     endedAt: Date.now(),
@@ -479,18 +495,52 @@ function markSignalEnded(sym, activeHits, signalHistory, m) {
   activeHits.delete(sym);
 }
 
-function printHits(activeHits, nearBreakHits, signalHistory, force = false) {
+function markFastCorridorEnded(sym, fcActive, fcHistory, fc) {
+  const live = fcActive.get(sym);
+  const rec = fcHistory.get(sym);
+  if (!live && !rec) return;
+  const triggeredAt = rec?.triggeredAt ?? live?.triggeredAt ?? Date.now();
+  fcHistory.set(sym, {
+    ...(rec ?? live ?? {}),
+    ...(fc ?? {}),
+    signalKind: "fast-corridor",
+    triggeredAt,
+    ended: true,
+    endedAt: Date.now(),
+    signalStatus: "ended",
+    quoteVol24h: live?.quoteVol24h ?? rec?.quoteVol24h,
+  });
+  fcActive.delete(sym);
+}
+
+function printHits(
+  activeHits,
+  nearBreakHits,
+  signalHistory,
+  fcActive,
+  fcHistory,
+  force = false
+) {
   const now = Date.now();
   if (!force && now - lastHitsPrintAt < cfg.printHitsMinIntervalMs) return;
   lastHitsPrintAt = now;
 
   pruneSignalHistory(signalHistory);
+  pruneSignalHistory(fcHistory);
 
   const rows = [
     ...[...signalHistory.entries()].map(([symbol, m]) => ({
       symbol,
       status: m.ended ? "ENDED" : "SIGNAL",
       triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
+      signalKind: "spike",
+      ...m,
+    })),
+    ...[...fcHistory.entries()].map(([symbol, m]) => ({
+      symbol,
+      status: m.ended ? "ENDED" : "FAST CORRIDOR",
+      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
+      signalKind: "fast-corridor",
       ...m,
     })),
     ...[...nearBreakHits.entries()].map(([symbol, m]) => ({
@@ -505,14 +555,22 @@ function printHits(activeHits, nearBreakHits, signalHistory, force = false) {
       }
       if (a.status === "NEAR") return 1;
       if (b.status === "NEAR") return -1;
-      return (b.triggeredAt ? Date.parse(b.triggeredAt) : 0) -
-        (a.triggeredAt ? Date.parse(a.triggeredAt) : 0);
+      const at = a.triggeredAt ? Date.parse(a.triggeredAt) : 0;
+      const bt = b.triggeredAt ? Date.parse(b.triggeredAt) : 0;
+      return bt - at;
     })
     .slice(0, cfg.maxHitsToPrint);
 
   if (dashboard) {
     dashboard.setMeta({ prefetching });
-    dashboard.publish(activeHits, nearBreakHits, signalHistory, force);
+    dashboard.publish(
+      activeHits,
+      nearBreakHits,
+      signalHistory,
+      fcActive,
+      fcHistory,
+      force
+    );
   }
 
   console.clear();
@@ -549,6 +607,7 @@ function applySymbolSignal(
         Date.now());
     const row = {
       ...m,
+      signalKind: "spike",
       signalStatus: "active",
       quoteVol24h: qvRounded,
       triggeredAt,
@@ -607,14 +666,97 @@ function applySymbolSignal(
   lastNearBreak.set(sym, near);
 }
 
+function applyFastCorridorSignal(
+  sym,
+  fc,
+  qv,
+  fcActive,
+  fcHistory,
+  lastFc
+) {
+  const pass = Boolean(fc?.fastCorridor);
+  const prev = lastFc.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass) {
+    const existing = fcHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        fcActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...fc,
+      signalKind: "fast-corridor",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    fcActive.set(sym, row);
+    fcHistory.set(sym, row);
+    if (!prev) {
+      const detail = `corridor ${fc.corridorWidthPct}% · ${fc.halfWaves} half-waves · avg move ${fc.avgMovePct}%`;
+      dashboard?.pushEvent("NEW_FC", sym, detail);
+      console.log(`NEW FAST CORRIDOR\t${sym}\t${detail}`);
+      if (shouldNotifySignal(sym, "fast-corridor")) {
+        telegram?.onFastCorridorSignal(sym, fc, cfg);
+      } else {
+        console.log(`SKIP NOTIFY\t${sym}\tfast corridor cooldown`);
+      }
+    }
+  } else if (prev) {
+    markFastCorridorEnded(sym, fcActive, fcHistory, fc);
+    dashboard?.pushEvent("END_FC", sym);
+    console.log(`FAST CORRIDOR END\t${sym}`);
+  }
+
+  lastFc.set(sym, pass);
+}
+
+function evaluateSymbolSignals(
+  sym,
+  historyBuffers,
+  qv,
+  activeHits,
+  nearBreakHits,
+  signalHistory,
+  fcActive,
+  fcHistory,
+  lastPass,
+  lastNearBreak,
+  lastFc
+) {
+  const bars = evalBars(sym, historyBuffers);
+  const m = bars ? computeVolSpikeMetrics(bars, cfg) : null;
+  const fc = bars ? fastCorridorMetrics(bars, cfg, fastCorridorOpts()) : null;
+
+  applySymbolSignal(
+    sym,
+    m,
+    qv,
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    lastPass,
+    lastNearBreak
+  );
+  applyFastCorridorSignal(sym, fc, qv, fcActive, fcHistory, lastFc);
+
+  return { m, fc };
+}
+
 function reevaluateAllSymbols(
   symbols,
   historyBuffers,
   activeHits,
   nearBreakHits,
   signalHistory,
+  fcActive,
+  fcHistory,
   lastPass,
   lastNearBreak,
+  lastFc,
   quoteVolMap
 ) {
   for (const sym of symbols) {
@@ -623,25 +765,31 @@ function reevaluateAllSymbols(
       if (lastPass.get(sym)) {
         markSignalEnded(sym, activeHits, signalHistory, null);
       }
+      if (lastFc.get(sym)) {
+        markFastCorridorEnded(sym, fcActive, fcHistory, null);
+      }
       if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
       lastNearBreak.set(sym, false);
+      lastFc.set(sym, false);
       continue;
     }
 
-    const m = volSpikeMetrics(sym, historyBuffers);
-    applySymbolSignal(
+    evaluateSymbolSignals(
       sym,
-      m,
+      historyBuffers,
       qv,
       activeHits,
       nearBreakHits,
       signalHistory,
+      fcActive,
+      fcHistory,
       lastPass,
-      lastNearBreak
+      lastNearBreak,
+      lastFc
     );
   }
-  printHits(activeHits, nearBreakHits, signalHistory, true);
+  printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
 }
 
 function createWsShards(
@@ -650,8 +798,11 @@ function createWsShards(
   activeHits,
   nearBreakHits,
   signalHistory,
+  fcActive,
+  fcHistory,
   lastPass,
   lastNearBreak,
+  lastFc,
   quoteVolMap
 ) {
   const streamSuffix = `@kline_${cfg.interval}`;
@@ -670,31 +821,39 @@ function createWsShards(
       if (lastPass.get(sym)) {
         markSignalEnded(sym, activeHits, signalHistory, null);
       }
+      if (lastFc.get(sym)) {
+        markFastCorridorEnded(sym, fcActive, fcHistory, null);
+      }
       if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
       lastNearBreak.set(sym, false);
+      lastFc.set(sym, false);
       return;
     }
 
-    const m = volSpikeMetrics(sym, historyBuffers);
     const prevPass = lastPass.get(sym) ?? false;
     const prevNear = lastNearBreak.get(sym) ?? false;
+    const prevFc = lastFc.get(sym) ?? false;
 
-    applySymbolSignal(
+    const { m, fc } = evaluateSymbolSignals(
       sym,
-      m,
+      historyBuffers,
       qv,
       activeHits,
       nearBreakHits,
       signalHistory,
+      fcActive,
+      fcHistory,
       lastPass,
-      lastNearBreak
+      lastNearBreak,
+      lastFc
     );
 
     const pass = Boolean(m?.passes);
     const near = Boolean(m?.nearBreak);
-    if (pass !== prevPass || near !== prevNear) {
-      printHits(activeHits, nearBreakHits, signalHistory, true);
+    const fcPass = Boolean(fc?.fastCorridor);
+    if (pass !== prevPass || near !== prevNear || fcPass !== prevFc) {
+      printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
     }
   };
 
@@ -817,8 +976,11 @@ function startStaleSymbolRefresh(
   activeHits,
   nearBreakHits,
   signalHistory,
+  fcActive,
+  fcHistory,
   lastPass,
   lastNearBreak,
+  lastFc,
   quoteVolMap
 ) {
   let cursor = 0;
@@ -860,17 +1022,18 @@ function startStaleSymbolRefresh(
                 Math.max(cfg.fastMoveLookbackCandles ?? 10, 10)
               );
           if (applyRestRepairBars(historyBuffers, sym, bars)) {
-            const m = volSpikeMetrics(sym, historyBuffers);
-            // Keep signal state in sync for symbols repaired through REST fallback.
-            applySymbolSignal(
+            evaluateSymbolSignals(
               sym,
-              m,
+              historyBuffers,
               quoteVolMap.get(sym) ?? 0,
               activeHits,
               nearBreakHits,
               signalHistory,
+              fcActive,
+              fcHistory,
               lastPass,
-              lastNearBreak
+              lastNearBreak,
+              lastFc
             );
           }
         } catch (e) {
@@ -893,8 +1056,11 @@ async function prefetchAllSymbols(
   activeHits,
   nearBreakHits,
   signalHistory,
+  fcActive,
+  fcHistory,
   lastPass,
   lastNearBreak,
+  lastFc,
   quoteVolMap
 ) {
   prefetching = true;
@@ -937,8 +1103,11 @@ async function prefetchAllSymbols(
         activeHits,
         nearBreakHits,
         signalHistory,
+        fcActive,
+        fcHistory,
         lastPass,
         lastNearBreak,
+        lastFc,
         quoteVolMap
       );
     } catch (e) {
@@ -971,7 +1140,7 @@ async function prefetchAllSymbols(
       elapsedSec: Math.round((Date.now() - t0) / 1000),
     },
   });
-  printHits(activeHits, nearBreakHits, signalHistory, true);
+  printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
   console.error(
     `Prefetch done: ${fromCache} from cache, ${fetched} from REST, ${failed} failed`
   );
@@ -983,26 +1152,38 @@ function evaluateAfterPrefetch(
   activeHits,
   nearBreakHits,
   signalHistory,
+  fcActive,
+  fcHistory,
   lastPass,
   lastNearBreak,
+  lastFc,
   quoteVolMap
 ) {
-  const m = volSpikeMetrics(sym, historyBuffers);
-  if (!m) return;
+  const bars = evalBars(sym, historyBuffers);
+  if (!bars) return;
 
+  const m = computeVolSpikeMetrics(bars, cfg);
+  const fc = fastCorridorMetrics(bars, cfg, fastCorridorOpts());
   const prevPass = lastPass.get(sym) ?? false;
   const prevNear = lastNearBreak.get(sym) ?? false;
-  if ((m.passes && prevPass) || (m.nearBreak && prevNear)) return;
+  const prevFc = lastFc.get(sym) ?? false;
+  const spikeChanged =
+    Boolean(m?.passes) !== prevPass || Boolean(m?.nearBreak) !== prevNear;
+  const fcChanged = Boolean(fc?.fastCorridor) !== prevFc;
+  if (!spikeChanged && !fcChanged) return;
 
-  applySymbolSignal(
+  evaluateSymbolSignals(
     sym,
-    m,
+    historyBuffers,
     quoteVolMap.get(sym) ?? 0,
     activeHits,
     nearBreakHits,
     signalHistory,
+    fcActive,
+    fcHistory,
     lastPass,
-    lastNearBreak
+    lastNearBreak,
+    lastFc
   );
 }
 
@@ -1061,8 +1242,11 @@ async function main() {
   const activeHits = new Map();
   const nearBreakHits = new Map();
   const signalHistory = new Map();
+  const fcActive = new Map();
+  const fcHistory = new Map();
   const lastPass = new Map();
   const lastNearBreak = new Map();
+  const lastFc = new Map();
 
   let symbols = [];
   let reevaluateAll = () => {};
@@ -1568,7 +1752,14 @@ async function main() {
       host: kv.get("host"),
     });
     startDashboard(
-      () => dashboard.buildState(activeHits, nearBreakHits, signalHistory),
+      () =>
+        dashboard.buildState(
+          activeHits,
+          nearBreakHits,
+          signalHistory,
+          fcActive,
+          fcHistory
+        ),
       {
         port,
         host,
@@ -1599,11 +1790,24 @@ async function main() {
               .join(", ")} | bars needed: ${cfg.limit}`
           );
           reevaluateAll();
-          return dashboard.buildState(activeHits, nearBreakHits, signalHistory);
+          return dashboard.buildState(
+            activeHits,
+            nearBreakHits,
+            signalHistory,
+            fcActive,
+            fcHistory
+          );
         },
       }
     );
-    dashboard.publish(activeHits, nearBreakHits, signalHistory, true);
+    dashboard.publish(
+      activeHits,
+      nearBreakHits,
+      signalHistory,
+      fcActive,
+      fcHistory,
+      true
+    );
   }
 
   symbols = await resolveSymbols(flags, kv);
@@ -1623,8 +1827,11 @@ async function main() {
       activeHits,
       nearBreakHits,
       signalHistory,
+      fcActive,
+      fcHistory,
       lastPass,
       lastNearBreak,
+      lastFc,
       quoteVolMap
     );
 
@@ -1643,8 +1850,11 @@ async function main() {
     activeHits,
     nearBreakHits,
     signalHistory,
+    fcActive,
+    fcHistory,
     lastPass,
     lastNearBreak,
+    lastFc,
     quoteVolMap
   );
   const stopStaleRefresh = startStaleSymbolRefresh(
@@ -1653,8 +1863,11 @@ async function main() {
     activeHits,
     nearBreakHits,
     signalHistory,
+    fcActive,
+    fcHistory,
     lastPass,
     lastNearBreak,
+    lastFc,
     quoteVolMap
   );
 
@@ -1665,8 +1878,11 @@ async function main() {
       activeHits,
       nearBreakHits,
       signalHistory,
+      fcActive,
+      fcHistory,
       lastPass,
       lastNearBreak,
+      lastFc,
       quoteVolMap
     );
   } else {

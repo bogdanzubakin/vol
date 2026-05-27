@@ -110,6 +110,8 @@
     .near { color: #fbbf24; }
     tr.hit-active td { background: rgba(34, 197, 94, 0.04); }
     tr.hit-ended td { background: rgba(148, 163, 184, 0.06); }
+    tr.hit-fc td { background: rgba(56, 189, 248, 0.06); }
+    tr.hit-fc-ended td { background: rgba(56, 189, 248, 0.03); }
     tr.hit-near td { background: rgba(251, 191, 36, 0.06); }
     .status-tag {
       display: inline-block;
@@ -127,6 +129,10 @@
     .status-tag.near {
       background: rgba(251, 191, 36, 0.2);
       color: #fbbf24;
+    }
+    .status-tag.fc {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
     }
     .empty {
       padding: 32px 16px;
@@ -502,6 +508,7 @@
       <h2>Signals <span id="hitCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         <span class="status-tag signal">SIGNAL</span> full break ·
+        <span class="status-tag fc">FAST CORRIDOR</span> fast mover in target corridor with half-waves ·
         <span class="status-tag near">NEAR</span> all criteria except break (within gap %) ·
         signals stay <strong>24h</strong> after trigger (newest first)
       </p>
@@ -1854,19 +1861,38 @@
         tbody.innerHTML = rows
           .map((h) => {
             const isNear = h.signalStatus === "near";
+            const isFc = h.signalKind === "fast-corridor";
             const isEnded = h.signalStatus === "ended";
             const tag = isNear
               ? '<span class="status-tag near">NEAR</span>'
-              : isEnded
-                ? '<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag signal">SIGNAL</span>'
-                : '<span class="status-tag signal">SIGNAL</span>';
-            const rowCls = isNear ? "hit-near" : isEnded ? "hit-ended" : "hit-active";
-            const rangeCls = isNear ? "near" : isEnded ? "" : "pass";
+              : isFc
+                ? isEnded
+                  ? '<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag fc">FAST CORRIDOR</span>'
+                  : '<span class="status-tag fc">FAST CORRIDOR</span>'
+                : isEnded
+                  ? '<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag signal">SIGNAL</span>'
+                  : '<span class="status-tag signal">SIGNAL</span>';
+            const rowCls = isNear
+              ? "hit-near"
+              : isFc
+                ? isEnded
+                  ? "hit-fc-ended"
+                  : "hit-fc"
+                : isEnded
+                  ? "hit-ended"
+                  : "hit-active";
+            const rangeCls = isNear ? "near" : isFc ? "pass" : isEnded ? "" : "pass";
+            const rangeCell = isFc
+              ? `${fmt(h.avgMovePct, 3)}%`
+              : fmt(h.rangeRatio, 2);
+            const volCell = isFc ? "—" : yn(h.volIncreasing);
             const breakCell = isNear
               ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
-              : isEnded
-                ? `<span class="time">ended</span>`
-                : `<span class="pass">Y</span>`;
+              : isFc
+                ? `<span class="pass">${h.halfWaves ?? "—"} waves</span>`
+                : isEnded
+                  ? `<span class="time">ended</span>`
+                  : `<span class="pass">Y</span>`;
             const triggeredCell = isNear
               ? "—"
               : `<span class="time">${fmtDisplayDateTime(h.triggeredAtIso ?? h.triggeredAt)} ${TZ_LABEL}</span>`;
@@ -1877,9 +1903,9 @@
               </td>
               <td>${fmt(h.close, 6)}</td>
               <td>${fmt(h.corridorHigh, 6)}</td>
-              <td class="${rangeCls}">${fmt(h.rangeRatio, 2)}</td>
+              <td class="${rangeCls}">${rangeCell}</td>
               <td>${fmt(h.corridorWidthPct, 2)}%</td>
-              <td>${yn(h.volIncreasing)}</td>
+              <td>${volCell}</td>
               <td>${breakCell}</td>
             </tr>`;
           })
@@ -1896,9 +1922,9 @@
         ev.innerHTML = state.events
           .map((e) => {
             const cls =
-              e.type === "NEW"
+              e.type === "NEW" || e.type === "NEW_FC"
                 ? "new"
-                : e.type === "END"
+                : e.type === "END" || e.type === "END_FC"
                   ? "end"
                   : e.type === "NEAR" || e.type === "END_NEAR"
                     ? "near"
