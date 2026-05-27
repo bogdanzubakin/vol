@@ -428,6 +428,7 @@
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
     <button type="button" class="tab" data-tab="topmovers" role="tab">Top movers</button>
+    <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
     <button type="button" class="tab" data-tab="websockets" role="tab">WebSockets</button>
   </nav>
 
@@ -681,6 +682,74 @@
     </section>
   </div>
 
+  <div id="panel-fastcorridor" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Fast corridor <span id="fastCorridorCount"></span></h2>
+      <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
+        Subset of <strong>Fast movers</strong> (use settings on that tab) whose <strong>corridor width</strong> sits in the target band (with tolerance) and price has completed at least N half-waves (swings of ~½ corridor range).
+      </p>
+      <form class="settings-form movers-settings" id="fastCorridorConfigForm">
+        <div class="field">
+          <label for="fcMinCorridorWidthPct">Min corridor %</label>
+          <input type="number" id="fcMinCorridorWidthPct" name="minCorridorWidthPct" step="0.1" min="0.1" max="50" value="1" required />
+          <div class="hint">Corridor width lower bound</div>
+        </div>
+        <div class="field">
+          <label for="fcMaxCorridorWidthPct">Max corridor %</label>
+          <input type="number" id="fcMaxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="50" value="5" required />
+          <div class="hint">Corridor width upper bound</div>
+        </div>
+        <div class="field">
+          <label for="fcCorridorTolerancePct">Corridor tolerance %</label>
+          <input type="number" id="fcCorridorTolerancePct" name="corridorWidthTolerancePct" step="1" min="0" max="50" value="10" required />
+          <div class="hint">±% slack on min/max corridor width</div>
+        </div>
+        <div class="field">
+          <label for="fcMinHalfWaves">Min half-waves</label>
+          <input type="number" id="fcMinHalfWaves" name="minHalfWaves" step="1" min="1" max="50" value="3" required />
+          <div class="hint">Completed swings in lookback window</div>
+        </div>
+        <div class="field">
+          <label for="fcHalfWaveFraction">Half-wave size</label>
+          <input type="number" id="fcHalfWaveFraction" name="halfWaveFraction" step="0.05" min="0.1" max="1" value="0.5" required />
+          <div class="hint">Swing leg as fraction of corridor range (0.5 = half)</div>
+        </div>
+        <div class="field">
+          <label for="fcHalfWaveLookback">Wave lookback bars</label>
+          <input type="number" id="fcHalfWaveLookback" name="halfWaveLookback" step="1" min="2" max="2000" value="120" required />
+          <div class="hint">Bars scanned for half-wave count</div>
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm" id="fastCorridorApply">Apply</button>
+          <button type="button" class="btn secondary sm" id="fastCorridorRefresh">Refresh</button>
+          <span class="config-msg" id="fastCorridorMsg"></span>
+        </div>
+      </form>
+      <div class="pairs-toolbar" style="margin-top: 12px">
+        <input type="search" id="fastCorridorSearch" placeholder="Search symbol…" />
+      </div>
+      <div class="pairs-table-wrap table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" data-fc-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-fc-sort="close">Close <span class="sort-mark"></span></th>
+              <th class="sortable" data-fc-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
+              <th class="sortable" data-fc-sort="corridorWidthPct">Corridor % <span class="sort-mark"></span></th>
+              <th class="sortable" data-fc-sort="halfWaves">Half-waves <span class="sort-mark"></span></th>
+              <th class="sortable" data-fc-sort="corridorHigh">Corridor high <span class="sort-mark"></span></th>
+              <th class="sortable" data-fc-sort="corridorLow">Corridor low <span class="sort-mark"></span></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="fastCorridorBody">
+            <tr><td colspan="8" class="empty">Open this tab to load fast corridor pairs</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <div id="panel-websockets" class="tab-panel" role="tabpanel">
     <section>
       <h2>WebSockets <span id="wsCount"></span></h2>
@@ -774,6 +843,9 @@
     let activeTab = "scanner";
     let pairsPollTimer = null;
     let fastMoversLoading = false;
+    let fastCorridorLoading = false;
+    let lastFastCorridor = [];
+    let fastCorridorSort = { key: "halfWaves", dir: "desc" };
     let lastFastMovers = [];
     let moversSort = { key: "avgMovePct", dir: "desc" };
     let topMoversLoading = false;
@@ -847,6 +919,10 @@
       if (name === "topmovers") {
         loadTopMoversConfigForm();
         loadTopMovers();
+      }
+      if (name === "fastcorridor") {
+        loadFastCorridorConfigForm();
+        setFastCorridorMsg("Click Refresh to update the table from collected live data", true);
       }
       if (name === "websockets") {
         loadWsDiagnostics();
@@ -1243,6 +1319,159 @@
         btn.addEventListener("click", () => openChart(btn.dataset.symbol));
       });
     }
+
+    const FAST_CORRIDOR_CONFIG_KEYS = [
+      ["fcMinCorridorWidthPct", "minCorridorWidthPct"],
+      ["fcMaxCorridorWidthPct", "maxCorridorWidthPct"],
+      ["fcCorridorTolerancePct", "corridorWidthTolerancePct"],
+      ["fcMinHalfWaves", "minHalfWaves"],
+      ["fcHalfWaveFraction", "halfWaveFraction"],
+      ["fcHalfWaveLookback", "halfWaveLookback"],
+    ];
+
+    function loadFastCorridorConfigForm() {
+      loadMoversConfigForm();
+      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
+        const v = localStorage.getItem(`fastcorridor_${param}`);
+        const el = document.getElementById(elId);
+        if (el && v != null && v !== "") el.value = v;
+      }
+    }
+
+    function fastCorridorConfigParams() {
+      const params = moversConfigParams();
+      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
+        const el = document.getElementById(elId);
+        if (el) params.set(param, el.value);
+      }
+      return params;
+    }
+
+    function saveFastCorridorConfigForm() {
+      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
+        const el = document.getElementById(elId);
+        if (el) localStorage.setItem(`fastcorridor_${param}`, el.value);
+      }
+    }
+
+    function setFastCorridorMsg(text, ok) {
+      const el = document.getElementById("fastCorridorMsg");
+      el.textContent = text;
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    function fcSortValue(row, key) {
+      if (key === "symbol") return row.symbol ?? "";
+      return Number(row[key] ?? 0);
+    }
+
+    function sortedFastCorridor(rows) {
+      const { key, dir } = fastCorridorSort;
+      const sign = dir === "asc" ? 1 : -1;
+      return [...(rows ?? [])].sort((a, b) => {
+        const av = fcSortValue(a, key);
+        const bv = fcSortValue(b, key);
+        if (typeof av === "string" || typeof bv === "string") {
+          return String(av).localeCompare(String(bv)) * sign;
+        }
+        if (av !== bv) return (av - bv) * sign;
+        return String(a.symbol ?? "").localeCompare(String(b.symbol ?? ""));
+      });
+    }
+
+    function updateFastCorridorSortHeaders() {
+      document.querySelectorAll("[data-fc-sort]").forEach((th) => {
+        const mark = th.querySelector(".sort-mark");
+        const active = th.dataset.fcSort === fastCorridorSort.key;
+        th.setAttribute("aria-sort", active ? (fastCorridorSort.dir === "asc" ? "ascending" : "descending") : "none");
+        if (mark) mark.textContent = active ? (fastCorridorSort.dir === "asc" ? "▲" : "▼") : "";
+      });
+    }
+
+    function renderFastCorridor(data) {
+      lastFastCorridor = data.pairs ?? [];
+      document.getElementById("fastCorridorCount").textContent =
+        data.pairCount != null ? `(${data.pairCount})` : "";
+
+      const tbody = document.getElementById("fastCorridorBody");
+      const rows = sortedFastCorridor(lastFastCorridor);
+      updateFastCorridorSortHeaders();
+
+      if (!rows.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="8" class="empty">No fast corridor pairs match</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = rows
+        .map(
+          (p) => `<tr>
+            <td class="sym">${symLink(p.symbol)}</td>
+            <td>${fmt(p.close, 6)}</td>
+            <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
+            <td>${fmt(p.corridorWidthPct, 2)}%</td>
+            <td><strong>${p.halfWaves ?? "—"}</strong></td>
+            <td>${fmt(p.corridorHigh, 6)}</td>
+            <td>${fmt(p.corridorLow, 6)}</td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}">Chart</button></td>
+          </tr>`
+        )
+        .join("");
+
+      tbody.querySelectorAll(".chart-btn").forEach((btn) => {
+        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+      });
+    }
+
+    async function loadFastCorridor() {
+      if (fastCorridorLoading) return;
+      fastCorridorLoading = true;
+      const q = document.getElementById("fastCorridorSearch").value;
+      const params = fastCorridorConfigParams();
+      if (q.trim()) params.set("q", q.trim());
+
+      try {
+        const res = await fetch(`/api/fast-corridor?${params}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        setFastCorridorMsg(
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · fast ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg · corridor ${data.effCorridorMinPct}–${data.effCorridorMaxPct}% · ≥${data.minHalfWaves} half-waves`,
+          true
+        );
+        renderFastCorridor(data);
+      } catch (e) {
+        setFastCorridorMsg(e.message, false);
+        document.getElementById("fastCorridorBody").innerHTML =
+          `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      } finally {
+        fastCorridorLoading = false;
+      }
+    }
+
+    document.getElementById("fastCorridorConfigForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveFastCorridorConfigForm();
+      loadFastCorridor();
+    });
+    document.getElementById("fastCorridorRefresh").addEventListener("click", loadFastCorridor);
+    document.getElementById("fastCorridorSearch").addEventListener("input", () => {
+      clearTimeout(window._fastCorridorSearchTimer);
+      window._fastCorridorSearchTimer = setTimeout(loadFastCorridor, 300);
+    });
+    document.querySelectorAll("[data-fc-sort]").forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.fcSort;
+        if (fastCorridorSort.key === key) {
+          fastCorridorSort = {
+            key,
+            dir: fastCorridorSort.dir === "asc" ? "desc" : "asc",
+          };
+        } else {
+          fastCorridorSort = { key, dir: key === "symbol" ? "asc" : "desc" };
+        }
+        renderFastCorridor({ pairCount: lastFastCorridor.length, pairs: lastFastCorridor });
+      });
+    });
 
     document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
       e.preventDefault();

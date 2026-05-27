@@ -19,6 +19,7 @@ const {
   validateLiveConfigPatch,
   analyzeVolSpike,
   fastMoverMetrics,
+  fastCorridorMetrics,
   minHistoryBars,
   failedCheckLabels,
   serializeChecks,
@@ -72,6 +73,12 @@ const cfg = {
   minAvgMovePct: 0.5,
   fastMoveExcludeMult: 3,
   topMoveMinPct: 5,
+  fastCorridorMinWidthPct: 1,
+  fastCorridorMaxWidthPct: 5,
+  fastCorridorWidthTolerancePct: 10,
+  fastCorridorMinHalfWaves: 3,
+  fastCorridorHalfWaveFraction: 0.5,
+  fastCorridorHalfWaveLookback: 120,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -1280,6 +1287,141 @@ async function main() {
         telegramEnabled: Boolean(telegram?.enabled),
       };
     },
+    getFastCorridor(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      const lookback = Math.max(
+        2,
+        Math.min(
+          120,
+          Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
+        )
+      );
+      const minAvgMovePct = Math.max(
+        0.01,
+        Math.min(
+          20,
+          Number(searchParams.get("minAvgMovePct")) || cfg.minAvgMovePct
+        )
+      );
+      const excludeMult = Math.max(
+        1.5,
+        Math.min(
+          20,
+          Number(searchParams.get("excludeMult")) || cfg.fastMoveExcludeMult
+        )
+      );
+      const minCorridorWidthPct = Math.max(
+        0.1,
+        Math.min(
+          50,
+          Number(searchParams.get("minCorridorWidthPct")) ||
+            cfg.fastCorridorMinWidthPct
+        )
+      );
+      const maxCorridorWidthPct = Math.max(
+        minCorridorWidthPct,
+        Math.min(
+          50,
+          Number(searchParams.get("maxCorridorWidthPct")) ||
+            cfg.fastCorridorMaxWidthPct
+        )
+      );
+      const corridorWidthTolerancePct = Math.max(
+        0,
+        Math.min(
+          50,
+          Number(searchParams.get("corridorWidthTolerancePct")) ||
+            cfg.fastCorridorWidthTolerancePct
+        )
+      );
+      const minHalfWaves = Math.max(
+        1,
+        Math.min(
+          50,
+          Number(searchParams.get("minHalfWaves")) || cfg.fastCorridorMinHalfWaves
+        )
+      );
+      const halfWaveFraction = Math.max(
+        0.1,
+        Math.min(
+          1,
+          Number(searchParams.get("halfWaveFraction")) ||
+            cfg.fastCorridorHalfWaveFraction
+        )
+      );
+      const halfWaveLookbackCandles = Math.max(
+        2,
+        Math.min(
+          2000,
+          Number(searchParams.get("halfWaveLookback")) ||
+            cfg.fastCorridorHalfWaveLookback
+        )
+      );
+
+      const corridorOpts = {
+        fastMoveLookbackCandles: lookback,
+        minAvgMovePct,
+        fastMoveExcludeMult: excludeMult,
+        minCorridorWidthPct,
+        maxCorridorWidthPct,
+        corridorWidthTolerancePct,
+        minHalfWaves,
+        halfWaveFraction,
+        halfWaveLookbackCandles,
+      };
+
+      let pairs = symbols
+        .map((sym) => {
+          const buf = historyBuffers.get(sym) ?? [];
+          let evalBars;
+          try {
+            const ev = barsForEvaluation(sym, searchParams);
+            evalBars = ev.bars;
+          } catch {
+            return null;
+          }
+
+          const fc = fastCorridorMetrics(
+            klineCache.evalWindow(evalBars, cfg.limit),
+            cfg,
+            corridorOpts
+          );
+          if (!fc?.fastCorridor) return null;
+
+          return {
+            symbol: sym,
+            close: fc.close,
+            avgMovePct: fc.avgMovePct,
+            corridorWidthPct: fc.corridorWidthPct,
+            corridorHigh: fc.corridorHigh,
+            corridorLow: fc.corridorLow,
+            halfWaves: fc.halfWaves,
+            candlesUsed: fc.candlesUsed,
+            candlesExcluded: fc.candlesExcluded,
+            bars: buf.length,
+            liveUpdateAt:
+              liveUpdateAt.get(sym) != null
+                ? formatIsoUtcPlus3(liveUpdateAt.get(sym))
+                : null,
+          };
+        })
+        .filter(Boolean);
+
+      if (q) pairs = pairs.filter((p) => p.symbol.includes(q));
+      pairs.sort((a, b) => b.halfWaves - a.halfWaves || b.avgMovePct - a.avgMovePct);
+
+      return {
+        updatedAt: formatIsoUtcPlus3(Date.now()),
+        ...corridorOpts,
+        effCorridorMinPct: +(minCorridorWidthPct * (1 - corridorWidthTolerancePct / 100)).toFixed(3),
+        effCorridorMaxPct: +(maxCorridorWidthPct * (1 + corridorWidthTolerancePct / 100)).toFixed(3),
+        corridorDays: cfg.corridorDays,
+        corridorExcludeMinutes: cfg.corridorExcludeMinutes,
+        pairCount: pairs.length,
+        pairs,
+        telegramEnabled: Boolean(telegram?.enabled),
+      };
+    },
     getTopMovers(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
       const minMovePct = Math.max(
@@ -1429,6 +1571,7 @@ async function main() {
         host,
         getPairs: (searchParams) => scannerApi.getPairs(searchParams),
         getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
+        getFastCorridor: (searchParams) => scannerApi.getFastCorridor(searchParams),
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
         getWsDiagnostics: () => wsDiagnostics(),
         getChartData: (symbol, searchParams) =>
