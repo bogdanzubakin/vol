@@ -1316,6 +1316,17 @@
       el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
     }
 
+    async function applyLivePatch(patch) {
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
     function moverSortValue(row, key) {
       if (key === "symbol") return row.symbol ?? "";
       if (key === "signalBarAt" || key === "liveUpdateAt") {
@@ -1550,7 +1561,19 @@
     document.getElementById("fastCorridorConfigForm").addEventListener("submit", (e) => {
       e.preventDefault();
       saveFastCorridorConfigForm();
-      loadFastCorridor();
+      applyLivePatch({
+        fastCorridorMinWidthPct: Number(document.getElementById("fcMinCorridorWidthPct").value),
+        fastCorridorMaxWidthPct: Number(document.getElementById("fcMaxCorridorWidthPct").value),
+        fastCorridorWidthTolerancePct: Number(document.getElementById("fcCorridorTolerancePct").value),
+        fastCorridorMinHalfWaves: Number(document.getElementById("fcMinHalfWaves").value),
+        fastCorridorHalfWaveFraction: Number(document.getElementById("fcHalfWaveFraction").value),
+        fastCorridorHalfWaveLookback: Number(document.getElementById("fcHalfWaveLookback").value),
+      })
+        .then(() => {
+          setFastCorridorMsg("Applied to live scanner", true);
+          loadFastCorridor();
+        })
+        .catch((err) => setFastCorridorMsg(err.message, false));
     });
     document.getElementById("fastCorridorRefresh").addEventListener("click", loadFastCorridor);
     document.getElementById("fastCorridorSearch").addEventListener("input", () => {
@@ -1575,7 +1598,16 @@
     document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
       e.preventDefault();
       saveMoversConfigForm();
-      loadFastMovers();
+      applyLivePatch({
+        fastMoveLookbackCandles: Number(document.getElementById("fastMoveLookbackCandles").value),
+        minAvgMovePct: Number(document.getElementById("minAvgMovePct").value),
+        fastMoveExcludeMult: Number(document.getElementById("fastMoveExcludeMult").value),
+      })
+        .then(() => {
+          setMoversMsg("Applied to live scanner", true);
+          loadFastMovers();
+        })
+        .catch((err) => setMoversMsg(err.message, false));
     });
     document.getElementById("moversRefresh").addEventListener("click", loadFastMovers);
     document.getElementById("moversSearch").addEventListener("input", () => {
