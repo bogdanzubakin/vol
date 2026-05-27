@@ -25,7 +25,79 @@
       padding: 20px 24px 40px;
     }
     h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 6px; }
-    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin: 0; }
+    .page-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .page-top-main {
+      flex: 1 1 280px;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .positions-panel {
+      flex: 0 1 420px;
+      min-width: 260px;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      font-size: 0.8rem;
+    }
+    .positions-panel #positionsBody {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+    }
+    .positions-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    .positions-panel-head .meta {
+      font-weight: 400;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .positions-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    .positions-table th,
+    .positions-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .positions-table th {
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .positions-table tr:last-child td { border-bottom: none; }
+    .positions-empty {
+      padding: 14px 12px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+    .dir-long { color: var(--green); font-weight: 600; }
+    .dir-short { color: var(--red); font-weight: 600; }
+    .pnl-pos { color: var(--green); font-weight: 600; }
+    .pnl-neg { color: var(--red); font-weight: 600; }
     .status {
       display: flex;
       flex-wrap: wrap;
@@ -34,7 +106,7 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 14px 18px;
-      margin-bottom: 20px;
+      margin: 0;
       font-size: 0.88rem;
     }
     .status span { color: var(--muted); }
@@ -415,6 +487,43 @@
       color: var(--muted);
       flex: 1 1 200px;
     }
+    .auth-gate {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(15, 23, 42, 0.97);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .auth-gate[hidden] { display: none !important; }
+    .auth-box {
+      width: min(100%, 420px);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      text-align: center;
+    }
+    .auth-box h2 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+    }
+    .auth-box p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .auth-status {
+      margin-top: 14px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+    .auth-status.ok { color: var(--green); }
+    .auth-status.err { color: #fca5a5; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
@@ -422,12 +531,38 @@
   <script src="/chart-display.js?v=5"></script>
 </head>
 <body>
-  <h1>Vol spike scanner</h1>
-  <p class="sub" id="subtitle">Loading…</p>
+  <div id="authGate" class="auth-gate" hidden>
+    <div class="auth-box">
+      <h2>Sign in with Telegram</h2>
+      <p>
+        Tap the button below, then press <strong>Start</strong> in the bot chat.
+        Access stays active for <strong>7 days</strong>.
+      </p>
+      <a id="authTelegramLink" class="btn" href="#" target="_blank" rel="noopener noreferrer">Open Telegram</a>
+      <p class="auth-status" id="authStatus">Preparing login link…</p>
+    </div>
+  </div>
+
+  <div class="page-top">
+    <div class="page-top-main">
+      <div>
+        <h1>Vol spike scanner</h1>
+        <p class="sub" id="subtitle">Loading…</p>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+    <aside class="positions-panel" id="positionsPanel" aria-label="Open Binance positions">
+      <div class="positions-panel-head">
+        <span>Open positions</span>
+        <span class="meta" id="positionsMeta">—</span>
+      </div>
+      <div id="positionsBody">
+        <div class="positions-empty">Loading positions…</div>
+      </div>
+    </aside>
+  </div>
 
   <div id="error" class="err"></div>
-
-  <div class="status" id="status"></div>
 
   <nav class="tabs" role="tablist">
     <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
@@ -1941,10 +2076,86 @@
       }
     }
 
+    function fmtPnl(n) {
+      if (n == null || Number.isNaN(n)) return "—";
+      const sign = n >= 0 ? "+" : "";
+      return `${sign}${Number(n).toFixed(2)}`;
+    }
+
+    function renderPositions(data) {
+      const meta = document.getElementById("positionsMeta");
+      const body = document.getElementById("positionsBody");
+
+      if (!data?.enabled) {
+        meta.textContent = "not configured";
+        body.innerHTML = `<div class="positions-empty">${escapeHtml(
+          data?.hint || "Set BINANCE_API_KEY and BINANCE_API_SECRET in .env"
+        )}</div>`;
+        return;
+      }
+
+      if (data.error) {
+        meta.textContent = "error";
+        body.innerHTML = `<div class="positions-empty">${escapeHtml(data.error)}</div>`;
+        return;
+      }
+
+      const n = data.positions?.length ?? 0;
+      const total = data.totalPnl;
+      const totalCls =
+        total == null ? "" : total >= 0 ? "pnl-pos" : "pnl-neg";
+      meta.innerHTML =
+        `${n} open` +
+        (total != null
+          ? ` · <span class="${totalCls}">${fmtPnl(total)} USDT</span>`
+          : "") +
+        (data.updatedAt
+          ? ` · ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`
+          : "");
+
+      if (!n) {
+        body.innerHTML =
+          '<div class="positions-empty">No open futures positions</div>';
+        return;
+      }
+
+      body.innerHTML = `<div class="table-wrap"><table class="positions-table">
+        <thead><tr><th>Pair</th><th>Dir</th><th>PNL</th></tr></thead>
+        <tbody>${data.positions
+          .map((p) => {
+            const dirCls =
+              p.direction === "LONG" ? "dir-long" : "dir-short";
+            const pnlCls =
+              p.pnl == null ? "" : p.pnl >= 0 ? "pnl-pos" : "pnl-neg";
+            return `<tr>
+              <td class="sym">${symLink(p.symbol)}</td>
+              <td class="${dirCls}">${p.direction}</td>
+              <td class="${pnlCls}">${fmtPnl(p.pnl)}</td>
+            </tr>`;
+          })
+          .join("")}</tbody></table></div>`;
+    }
+
+    async function pollPositions() {
+      try {
+        const res = await fetch("/api/positions", { cache: "no-store" });
+        if (!res.ok) throw new Error(res.statusText);
+        renderPositions(await res.json());
+      } catch (e) {
+        document.getElementById("positionsMeta").textContent = "error";
+        document.getElementById("positionsBody").innerHTML =
+          `<div class="positions-empty">${escapeHtml(e.message)}</div>`;
+      }
+    }
+
     async function poll() {
       const errEl = document.getElementById("error");
       try {
         const res = await fetch("/api/state", { cache: "no-store" });
+        if (res.status === 401) {
+          await initAuth(true);
+          return;
+        }
         if (!res.ok) throw new Error(res.statusText);
         const state = await res.json();
         render(state);
@@ -1955,8 +2166,127 @@
       }
     }
 
-    poll();
-    setInterval(poll, 2000);
+    let authPollTimer = null;
+    let loginToken = null;
+
+    function setAuthStatus(text, ok) {
+      const el = document.getElementById("authStatus");
+      el.textContent = text;
+      el.className =
+        "auth-status" + (ok === true ? " ok" : ok === false ? " err" : "");
+    }
+
+    function hideAuthGate() {
+      document.getElementById("authGate").hidden = true;
+      if (authPollTimer) {
+        clearInterval(authPollTimer);
+        authPollTimer = null;
+      }
+    }
+
+    function showAuthGate() {
+      document.getElementById("authGate").hidden = false;
+    }
+
+    async function completeLogin() {
+      const res = await fetch("/api/auth/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loginToken }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      hideAuthGate();
+      setAuthStatus("Signed in. Loading dashboard…", true);
+      startApp();
+    }
+
+    async function pollLoginStatus() {
+      if (!loginToken) return;
+      try {
+        const res = await fetch(
+          `/api/auth/status?token=${encodeURIComponent(loginToken)}`,
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+        if (data.status === "approved") {
+          setAuthStatus("Telegram confirmed. Opening dashboard…", true);
+          await completeLogin();
+          return;
+        }
+        if (data.status === "expired") {
+          setAuthStatus("Link expired. Requesting a new one…", false);
+          await beginTelegramLogin();
+          return;
+        }
+        setAuthStatus("Waiting for you to tap Start in Telegram…", null);
+      } catch (e) {
+        setAuthStatus(e.message, false);
+      }
+    }
+
+    async function beginTelegramLogin() {
+      if (authPollTimer) {
+        clearInterval(authPollTimer);
+        authPollTimer = null;
+      }
+      setAuthStatus("Preparing login link…", null);
+      const res = await fetch("/api/auth/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      loginToken = data.loginToken;
+      const link = document.getElementById("authTelegramLink");
+      if (data.telegramUrl) {
+        link.href = data.telegramUrl;
+        link.style.pointerEvents = "";
+        link.style.opacity = "";
+      } else {
+        link.href = "#";
+        link.style.pointerEvents = "none";
+        link.style.opacity = "0.5";
+      }
+      setAuthStatus("Open Telegram and tap Start, then return here.", null);
+      authPollTimer = setInterval(pollLoginStatus, data.pollMs || 2000);
+      pollLoginStatus();
+    }
+
+    async function initAuth(force = false) {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        if (res.ok) {
+          hideAuthGate();
+          if (!force) startApp();
+          return;
+        }
+        const cfgRes = await fetch("/api/auth/config", { cache: "no-store" });
+        const cfg = await cfgRes.json();
+        if (!cfg.enabled) {
+          hideAuthGate();
+          if (!force) startApp();
+          return;
+        }
+        showAuthGate();
+        await beginTelegramLogin();
+      } catch (e) {
+        setAuthStatus(e.message, false);
+        showAuthGate();
+      }
+    }
+
+    function startApp() {
+      if (window.__appStarted) return;
+      window.__appStarted = true;
+      poll();
+      pollPositions();
+      setInterval(poll, 2000);
+      setInterval(pollPositions, 5000);
+    }
+
+    initAuth();
   </script>
 </body>
 </html>

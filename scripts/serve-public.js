@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const { startDashboard, RESULTS_JSON } = require("../lib/dashboard-server");
 const { nowIsoUtcPlus3 } = require("../lib/time-format");
+const { createTelegramAuth } = require("../lib/telegram-auth");
 
 function readState() {
   try {
@@ -24,5 +25,7 @@ function readState() {
   }
 }
 
-startDashboard(readState);
+const auth = createTelegramAuth({});
+
+startDashboard(readState, { auth });
 console.error(`Public dashboard: results from ${RESULTS_JSON}`);

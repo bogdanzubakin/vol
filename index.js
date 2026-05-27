@@ -43,6 +43,11 @@ const {
   mergeBarsByOpenTime,
   createKlineCacheStore,
 } = require("./lib/kline-cache");
+const {
+  createPositionsProvider,
+  resolveBinanceCredentials,
+} = require("./lib/binance-positions");
+const { createTelegramAuth } = require("./lib/telegram-auth");
 
 const REST_BASE = "https://fapi.binance.com";
 // DO NOT CHANGE BASE wss://stream.binance.com:443
@@ -1746,6 +1751,17 @@ async function main() {
   dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
 
+  const auth = createTelegramAuth({ kv, flags });
+  const getOpenPositions = createPositionsProvider({ kv });
+  const binanceCreds = resolveBinanceCredentials(kv);
+  if (binanceCreds.enabled) {
+    console.error("Binance Futures positions: enabled (header panel)");
+  } else if (!flags.has("no-http")) {
+    console.error(
+      "Binance positions off (set BINANCE_API_KEY + BINANCE_API_SECRET in .env)"
+    );
+  }
+
   if (!flags.has("no-http")) {
     const { port, host } = resolveListenOptions({
       port: kv.has("port") ? Number(kv.get("port")) : undefined,
@@ -1772,6 +1788,8 @@ async function main() {
           scannerApi.getChartData(symbol, searchParams),
         postTelegramSignal: (symbol, searchParams) =>
           scannerApi.postTelegramSignal(symbol, searchParams),
+        getPositions: getOpenPositions,
+        auth,
         onConfigUpdate: async (patch) => {
           const updates = validateLiveConfigPatch(patch);
           Object.assign(cfg, updates);
