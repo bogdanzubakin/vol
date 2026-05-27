@@ -1,14 +1,14 @@
 {
-  "updatedAt": "2026-05-26T16:45:00+03:00",
+  "updatedAt": "2026-05-26T17:42:00+03:00",
   "symbolCount": 527,
-  "prefetching": true,
+  "prefetching": false,
   "prefetchStatus": {
-    "done": 98,
+    "done": 527,
     "total": 527,
-    "fromCache": 98,
+    "fromCache": 527,
     "fetched": 0,
     "failed": 0,
-    "elapsedSec": 287
+    "elapsedSec": 1875
   },
   "configWritable": true,
   "interval": "1m",
@@ -22,11 +22,193 @@
   "minCorridorRangePct": 0.02,
   "minBreakVolumeMultiplier": 5,
   "breakVolumeNearBars": 3,
-  "activeCount": 0,
+  "activeCount": 1,
   "nearBreakCount": 0,
-  "hits": [],
+  "hits": [
+    {
+      "symbol": "AEROUSDT",
+      "signalStatus": "active",
+      "corridorHigh": 0.4506,
+      "corridorLow": 0.4246,
+      "corridorWidthPct": 5.94,
+      "avgCorridorRange": 0.13015182601495695,
+      "close": 0.452,
+      "recentRangePct": 0.509,
+      "rangeRatio": 3.91,
+      "volIncreasing": false,
+      "volSpike": true,
+      "breakVolumeSpike": true,
+      "breakVolumeRatio": 7.37,
+      "avgCorridorVolume": 13472.89604166667,
+      "maxNearBreakVolume": 99231,
+      "breakVolumeNearBars": 3,
+      "minBreakVolumeMultiplier": 5,
+      "bullish": true,
+      "bullishCount": 6,
+      "bullishLookback": 10,
+      "minBullishCandles": 3,
+      "corridorFlat": true,
+      "breaksCorridor": true,
+      "passesExceptBreak": true,
+      "nearBreak": false,
+      "breakGapPct": 0,
+      "bars": 4330,
+      "passes": true,
+      "quoteVol24h": 0
+    }
+  ],
   "nearBreakHits": [],
   "events": [
+    {
+      "at": "2026-05-26T17:42:00+03:00",
+      "type": "END",
+      "symbol": "DYDXUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:37:24+03:00",
+      "type": "END",
+      "symbol": "MOODENGUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:36:00+03:00",
+      "type": "NEW",
+      "symbol": "DYDXUSDT",
+      "detail": "close 0.17486 > 0.17141 range×1.85"
+    },
+    {
+      "at": "2026-05-26T17:34:54+03:00",
+      "type": "END",
+      "symbol": "1000BONKUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:33:22+03:00",
+      "type": "NEW",
+      "symbol": "MOODENGUSDT",
+      "detail": "close 0.05147 > 0.05144 range×1.8"
+    },
+    {
+      "at": "2026-05-26T17:30:55+03:00",
+      "type": "END",
+      "symbol": "SPXUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:30:52+03:00",
+      "type": "NEW",
+      "symbol": "AEROUSDT",
+      "detail": "close 0.4562 > 0.4506 range×6.92"
+    },
+    {
+      "at": "2026-05-26T17:30:49+03:00",
+      "type": "NEW",
+      "symbol": "1000BONKUSDT",
+      "detail": "close 0.006179 > 0.006162 range×2.26"
+    },
+    {
+      "at": "2026-05-26T17:29:46+03:00",
+      "type": "END",
+      "symbol": "MOODENGUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:28:36+03:00",
+      "type": "END",
+      "symbol": "RIVERUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:24:50+03:00",
+      "type": "END",
+      "symbol": "1000000MOGUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:24:48+03:00",
+      "type": "NEW",
+      "symbol": "MOODENGUSDT",
+      "detail": "close 0.05153 > 0.05144 range×1.81"
+    },
+    {
+      "at": "2026-05-26T17:24:00+03:00",
+      "type": "NEW",
+      "symbol": "RIVERUSDT",
+      "detail": "close 6.851 > 6.702 range×3.18"
+    },
+    {
+      "at": "2026-05-26T17:23:04+03:00",
+      "type": "NEW",
+      "symbol": "SPXUSDT",
+      "detail": "close 0.3746 > 0.3715 range×3.64"
+    },
+    {
+      "at": "2026-05-26T17:20:53+03:00",
+      "type": "NEW",
+      "symbol": "1000000MOGUSDT",
+      "detail": "close 0.1396 > 0.1394 range×1.86"
+    },
+    {
+      "at": "2026-05-26T17:17:00+03:00",
+      "type": "END",
+      "symbol": "BRUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:13:29+03:00",
+      "type": "END",
+      "symbol": "USUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:13:01+03:00",
+      "type": "NEW",
+      "symbol": "BRUSDT",
+      "detail": "close 0.13235 > 0.12981 range×5.21"
+    },
+    {
+      "at": "2026-05-26T17:10:00+03:00",
+      "type": "END",
+      "symbol": "FFUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:08:43+03:00",
+      "type": "END",
+      "symbol": "BRUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T17:08:03+03:00",
+      "type": "NEW",
+      "symbol": "USUSDT",
+      "detail": "close 0.006452 > 0.00642 range×5.06"
+    },
+    {
+      "at": "2026-05-26T17:08:00+03:00",
+      "type": "NEW",
+      "symbol": "FFUSDT",
+      "detail": "close 0.09492 > 0.09484 range×5.68"
+    },
+    {
+      "at": "2026-05-26T17:04:43+03:00",
+      "type": "NEW",
+      "symbol": "BRUSDT",
+      "detail": "close 0.13184 > 0.12981 range×3.72"
+    },
+    {
+      "at": "2026-05-26T17:00:00+03:00",
+      "type": "END_NEAR",
+      "symbol": "VANAUSDT",
+      "detail": ""
+    },
+    {
+      "at": "2026-05-26T16:53:38+03:00",
+      "type": "NEAR",
+      "symbol": "VANAUSDT",
+      "detail": "0.0646% below 1.547 range×5.04"
+    },
     {
       "at": "2026-05-26T16:45:00+03:00",
       "type": "END",
