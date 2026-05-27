@@ -1412,6 +1412,9 @@ async function main() {
 
       return {
         updatedAt: formatIsoUtcPlus3(Date.now()),
+        lookback,
+        minAvgMovePct,
+        excludeMult,
         ...corridorOpts,
         effCorridorMinPct: +(minCorridorWidthPct * (1 - corridorWidthTolerancePct / 100)).toFixed(3),
         effCorridorMaxPct: +(maxCorridorWidthPct * (1 + corridorWidthTolerancePct / 100)).toFixed(3),

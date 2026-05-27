@@ -1434,8 +1434,10 @@
         const res = await fetch(`/api/fast-corridor?${params}`, { cache: "no-store" });
         if (!res.ok) throw new Error(res.statusText);
         const data = await res.json();
+        const lookback = data.lookback ?? data.fastMoveLookbackCandles;
+        const excludeMult = data.excludeMult ?? data.fastMoveExcludeMult;
         setFastCorridorMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · fast ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg · corridor ${data.effCorridorMinPct}–${data.effCorridorMaxPct}% · ≥${data.minHalfWaves} half-waves`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · fast ≥${data.minAvgMovePct}% · ${lookback} bars · excl. >${excludeMult}× avg · corridor ${data.effCorridorMinPct}–${data.effCorridorMaxPct}% · ≥${data.minHalfWaves} half-waves`,
           true
         );
         renderFastCorridor(data);
