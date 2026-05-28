@@ -1718,7 +1718,15 @@ async function main() {
       const { bars, atMs, signalBarAt } = barsForEvaluation(sym, searchParams);
       const indicator = (searchParams?.get("indicator") || "").toLowerCase();
       let analysis;
+      let chartWindowBars;
+      let strictWindow = false;
       if (indicator === "fastcorridor" || indicator === "fast-corridor") {
+        const extraHourBars = Math.max(1, Math.ceil((60 * 60 * 1000) / cfg.barMs));
+        chartWindowBars = Math.max(
+          cfg.fastCorridorHalfWaveLookback + extraHourBars,
+          cfg.signalCandles + 5
+        );
+        strictWindow = true;
         const fc = fastCorridorMetrics(bars, cfg, fastCorridorOpts());
         const checks = [];
         const fm = fastMoverMetrics(bars, {
@@ -1775,6 +1783,8 @@ async function main() {
         evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
         evaluateBarAt:
           signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
+        windowBars: chartWindowBars,
+        strictWindow,
       });
     },
     async postTelegramSignal(symbol, searchParams) {
