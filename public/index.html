@@ -1156,13 +1156,15 @@
             <td class="time">${barAt}</td>
             <td>${reasons}</td>
             <td class="criteria-col">${formatChecksList(p.checks)}</td>
-            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}">Chart</button></td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}" data-chart-indicator="fastcorridor">Chart</button></td>
           </tr>`;
         })
         .join("");
 
       tbody.querySelectorAll(".chart-btn").forEach((btn) => {
-        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+        btn.addEventListener("click", () =>
+          openChart(btn.dataset.symbol, btn.dataset.chartIndicator || "")
+        );
       });
       tbody.querySelectorAll(".telegram-btn").forEach((btn) => {
         btn.addEventListener("click", () => sendTelegramSignal(btn));
