@@ -83,7 +83,7 @@ const cfg = {
   fastCorridorWidthTolerancePct: 10,
   fastCorridorMinHalfWaves: 3,
   fastCorridorHalfWaveFraction: 0.5,
-  fastCorridorHalfWaveLookback: 120,
+  fastCorridorHalfWaveLookback: 180,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
