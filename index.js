@@ -1716,7 +1716,61 @@ async function main() {
       const buf = historyBuffers.get(sym) ?? [];
       if (!buf.length) throw new Error(`No bar data for ${sym}`);
       const { bars, atMs, signalBarAt } = barsForEvaluation(sym, searchParams);
-      const analysis = analyzeVolSpike(bars, cfg);
+      const indicator = (searchParams?.get("indicator") || "").toLowerCase();
+      let analysis;
+      if (indicator === "fastcorridor" || indicator === "fast-corridor") {
+        const fc = fastCorridorMetrics(bars, cfg, fastCorridorOpts());
+        const checks = [];
+        const fm = fastMoverMetrics(bars, {
+          fastMoveLookbackCandles: cfg.fastMoveLookbackCandles,
+          minAvgMovePct: cfg.minAvgMovePct,
+          fastMoveExcludeMult: cfg.fastMoveExcludeMult,
+        });
+        checks.push({
+          id: "fastMover",
+          label: `Avg move ≥ ${cfg.minAvgMovePct}% (${cfg.fastMoveLookbackCandles} bars)`,
+          pass: Boolean(fm?.fastMover),
+          detail: fm ? `${fm.avgMovePct}%` : "n/a",
+        });
+        if (fc) {
+          checks.push(
+            {
+              id: "fastCorridorWidth",
+              label: `Corridor width in band ${fc.effCorridorMinPct}%..${fc.effCorridorMaxPct}%`,
+              pass: true,
+              detail: `${fc.corridorWidthPct}%`,
+            },
+            {
+              id: "fastCorridorWaves",
+              label: `Half-waves ≥ ${fc.minHalfWaves} (${fc.halfWaveLookbackCandles} bars)`,
+              pass: true,
+              detail: `${fc.halfWaves}`,
+            }
+          );
+        } else {
+          checks.push(
+            {
+              id: "fastCorridorWidth",
+              label: `Corridor width in configured band`,
+              pass: false,
+              detail: "out of range",
+            },
+            {
+              id: "fastCorridorWaves",
+              label: `Half-waves ≥ ${cfg.fastCorridorMinHalfWaves}`,
+              pass: false,
+              detail: "not enough waves",
+            }
+          );
+        }
+        analysis = {
+          passes: Boolean(fc?.fastCorridor),
+          metrics: fc,
+          checks,
+        };
+      } else {
+        analysis = analyzeVolSpike(bars, cfg);
+      }
       return getChartPayload(sym, bars, cfg, analysis, {
         evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
         evaluateBarAt:

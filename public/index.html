@@ -1193,7 +1193,7 @@
       }
     }
 
-    async function openChart(symbol) {
+    async function openChart(symbol, indicator = "") {
       const modal = document.getElementById("chartModal");
       const body = document.getElementById("chartModalBody");
       document.getElementById("chartModalTitle").textContent = `${symbol} — filter diagnostic`;
@@ -1208,6 +1208,7 @@
 
       try {
         const chartParams = appendEvaluateAt(new URLSearchParams());
+        if (indicator) chartParams.set("indicator", indicator);
         const res = await fetch(
           `/api/chart-data/${symbol}?${chartParams}`,
           { cache: "no-store" }
@@ -1417,14 +1418,16 @@
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td>${p.bars ?? "—"}</td>
             <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
-            <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}" data-chart-indicator="fastcorridor">Chart</button></td>
           </tr>`;
           }
         )
         .join("");
 
       tbody.querySelectorAll(".chart-btn").forEach((btn) => {
-        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
+        btn.addEventListener("click", () =>
+          openChart(btn.dataset.symbol, btn.dataset.chartIndicator || "")
+        );
       });
     }
 
