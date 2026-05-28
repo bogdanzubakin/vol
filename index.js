@@ -1785,6 +1785,7 @@ async function main() {
           signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
         windowBars: chartWindowBars,
         strictWindow,
+        indicator,
       });
     },
     async postTelegramSignal(symbol, searchParams) {
