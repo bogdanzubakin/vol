@@ -20,6 +20,7 @@ const {
   analyzeVolSpike,
   fastMoverMetrics,
   fastCorridorMetrics,
+  countHalfWaves,
   minHistoryBars,
   failedCheckLabels,
   serializeChecks,
@@ -167,8 +168,17 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a.startsWith("--")) {
       const [k, v] = a.slice(2).split("=");
-      if (v !== undefined) kv.set(k, v);
-      else flags.add(k);
+      if (v !== undefined) {
+        kv.set(k, v);
+      } else {
+        const next = argv[i + 1];
+        if (next != null && !String(next).startsWith("--")) {
+          kv.set(k, next);
+          i++;
+        } else {
+          flags.add(k);
+        }
+      }
     }
   }
   return { flags, kv };
@@ -1740,6 +1750,26 @@ async function main() {
           pass: Boolean(fm?.fastMover),
           detail: fm ? `${fm.avgMovePct}%` : "n/a",
         });
+        const waveBars = bars.slice(-cfg.fastCorridorHalfWaveLookback);
+        const localHigh = waveBars.length
+          ? Math.max(...waveBars.map((b) => b.high))
+          : null;
+        const localLow = waveBars.length
+          ? Math.min(...waveBars.map((b) => b.low))
+          : null;
+        const localMid =
+          localHigh != null && localLow != null ? (localHigh + localLow) / 2 : null;
+        const localWidthPct =
+          localMid && localMid > 0
+            ? +(((localHigh - localLow) / localMid) * 100).toFixed(2)
+            : null;
+        const localHalfWaves =
+          localHigh != null && localLow != null
+            ? countHalfWaves(waveBars, localLow, localHigh, {
+                halfWaveFraction: cfg.fastCorridorHalfWaveFraction,
+              })
+            : 0;
+
         if (fc) {
           checks.push(
             {
@@ -1773,7 +1803,16 @@ async function main() {
         }
         analysis = {
           passes: Boolean(fc?.fastCorridor),
-          metrics: fc,
+          metrics:
+            fc ??
+            (localHigh != null && localLow != null
+              ? {
+                  corridorHigh: localHigh,
+                  corridorLow: localLow,
+                  corridorWidthPct: localWidthPct,
+                  halfWaves: localHalfWaves,
+                }
+              : null),
           checks,
         };
       } else {

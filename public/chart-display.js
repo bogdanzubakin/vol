@@ -79,7 +79,7 @@ function applyChartDisplay(chartConfig) {
       const xScale = chart.scales[checklist.xScaleID] || chart.scales.x;
       if (!xScale) return 0;
       if (!area) return xScale.min ?? 0;
-      return xScale.getValueForPixel(area.left + 16);
+      return xScale.getValueForPixel(area.left + area.width / 2);
     };
 
     checklist.yValue = (ctx) => {
@@ -95,14 +95,14 @@ function applyChartDisplay(chartConfig) {
       const volumeH = chart.scales.yVolume
         ? area.height * VOLUME_PANE_SHARE
         : 0;
-      const priceMidY = area.top + volumeH + (area.height * PRICE_PANE_SHARE) / 2;
-      return yScale.getValueForPixel(priceMidY);
+      const priceTopY = area.top + volumeH + 12;
+      return yScale.getValueForPixel(priceTopY);
     };
 
-    checklist.position = { x: "start", y: "center" };
+    checklist.position = { x: "center", y: "start" };
     checklist.xAdjust = 0;
     checklist.yAdjust = 0;
-    checklist.textAlign = "left";
+    checklist.textAlign = "center";
   }
 
   return chartConfig;
