@@ -1989,10 +1989,20 @@
       }
     }
 
+    const PAGE_TITLE = "Vol spike scanner";
+
     function fmtPnl(n) {
       if (n == null || Number.isNaN(n)) return "—";
       const sign = n >= 0 ? "+" : "";
       return `${sign}${Number(n).toFixed(2)}`;
+    }
+
+    function updateDocumentTitle(totalPnl) {
+      if (totalPnl == null || Number.isNaN(totalPnl)) {
+        document.title = PAGE_TITLE;
+        return;
+      }
+      document.title = `${fmtPnl(totalPnl)} USDT · ${PAGE_TITLE}`;
     }
 
     function fmtPct(n, d = 2) {
@@ -2010,17 +2020,20 @@
         body.innerHTML = `<div class="positions-empty">${escapeHtml(
           data?.hint || "Set BINANCE_API_KEY and BINANCE_API_SECRET in .env"
         )}</div>`;
+        updateDocumentTitle(null);
         return;
       }
 
       if (data.error) {
         meta.textContent = "error";
         body.innerHTML = `<div class="positions-empty">${escapeHtml(data.error)}</div>`;
+        updateDocumentTitle(null);
         return;
       }
 
       const n = data.positions?.length ?? 0;
       const total = data.totalPnl;
+      updateDocumentTitle(total);
       const totalCls =
         total == null ? "" : total >= 0 ? "pnl-pos" : "pnl-neg";
       meta.innerHTML =
@@ -2067,6 +2080,7 @@
         document.getElementById("positionsMeta").textContent = "error";
         document.getElementById("positionsBody").innerHTML =
           `<div class="positions-empty">${escapeHtml(e.message)}</div>`;
+        updateDocumentTitle(null);
       }
     }
 
