@@ -2033,7 +2033,7 @@
 
       const n = data.positions?.length ?? 0;
       const total = data.totalPnl;
-      updateDocumentTitle(total);
+      updateDocumentTitle(n > 0 ? total : null);
       const totalCls =
         total == null ? "" : total >= 0 ? "pnl-pos" : "pnl-neg";
       meta.innerHTML =
