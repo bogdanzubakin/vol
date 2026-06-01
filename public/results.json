@@ -1,14 +1,14 @@
 {
-  "updatedAt": "2026-05-28T10:52:50+03:00",
-  "symbolCount": 1,
-  "prefetching": false,
+  "updatedAt": "2026-06-01T16:38:49+03:00",
+  "symbolCount": 529,
+  "prefetching": true,
   "prefetchStatus": {
-    "done": 1,
-    "total": 1,
-    "fromCache": 1,
+    "done": 18,
+    "total": 529,
+    "fromCache": 18,
     "fetched": 0,
     "failed": 0,
-    "elapsedSec": 3
+    "elapsedSec": 86
   },
   "configWritable": true,
   "interval": "1m",
@@ -37,5 +37,12 @@
   "nearBreakCount": 0,
   "hits": [],
   "nearBreakHits": [],
-  "events": []
+  "events": [
+    {
+      "at": "2026-06-01T16:38:49+03:00",
+      "type": "CONFIG",
+      "symbol": "scanner",
+      "detail": "topMoveMinPct=5"
+    }
+  ]
 }

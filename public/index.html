@@ -792,13 +792,24 @@
     <section>
       <h2>Top movers <span id="topMoversCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Pairs with absolute close-to-close price move above the threshold during the last 24 hours.
+        Pairs with absolute close-to-close price move above the threshold over the selected time range.
       </p>
       <form class="settings-form movers-settings" id="topMoversConfigForm">
         <div class="field">
-          <label for="topMoveMinPct">Min 24h move %</label>
+          <label for="topMoversWindow">Time range</label>
+          <select id="topMoversWindow" name="topMoversWindow">
+            <option value="15">15 minutes</option>
+            <option value="60">1 hour</option>
+            <option value="180">3 hours</option>
+            <option value="600">10 hours</option>
+            <option value="1440" selected>24 hours</option>
+          </select>
+          <div class="hint">Close-to-close move is measured from the start of this window</div>
+        </div>
+        <div class="field">
+          <label for="topMoveMinPct">Min move %</label>
           <input type="number" id="topMoveMinPct" name="topMoveMinPct" step="0.1" min="0.1" max="1000" value="5" required />
-          <div class="hint">Show pairs with |24h move| at least this %</div>
+          <div class="hint">Show pairs with |move| at least this % over the selected range</div>
         </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="topMoversApply">Apply</button>
@@ -1637,7 +1648,8 @@
       });
     });
 
-    const TOP_MOVERS_CONFIG_KEYS = ["topMoveMinPct"];
+    const TOP_MOVERS_CONFIG_KEYS = ["topMoveMinPct", "topMoversWindow"];
+    const TOP_MOVERS_WINDOW_MINUTES = [15, 60, 180, 600, 1440];
 
     function loadTopMoversConfigForm() {
       for (const k of TOP_MOVERS_CONFIG_KEYS) {
@@ -1658,6 +1670,10 @@
       const params = new URLSearchParams();
       const min = document.getElementById("topMoveMinPct")?.value;
       if (min != null && min !== "") params.set("minMovePct", min);
+      const win = document.getElementById("topMoversWindow")?.value;
+      if (win != null && win !== "" && TOP_MOVERS_WINDOW_MINUTES.includes(Number(win))) {
+        params.set("windowMinutes", win);
+      }
       const fastMap = {
         fastMoveLookbackCandles: "fastLookback",
         minAvgMovePct: "fastMinAvgMovePct",
@@ -1691,7 +1707,7 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderTopMovers(data);
         setTopMoversMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · |move| ≥${data.minMovePct}% over ${data.windowHours}h · fast avg ${data.fastLookback} bars`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · |move| ≥${data.minMovePct}% over ${data.windowLabel ?? "24h"} · fast avg ${data.fastLookback} bars`,
           true
         );
       } catch (e) {
@@ -1748,6 +1764,13 @@
         .catch((err) => setTopMoversMsg(err.message, false));
     });
     document.getElementById("topMoversRefresh").addEventListener("click", loadTopMovers);
+    document.getElementById("topMoversWindow").addEventListener("change", () => {
+      localStorage.setItem(
+        "topMovers_topMoversWindow",
+        document.getElementById("topMoversWindow").value
+      );
+      loadTopMovers();
+    });
     document.getElementById("topMoversSearch").addEventListener("input", () => {
       clearTimeout(window._topMoversSearchTimer);
       window._topMoversSearchTimer = setTimeout(loadTopMovers, 300);

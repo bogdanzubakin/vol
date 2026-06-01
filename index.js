@@ -1625,6 +1625,13 @@ async function main() {
       };
     },
     getTopMovers(searchParams) {
+      const TOP_MOVERS_WINDOW_MINUTES = [15, 60, 180, 600, 1440];
+      const windowMinutesRaw = Number(searchParams.get("windowMinutes"));
+      const windowMinutes = TOP_MOVERS_WINDOW_MINUTES.includes(windowMinutesRaw)
+        ? windowMinutesRaw
+        : 1440;
+      const windowMs = windowMinutes * 60 * 1000;
+
       const q = (searchParams.get("q") || "").trim().toUpperCase();
       const minMovePct = Math.max(
         0.1,
@@ -1659,7 +1666,6 @@ async function main() {
         fastMoveExcludeMult: fastExcludeMult,
       };
       const now = Date.now();
-      const dayMs = 24 * 60 * 60 * 1000;
 
       let movers = symbols
         .map((sym) => {
@@ -1667,7 +1673,7 @@ async function main() {
           if (!buf.length) return null;
 
           const latest = buf[buf.length - 1];
-          const cutoff = latest.closeTime - dayMs;
+          const cutoff = latest.closeTime - windowMs;
           const needsDisk = buf[0].openTime > cutoff;
           const source = needsDisk ? klineCache.read(sym) ?? buf : buf;
           if (!source.length) return null;
@@ -1707,9 +1713,15 @@ async function main() {
         return b.absMovePct - a.absMovePct;
       });
 
+      const windowLabel =
+        windowMinutes < 60
+          ? `${windowMinutes}m`
+          : `${windowMinutes / 60}h`;
+
       return {
         updatedAt: formatIsoUtcPlus3(now),
-        windowHours: 24,
+        windowMinutes,
+        windowLabel,
         minMovePct,
         fastLookback,
         fastMinAvgMovePct,
