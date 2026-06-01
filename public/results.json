@@ -1,15 +1,8 @@
 {
-  "updatedAt": "2026-06-01T16:38:49+03:00",
-  "symbolCount": 529,
-  "prefetching": true,
-  "prefetchStatus": {
-    "done": 18,
-    "total": 529,
-    "fromCache": 18,
-    "fetched": 0,
-    "failed": 0,
-    "elapsedSec": 86
-  },
+  "updatedAt": "2026-06-01T16:51:17+03:00",
+  "symbolCount": 0,
+  "prefetching": false,
+  "prefetchStatus": null,
   "configWritable": true,
   "interval": "1m",
   "corridorDays": 2,
@@ -24,6 +17,7 @@
   "breakVolumeNearBars": 3,
   "fastMoveLookbackCandles": 10,
   "minAvgMovePct": 0.5,
+  "minLinearChangePct": 0.5,
   "fastMoveExcludeMult": 3,
   "fastCorridorMinWidthPct": 1,
   "fastCorridorMaxWidthPct": 5,
@@ -37,12 +31,5 @@
   "nearBreakCount": 0,
   "hits": [],
   "nearBreakHits": [],
-  "events": [
-    {
-      "at": "2026-06-01T16:38:49+03:00",
-      "type": "CONFIG",
-      "symbol": "scanner",
-      "detail": "topMoveMinPct=5"
-    }
-  ]
+  "events": []
 }

@@ -77,6 +77,7 @@ const cfg = {
   breakVolumeNearBars: 3,
   fastMoveLookbackCandles: 10,
   minAvgMovePct: 0.5,
+  minLinearChangePct: 0.5,
   fastMoveExcludeMult: 3,
   topMoveMinPct: 5,
   fastCorridorMinWidthPct: 1,
@@ -151,6 +152,7 @@ function fastCorridorOpts() {
   return {
     fastMoveLookbackCandles: cfg.fastMoveLookbackCandles,
     minAvgMovePct: cfg.minAvgMovePct,
+    minLinearChangePct: cfg.minLinearChangePct,
     fastMoveExcludeMult: cfg.fastMoveExcludeMult,
     minCorridorWidthPct: cfg.fastCorridorMinWidthPct,
     maxCorridorWidthPct: cfg.fastCorridorMaxWidthPct,
@@ -1392,9 +1394,17 @@ async function main() {
           Number(searchParams.get("excludeMult")) || cfg.fastMoveExcludeMult
         )
       );
+      const minLinearChangePct = Math.max(
+        0,
+        Math.min(
+          100,
+          Number(searchParams.get("minLinearChangePct")) || cfg.minLinearChangePct
+        )
+      );
       const moverOpts = {
         fastMoveLookbackCandles: lookback,
         minAvgMovePct,
+        minLinearChangePct,
         fastMoveExcludeMult: excludeMult,
       };
 
@@ -1435,6 +1445,8 @@ async function main() {
             symbol: sym,
             close: fm.close,
             avgMovePct: fm.avgMovePct,
+            linearChangePct: fm.linearChangePct,
+            absLinearChangePct: fm.absLinearChangePct,
             direction24h:
               move24hPct == null
                 ? null
@@ -1465,6 +1477,7 @@ async function main() {
         updatedAt: formatIsoUtcPlus3(Date.now()),
         lookback,
         minAvgMovePct,
+        minLinearChangePct,
         excludeMult,
         pairCount: movers.length,
         movers,
@@ -1507,6 +1520,13 @@ async function main() {
         Math.min(
           20,
           Number(searchParams.get("excludeMult")) || cfg.fastMoveExcludeMult
+        )
+      );
+      const minLinearChangePct = Math.max(
+        0,
+        Math.min(
+          100,
+          Number(searchParams.get("minLinearChangePct")) || cfg.minLinearChangePct
         )
       );
       const minCorridorWidthPct = Math.max(
@@ -1560,6 +1580,7 @@ async function main() {
       const corridorOpts = {
         fastMoveLookbackCandles: lookback,
         minAvgMovePct,
+        minLinearChangePct,
         fastMoveExcludeMult: excludeMult,
         minCorridorWidthPct,
         maxCorridorWidthPct,
@@ -1663,6 +1684,7 @@ async function main() {
       const fastMoverOpts = {
         fastMoveLookbackCandles: fastLookback,
         minAvgMovePct: fastMinAvgMovePct,
+        minLinearChangePct: cfg.minLinearChangePct,
         fastMoveExcludeMult: fastExcludeMult,
       };
       const now = Date.now();
@@ -1754,13 +1776,20 @@ async function main() {
         const fm = fastMoverMetrics(bars, {
           fastMoveLookbackCandles: cfg.fastMoveLookbackCandles,
           minAvgMovePct: cfg.minAvgMovePct,
+          minLinearChangePct: cfg.minLinearChangePct,
           fastMoveExcludeMult: cfg.fastMoveExcludeMult,
         });
         checks.push({
-          id: "fastMover",
+          id: "fastMoverAvg",
           label: `Avg move ≥ ${cfg.minAvgMovePct}% (${cfg.fastMoveLookbackCandles} bars)`,
-          pass: Boolean(fm?.fastMover),
+          pass: Boolean(fm?.avgOk),
           detail: fm ? `${fm.avgMovePct}%` : "n/a",
+        });
+        checks.push({
+          id: "fastMoverLinear",
+          label: `|Linear change| ≥ ${cfg.minLinearChangePct}% (${cfg.fastMoveLookbackCandles} bars)`,
+          pass: Boolean(fm?.linearOk),
+          detail: fm ? `${fm.linearChangePct}%` : "n/a",
         });
         const waveBars = bars.slice(-cfg.fastCorridorHalfWaveLookback);
         const localHigh = waveBars.length

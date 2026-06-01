@@ -164,6 +164,41 @@
       margin-left: 4px;
       color: var(--blue);
     }
+    th.sym-search-header {
+      padding: 6px 8px;
+      vertical-align: bottom;
+      min-width: 120px;
+    }
+    th.sym-search-header .th-search-wrap {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    th.sym-search-header .th-search {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+      max-width: 160px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 8px;
+      font-size: 0.8rem;
+      font-weight: 400;
+      box-sizing: border-box;
+    }
+    th.sym-search-header .th-search:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+    th.sym-search-header.sortable {
+      cursor: default;
+    }
+    th.sym-search-header.sortable .sort-mark {
+      flex-shrink: 0;
+      cursor: pointer;
+    }
     tr:hover td { background: rgba(56, 189, 248, 0.06); }
     .sym { font-weight: 600; color: var(--blue); }
     a.sym-link {
@@ -694,7 +729,6 @@
       </div>
       <h2>All pairs <span id="pairsCount"></span></h2>
       <div class="pairs-toolbar">
-        <input type="search" id="pairsSearch" placeholder="Search symbol…" />
         <select id="pairsFilter">
           <option value="all">All</option>
           <option value="pass">Passing</option>
@@ -715,7 +749,9 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
+              <th class="sym-search-header">
+                <input type="search" id="pairsSearch" class="th-search" placeholder="Search symbol…" aria-label="Search symbol" />
+              </th>
               <th>Status</th>
               <th>Close</th>
               <th>Range×</th>
@@ -739,7 +775,7 @@
     <section>
       <h2>Fast movers <span id="moversCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Avg candle size (high−low, not open−close) as % of price; spikes ≥ exclude × avg are dropped from the mean.
+        Avg candle size (high−low) and net close-to-close move over the lookback window; spikes ≥ exclude × avg are dropped from the mean.
       </p>
       <form class="settings-form movers-settings" id="moversConfigForm">
         <div class="field">
@@ -753,6 +789,11 @@
           <div class="hint">Min avg (H−L) % of price after exclusions</div>
         </div>
         <div class="field">
+          <label for="minLinearChangePct">Min linear change %</label>
+          <input type="number" id="minLinearChangePct" name="minLinearChangePct" step="0.01" min="0" max="100" value="0.5" required />
+          <div class="hint">Min |close−close| % over lookback (first to last bar). Use 0 to disable.</div>
+        </div>
+        <div class="field">
           <label for="fastMoveExcludeMult">Exclude spike ×</label>
           <input type="number" id="fastMoveExcludeMult" name="fastMoveExcludeMult" step="0.1" min="1.5" max="20" value="3" required />
           <div class="hint">Drop candles with H−L % &gt; avg × this</div>
@@ -763,16 +804,19 @@
           <span class="config-msg" id="moversMsg"></span>
         </div>
       </form>
-      <div class="pairs-toolbar" style="margin-top: 12px">
-        <input type="search" id="moversSearch" placeholder="Search symbol…" />
-      </div>
       <div class="pairs-table-wrap table-wrap">
         <table>
           <thead>
             <tr>
-              <th class="sortable" data-mover-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable sym-search-header" data-mover-sort="symbol">
+                <span class="th-search-wrap">
+                  <input type="search" id="moversSearch" class="th-search" placeholder="Search symbol…" aria-label="Search symbol" />
+                  <span class="sort-mark"></span>
+                </span>
+              </th>
               <th class="sortable" data-mover-sort="close">Close <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
+              <th class="sortable" data-mover-sort="linearChangePct">Linear % <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="move24hPct">24h move <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="candlesUsed">Used / excl. <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="bars">Bars <span class="sort-mark"></span></th>
@@ -781,7 +825,7 @@
             </tr>
           </thead>
           <tbody id="moversBody">
-            <tr><td colspan="8" class="empty">Open this tab to load fast movers</td></tr>
+            <tr><td colspan="9" class="empty">Open this tab to load fast movers</td></tr>
           </tbody>
         </table>
       </div>
@@ -817,14 +861,13 @@
           <span class="config-msg" id="topMoversMsg"></span>
         </div>
       </form>
-      <div class="pairs-toolbar" style="margin-top: 12px">
-        <input type="search" id="topMoversSearch" placeholder="Search symbol…" />
-      </div>
       <div class="pairs-table-wrap table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
+              <th class="sym-search-header">
+                <input type="search" id="topMoversSearch" class="th-search" placeholder="Search symbol…" aria-label="Search symbol" />
+              </th>
               <th>Direction</th>
               <th>Move %</th>
               <th>Fast avg move %</th>
@@ -883,14 +926,16 @@
           <span class="config-msg" id="fastCorridorMsg"></span>
         </div>
       </form>
-      <div class="pairs-toolbar" style="margin-top: 12px">
-        <input type="search" id="fastCorridorSearch" placeholder="Search symbol…" />
-      </div>
       <div class="pairs-table-wrap table-wrap">
         <table>
           <thead>
             <tr>
-              <th class="sortable" data-fc-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable sym-search-header" data-fc-sort="symbol">
+                <span class="th-search-wrap">
+                  <input type="search" id="fastCorridorSearch" class="th-search" placeholder="Search symbol…" aria-label="Search symbol" />
+                  <span class="sort-mark"></span>
+                </span>
+              </th>
               <th class="sortable" data-fc-sort="close">Close <span class="sort-mark"></span></th>
               <th class="sortable" data-fc-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
               <th class="sortable" data-fc-sort="corridorWidthPct">Corridor % <span class="sort-mark"></span></th>
@@ -1291,6 +1336,7 @@
     const MOVERS_CONFIG_KEYS = [
       "fastMoveLookbackCandles",
       "minAvgMovePct",
+      "minLinearChangePct",
       "fastMoveExcludeMult",
     ];
 
@@ -1389,13 +1435,13 @@
           ? ` · data ${fmtTimeShort(ws.lastUpdateAt)} (${ws.updates ?? 0} WS, ${ws.restRepairs ?? 0} REST)`
           : ` · stream waiting (${ws.connectedShards ?? 0}/${ws.shardCount ?? 0} shards)`;
         setMoversMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · ≥${data.minAvgMovePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg${wsText}`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · avg ≥${data.minAvgMovePct}% · linear ≥${data.minLinearChangePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg${wsText}`,
           true
         );
       } catch (e) {
         setMoversMsg(e.message, false);
         document.getElementById("moversBody").innerHTML =
-          `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
       } finally {
         fastMoversLoading = false;
       }
@@ -1410,13 +1456,20 @@
       const tbody = document.getElementById("moversBody");
       if (!lastFastMovers.length) {
         tbody.innerHTML =
-          '<tr><td colspan="8" class="empty">No fast movers match</td></tr>';
+          '<tr><td colspan="9" class="empty">No fast movers match</td></tr>';
         return;
       }
 
       tbody.innerHTML = sortedFastMovers(lastFastMovers)
         .map(
           (p) => {
+            const bullishLinear = (p.linearChangePct ?? 0) >= 0;
+            const linearCls =
+              p.linearChangePct == null ? "time" : bullishLinear ? "pass" : "bad";
+            const linearMark =
+              p.linearChangePct == null
+                ? "—"
+                : `${bullishLinear ? "▲" : "▼"} ${fmt(p.linearChangePct, 3)}%`;
             const bullish24h = p.direction24h === "bullish";
             const dirCls = p.direction24h == null ? "time" : bullish24h ? "pass" : "bad";
             const dirMark =
@@ -1427,6 +1480,7 @@
             <td class="sym-cell">${symLink(p.symbol)}</td>
             <td>${fmt(p.close, 6)}</td>
             <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
+            <td class="${linearCls}">${linearMark}</td>
             <td class="${dirCls}">${dirMark}</td>
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td>${p.bars ?? "—"}</td>
@@ -1561,7 +1615,7 @@
         const lookback = data.lookback ?? data.fastMoveLookbackCandles;
         const excludeMult = data.excludeMult ?? data.fastMoveExcludeMult;
         setFastCorridorMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · fast ≥${data.minAvgMovePct}% · ${lookback} bars · excl. >${excludeMult}× avg · corridor ${data.effCorridorMinPct}–${data.effCorridorMaxPct}% · ≥${data.minHalfWaves} half-waves`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · fast ≥${data.minAvgMovePct}% · linear ≥${data.minLinearChangePct ?? 0}% · ${lookback} bars · excl. >${excludeMult}× avg · corridor ${data.effCorridorMinPct}–${data.effCorridorMaxPct}% · ≥${data.minHalfWaves} half-waves`,
           true
         );
         renderFastCorridor(data);
@@ -1597,7 +1651,8 @@
       window._fastCorridorSearchTimer = setTimeout(loadFastCorridor, 300);
     });
     document.querySelectorAll("[data-fc-sort]").forEach((th) => {
-      th.addEventListener("click", () => {
+      th.addEventListener("click", (e) => {
+        if (e.target.closest(".th-search")) return;
         const key = th.dataset.fcSort;
         if (fastCorridorSort.key === key) {
           fastCorridorSort = {
@@ -1617,6 +1672,7 @@
       applyLivePatch({
         fastMoveLookbackCandles: Number(document.getElementById("fastMoveLookbackCandles").value),
         minAvgMovePct: Number(document.getElementById("minAvgMovePct").value),
+        minLinearChangePct: Number(document.getElementById("minLinearChangePct").value),
         fastMoveExcludeMult: Number(document.getElementById("fastMoveExcludeMult").value),
       })
         .then(() => {
@@ -1631,7 +1687,8 @@
       window._moversSearchTimer = setTimeout(loadFastMovers, 300);
     });
     document.querySelectorAll("[data-mover-sort]").forEach((th) => {
-      th.addEventListener("click", () => {
+      th.addEventListener("click", (e) => {
+        if (e.target.closest(".th-search")) return;
         const key = th.dataset.moverSort;
         if (moversSort.key === key) {
           moversSort = {
