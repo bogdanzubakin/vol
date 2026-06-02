@@ -17,12 +17,13 @@ const {
 } = require("../lib/signal-metrics");
 const { renderSymbolChart } = require("../lib/chart-render");
 const { dataPath, migrateLegacyCache } = require("../lib/data-dir");
+const { readKlineCache } = require("../lib/kline-cache");
 
 const ROOT = path.join(__dirname, "..");
 migrateLegacyCache();
 const CACHE_DIR = dataPath("klines");
 const CACHE_RE =
-  /^(.+)_(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|3d|1w|1M)(?:_(\d+))?\.json$/;
+  /^(.+)_(1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|1d|3d|1w|1M)(?:_(\d+))?\.json(\.gz)?$/;
 
 const DEFAULTS = {
   outDir: path.join(ROOT, "charts"),
@@ -48,29 +49,29 @@ function parseArgs(argv) {
 
 function listCacheEntries() {
   if (!fs.existsSync(CACHE_DIR)) return [];
-  return fs
-    .readdirSync(CACHE_DIR)
-    .filter((f) => CACHE_RE.test(f))
-    .map((file) => {
-      const m = CACHE_RE.exec(file);
-      return {
-        file,
-        path: path.join(CACHE_DIR, file),
-        symbol: m[1],
-        interval: m[2],
-        limit: m[3] ? Number(m[3]) : null,
-      };
-    });
+  const byKey = new Map();
+  for (const file of fs.readdirSync(CACHE_DIR)) {
+    if (!CACHE_RE.test(file) || file.includes(".live.")) continue;
+    const m = CACHE_RE.exec(file);
+    const key = `${m[1]}_${m[2]}`;
+    const entry = {
+      file,
+      path: path.join(CACHE_DIR, file),
+      symbol: m[1],
+      interval: m[2],
+      limit: m[3] ? Number(m[3]) : null,
+    };
+    const prev = byKey.get(key);
+    if (!prev || file.endsWith(".json.gz")) byKey.set(key, entry);
+  }
+  return [...byKey.values()];
 }
 
 function readCache(entry) {
-  const data = JSON.parse(fs.readFileSync(entry.path, "utf8"));
+  const bars = readKlineCache(CACHE_DIR, entry.symbol, entry.interval);
   return {
     ...entry,
-    savedAt: data.savedAt,
-    interval: data.interval ?? entry.interval,
-    limit: data.evalLimit ?? data.limit ?? entry.limit,
-    bars: data.bars ?? [],
+    bars: bars ?? [],
   };
 }
 
