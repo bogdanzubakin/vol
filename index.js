@@ -1216,6 +1216,15 @@ function applyCloudDefaults(flags) {
   }
 }
 
+function hasKlineCacheFiles() {
+  try {
+    const files = fs.readdirSync(KLINES_CACHE_DIR);
+    return files.some((name) => name.endsWith(`_${cfg.interval}.json`));
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   const { flags, kv } = parseArgs(process.argv);
   applyCloudDefaults(flags);
@@ -1256,7 +1265,8 @@ async function main() {
   const gapArg = kv.get("prefetch-gap-ms");
   if (gapArg) cfg.restMinGapMs = Math.max(200, Number(gapArg) || cfg.restMinGapMs);
 
-  const wantPrefetch = !flags.has("no-prefetch");
+  const skipPrefetchByCache = hasKlineCacheFiles();
+  const wantPrefetch = !flags.has("no-prefetch") && !skipPrefetchByCache;
 
   let quoteVolMap = new Map();
   const historyBuffers = new Map();
@@ -2013,7 +2023,9 @@ async function main() {
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
       `eval window: ${cfg.limit} bars | cache max: ${cfg.cacheMaxBars} | ` +
-      `live prefetch: ${wantPrefetch ? "yes" : "no"}`
+      `live prefetch: ${wantPrefetch ? "yes" : "no"}${
+        skipPrefetchByCache ? " (cache exists)" : ""
+      }`
   );
 
   klineCache.startPeriodicFlush(historyBuffers);
@@ -2061,7 +2073,14 @@ async function main() {
       quoteVolMap
     );
   } else {
-    console.error("Skipping prefetch (--no-prefetch). History will build from WebSocket only.");
+    const reason = flags.has("no-prefetch")
+      ? "--no-prefetch"
+      : skipPrefetchByCache
+        ? "cache already exists"
+        : "disabled";
+    console.error(
+      `Skipping prefetch (${reason}). History will build from cache/WebSocket.`
+    );
   }
 
   const shutdown = () => {

@@ -612,6 +612,7 @@
         <p class="sub" id="subtitle">Loading…</p>
       </div>
       <div class="status" id="status"></div>
+      <p class="sub" id="storageInfo" style="margin:0;font-size:0.75rem" hidden></p>
     </div>
     <aside class="positions-panel" id="positionsPanel" aria-label="Open Binance positions">
       <div class="positions-panel-head">
@@ -1116,6 +1117,32 @@
     let uiSettingsCache = {};
     let uiSettingsSaveTimer = null;
     const uiPendingPatch = {};
+
+    async function loadStorageInfo() {
+      const el = document.getElementById("storageInfo");
+      if (!el) return;
+      try {
+        const res = await fetch("/api/storage-info", { cache: "no-store" });
+        if (!res.ok) return;
+        const info = await res.json();
+        const mode = info.persistent ? "persistent" : "ephemeral";
+        const modeCls = info.persistent ? "pass" : "near";
+        const files = info.files || {};
+        const fileBits = [
+          files.uiSettings ? "ui-settings" : null,
+          files.klineCacheFiles ? `${files.klineCacheFiles} kline caches` : null,
+          files.historyComments ? "comments" : null,
+        ].filter(Boolean);
+        el.hidden = false;
+        el.innerHTML =
+          `Storage <span class="${modeCls}">${mode}</span> · ` +
+          `<code style="font-size:0.72rem;color:var(--muted)">${escapeHtml(info.dataDir || "—")}</code>` +
+          (info.source ? ` · ${escapeHtml(info.source)}` : "") +
+          (fileBits.length ? ` · ${escapeHtml(fileBits.join(", "))}` : "");
+      } catch {
+        /* ignore */
+      }
+    }
 
     async function loadUiSettings() {
       try {
@@ -2730,6 +2757,7 @@
       if (window.__appStarted) return;
       window.__appStarted = true;
       loadUiSettings().then(() => {
+        loadStorageInfo();
         initCalcStartAmount();
         if (
           document.getElementById("historyFromDate") &&
