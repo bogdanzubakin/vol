@@ -2014,7 +2014,6 @@
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
       if (activeTab === "fastcorridor") loadFastCorridor();
-      if (activeTab === "history") loadPositionsHistory();
 
       const sub = document.getElementById("subtitle");
       sub.textContent =
@@ -2535,10 +2534,8 @@
       }
       poll();
       pollPositions();
-      loadPositionsHistory();
       setInterval(poll, 2000);
       setInterval(pollPositions, 5000);
-      setInterval(loadPositionsHistory, 10000);
     }
 
     initAuth();
