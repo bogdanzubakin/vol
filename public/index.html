@@ -633,6 +633,7 @@
     <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="history" role="tab">History</button>
+    <button type="button" class="tab" data-tab="calculations" role="tab">Calculations</button>
   </nav>
 
   <div id="panel-scanner" class="tab-panel active" role="tabpanel">
@@ -1011,6 +1012,50 @@
     </section>
   </div>
 
+  <div id="panel-calculations" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Calculations</h2>
+      <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
+        Compound percent growth per iteration.
+      </p>
+      <form class="settings-form movers-settings" id="calcForm">
+        <div class="field">
+          <label for="calcStartAmount">Starting amount</label>
+          <input type="number" id="calcStartAmount" step="0.01" min="0" value="100" required />
+          <div class="hint">Initial amount before first iteration</div>
+        </div>
+        <div class="field">
+          <label for="calcPct">Percent per iteration %</label>
+          <input type="number" id="calcPct" step="0.01" value="4" required />
+          <div class="hint">Profit/loss percent applied each step (default 4%)</div>
+        </div>
+        <div class="field">
+          <label for="calcIterations">Iterations</label>
+          <input type="number" id="calcIterations" step="1" min="1" max="500" value="30" required />
+          <div class="hint">How many compound steps to generate</div>
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm">Calculate</button>
+          <span class="config-msg" id="calcMsg"></span>
+        </div>
+      </form>
+      <div class="pairs-table-wrap table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Iteration</th>
+              <th>Delta</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="calcBody">
+            <tr><td colspan="3" class="empty">Open Calculations tab to generate iterations</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <div id="chartModal" class="modal" aria-hidden="true">
     <div class="modal-box">
       <div class="modal-head">
@@ -1141,6 +1186,9 @@
       }
       if (name === "history") {
         loadPositionsHistory();
+      }
+      if (name === "calculations") {
+        renderCalculations();
       }
     }
 
@@ -2257,6 +2305,83 @@
       el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
     }
 
+    function setCalcMsg(text, ok) {
+      const el = document.getElementById("calcMsg");
+      el.textContent = text || "";
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    async function initCalcStartAmount() {
+      const el = document.getElementById("calcStartAmount");
+      if (!el || el.dataset.balanceLoaded === "1") return;
+      try {
+        const res = await fetch("/api/futures-balance", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        if (data?.enabled && Number.isFinite(Number(data.usdtBalance))) {
+          if (!el.dataset.userEdited) {
+            el.value = String(Number(data.usdtBalance));
+          }
+        }
+      } catch {
+        // Keep fallback default value from HTML when unavailable.
+      } finally {
+        el.dataset.balanceLoaded = "1";
+      }
+    }
+
+    function fmt2Trim(n) {
+      if (n == null || Number.isNaN(n)) return "—";
+      return Number(n).toFixed(2).replace(/\.?0+$/, "");
+    }
+
+    function renderCalculations() {
+      const startAmount = Number(document.getElementById("calcStartAmount").value);
+      const pct = Number(document.getElementById("calcPct").value);
+      const iterationsRaw = Number(document.getElementById("calcIterations").value);
+      const iterations = Math.max(1, Math.min(500, Math.round(iterationsRaw || 0)));
+      if (!Number.isFinite(startAmount) || startAmount < 0) {
+        setCalcMsg("Starting amount must be >= 0", false);
+        return;
+      }
+      if (!Number.isFinite(pct)) {
+        setCalcMsg("Percent must be a number", false);
+        return;
+      }
+      if (!Number.isFinite(iterations) || iterations < 1) {
+        setCalcMsg("Iterations must be at least 1", false);
+        return;
+      }
+
+      let amount = startAmount;
+      const rows = [];
+      for (let i = 1; i <= iterations; i++) {
+        const delta = amount * (pct / 100);
+        amount += delta;
+        rows.push({
+          iteration: i,
+          pct,
+          delta,
+          amount,
+        });
+      }
+
+      document.getElementById("calcBody").innerHTML = rows
+        .map((r) => {
+          const deltaCls = r.delta >= 0 ? "pnl-pos" : "pnl-neg";
+          const amountCls = r.amount >= 0 ? "pnl-pos" : "pnl-neg";
+          const sign = r.delta >= 0 ? "+" : "";
+          return `<tr>
+            <td>${r.iteration}</td>
+            <td class="${deltaCls}">${sign}${fmt2Trim(r.delta)}</td>
+            <td class="${amountCls}">${fmt2Trim(r.amount)}</td>
+          </tr>`;
+        })
+        .join("");
+
+      setCalcMsg(`Generated ${iterations} iterations`, true);
+    }
+
     function renderPositionsHistory(data) {
       const tbody = document.getElementById("historyBody");
       document.getElementById("historyCount").textContent =
@@ -2391,6 +2516,13 @@
     document.getElementById("historyRefresh")?.addEventListener("click", () => {
       loadPositionsHistory();
     });
+    document.getElementById("calcForm")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      renderCalculations();
+    });
+    document.getElementById("calcStartAmount")?.addEventListener("input", () => {
+      document.getElementById("calcStartAmount").dataset.userEdited = "1";
+    });
 
     async function poll() {
       const errEl = document.getElementById("error");
@@ -2524,6 +2656,7 @@
     function startApp() {
       if (window.__appStarted) return;
       window.__appStarted = true;
+      initCalcStartAmount();
       if (document.getElementById("historyFromDate") && !document.getElementById("historyFromDate").value) {
         const d = new Date();
         d.setDate(d.getDate() - 1);

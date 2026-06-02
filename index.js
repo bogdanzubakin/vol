@@ -46,6 +46,7 @@ const {
 } = require("./lib/kline-cache");
 const {
   createPositionsProvider,
+  createFuturesBalanceProvider,
   resolveBinanceCredentials,
 } = require("./lib/binance-positions");
 const { createPositionsHistoryStore } = require("./lib/positions-history");
@@ -1899,6 +1900,7 @@ async function main() {
 
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
+  const getFuturesBalance = createFuturesBalanceProvider({ kv });
   const positionsHistory = createPositionsHistoryStore({ kv });
   const binanceCreds = resolveBinanceCredentials(kv);
   if (binanceCreds.enabled) {
@@ -1935,6 +1937,7 @@ async function main() {
         postTelegramSignal: (symbol, searchParams) =>
           scannerApi.postTelegramSignal(symbol, searchParams),
         getPositions: getOpenPositions,
+        getFuturesBalance,
         getPositionsHistory: async (searchParams) =>
           positionsHistory.list(searchParams),
         updatePositionsHistoryComment: async (body) => {
