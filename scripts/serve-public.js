@@ -3,6 +3,7 @@
  * Lightweight dashboard server for Railway / static hosting.
  * Serves public/index.html and /api/state from public/results.json.
  * No Binance connections — pair with a local scanner or upload results.json.
+ *
  */
 
 const fs = require("fs");
