@@ -984,6 +984,9 @@
           <input type="date" id="historyFromDate" />
           <div class="hint">Show positions closed from this date (inclusive)</div>
         </div>
+        <button type="button" class="btn secondary sm" id="historyLastDay">Last day</button>
+        <button type="button" class="btn secondary sm" id="historyLastWeek">Last week</button>
+        <button type="button" class="btn secondary sm" id="historyLastMonth">Last month</button>
         <button type="button" class="btn secondary sm" id="historyRefresh">Refresh</button>
       </div>
       <div class="pairs-table-wrap table-wrap">
@@ -2368,6 +2371,24 @@
     document.getElementById("historyFromDate")?.addEventListener("change", () => {
       loadPositionsHistory();
     });
+    function setHistoryFromDaysAgo(days) {
+      const d = new Date();
+      d.setDate(d.getDate() - Math.max(0, Number(days) || 0));
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      document.getElementById("historyFromDate").value = `${y}-${m}-${dd}`;
+      loadPositionsHistory();
+    }
+    document.getElementById("historyLastDay")?.addEventListener("click", () => {
+      setHistoryFromDaysAgo(1);
+    });
+    document.getElementById("historyLastWeek")?.addEventListener("click", () => {
+      setHistoryFromDaysAgo(7);
+    });
+    document.getElementById("historyLastMonth")?.addEventListener("click", () => {
+      setHistoryFromDaysAgo(30);
+    });
     document.getElementById("historyRefresh")?.addEventListener("click", () => {
       loadPositionsHistory();
     });
@@ -2504,6 +2525,14 @@
     function startApp() {
       if (window.__appStarted) return;
       window.__appStarted = true;
+      if (document.getElementById("historyFromDate") && !document.getElementById("historyFromDate").value) {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        document.getElementById("historyFromDate").value = `${y}-${m}-${dd}`;
+      }
       poll();
       pollPositions();
       loadPositionsHistory();
