@@ -370,14 +370,14 @@ function minPrefetchBars() {
   return cfg.limit;
 }
 
+const PREFETCH_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
+
 /** True when disk cache can seed live eval without a REST prefetch for this symbol. */
 function symbolCacheSufficient(cached) {
   if (!cached?.length || cached.length < minPrefetchBars()) return false;
   const last = cached[cached.length - 1];
   if (!last?.closeTime) return false;
-  const maxStaleMs =
-    cfg.barMs * Math.max(1, cfg.staleSymbolRefreshAfterBars ?? 3);
-  return Date.now() - last.closeTime <= maxStaleMs;
+  return Date.now() - last.closeTime <= PREFETCH_CACHE_MAX_AGE_MS;
 }
 
 function loadSymbolFromCache(symbol) {
