@@ -104,6 +104,27 @@
     }
     .pnl-pos { color: var(--green); font-weight: 600; }
     .pnl-neg { color: var(--red); font-weight: 600; }
+    .history-comment {
+      width: 100%;
+      min-height: 56px;
+      resize: vertical;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 8px;
+      font-size: 0.78rem;
+      line-height: 1.25;
+      box-sizing: border-box;
+    }
+    .history-comment:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+    .history-date, .history-duration {
+      color: var(--muted);
+      white-space: nowrap;
+    }
     .status {
       display: flex;
       flex-wrap: wrap;
@@ -611,6 +632,7 @@
     <button type="button" class="tab" data-tab="topmovers" role="tab">Top movers</button>
     <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
+    <button type="button" class="tab" data-tab="history" role="tab">History</button>
   </nav>
 
   <div id="panel-scanner" class="tab-panel active" role="tabpanel">
@@ -953,6 +975,31 @@
     </section>
   </div>
 
+  <div id="panel-history" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Binance positions history <span id="historyCount"></span></h2>
+      <div class="pairs-table-wrap table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Pair</th>
+              <th>Date</th>
+              <th>Duration</th>
+              <th>Profit</th>
+              <th>Comments</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="5" class="empty">Open this tab to load positions history</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding: 8px 16px 0;">
+        <span class="config-msg" id="historyMsg"></span>
+      </div>
+    </section>
+  </div>
+
   <div id="chartModal" class="modal" aria-hidden="true">
     <div class="modal-box">
       <div class="modal-head">
@@ -1006,6 +1053,7 @@
     let lastFastMovers = [];
     let moversSort = { key: "avgMovePct", dir: "desc" };
     let topMoversLoading = false;
+    let historyLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
 
@@ -1079,6 +1127,9 @@
       if (name === "fastcorridor") {
         loadFastCorridorConfigForm();
         loadFastCorridor();
+      }
+      if (name === "history") {
+        loadPositionsHistory();
       }
     }
 
@@ -1952,6 +2003,7 @@
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
       if (activeTab === "fastcorridor") loadFastCorridor();
+      if (activeTab === "history") loadPositionsHistory();
 
       const sub = document.getElementById("subtitle");
       sub.textContent =
@@ -2164,6 +2216,98 @@
       }
     }
 
+    function fmtDuration(sec) {
+      if (sec == null || Number.isNaN(sec)) return "—";
+      const total = Math.max(0, Math.floor(Number(sec)));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    function setHistoryMsg(text, ok) {
+      const el = document.getElementById("historyMsg");
+      el.textContent = text || "";
+      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
+    }
+
+    function renderPositionsHistory(data) {
+      const tbody = document.getElementById("historyBody");
+      document.getElementById("historyCount").textContent =
+        data?.items?.length != null ? `(${data.items.length})` : "";
+
+      if (!data?.enabled) {
+        const hint = data?.hint || "Set BINANCE_API_KEY and BINANCE_API_SECRET in .env";
+        tbody.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(hint)}</td></tr>`;
+        return;
+      }
+      if (!data?.items?.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No closed positions yet</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.items
+        .map((h) => {
+          const dir = String(h.direction || "").toUpperCase() === "SHORT" ? "SHORT" : "LONG";
+          const dirCls = dir === "LONG" ? "dir-long" : "dir-short";
+          const dirTri = dir === "LONG" ? "▲" : "▼";
+          const pnlCls =
+            h.profit == null ? "" : Number(h.profit) >= 0 ? "pnl-pos" : "pnl-neg";
+          return `<tr>
+            <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(h.symbol)}</td>
+            <td class="history-date">${escapeHtml(h.closedAt || h.openedAt || "—")}</td>
+            <td class="history-duration">${escapeHtml(fmtDuration(h.durationSec))}</td>
+            <td class="${pnlCls}">${fmtPnl(h.profit)}</td>
+            <td>
+              <textarea class="history-comment" data-history-id="${escapeHtml(h.id)}" placeholder="Add comment...">${escapeHtml(h.comment || "")}</textarea>
+            </td>
+          </tr>`;
+        })
+        .join("");
+
+      tbody.querySelectorAll(".history-comment").forEach((el) => {
+        const save = async () => {
+          const id = el.dataset.historyId;
+          try {
+            const res = await fetch("/api/positions-history/comment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id, comment: el.value }),
+            });
+            const out = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(out.error || res.statusText);
+            setHistoryMsg(`Comment saved ${formatTimeShort(Date.now())} ${TZ_LABEL}`, true);
+          } catch (e) {
+            setHistoryMsg(e.message, false);
+          }
+        };
+        el.addEventListener("change", save);
+        el.addEventListener("blur", save);
+      });
+    }
+
+    async function loadPositionsHistory() {
+      if (historyLoading) return;
+      historyLoading = true;
+      try {
+        const res = await fetch("/api/positions-history", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPositionsHistory(data);
+        if (activeTab === "history") {
+          setHistoryMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
+        }
+      } catch (e) {
+        document.getElementById("historyBody").innerHTML =
+          `<tr><td colspan="5" class="empty">${escapeHtml(e.message)}</td></tr>`;
+        setHistoryMsg(e.message, false);
+      } finally {
+        historyLoading = false;
+      }
+    }
+
     async function poll() {
       const errEl = document.getElementById("error");
       try {
@@ -2298,8 +2442,10 @@
       window.__appStarted = true;
       poll();
       pollPositions();
+      loadPositionsHistory();
       setInterval(poll, 2000);
       setInterval(pollPositions, 5000);
+      setInterval(loadPositionsHistory, 10000);
     }
 
     initAuth();

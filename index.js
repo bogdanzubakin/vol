@@ -48,6 +48,7 @@ const {
   createPositionsProvider,
   resolveBinanceCredentials,
 } = require("./lib/binance-positions");
+const { createPositionsHistoryStore } = require("./lib/positions-history");
 const { createTelegramAuth } = require("./lib/telegram-auth");
 
 const REST_BASE = "https://fapi.binance.com";
@@ -1898,6 +1899,14 @@ async function main() {
 
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
+  const positionsHistory = createPositionsHistoryStore();
+  let lastPositionsSnapshot = null;
+  const getOpenPositionsWithHistory = async () => {
+    const snapshot = await getOpenPositions();
+    lastPositionsSnapshot = snapshot;
+    positionsHistory.ingestSnapshot(snapshot);
+    return snapshot;
+  };
   const binanceCreds = resolveBinanceCredentials(kv);
   if (binanceCreds.enabled) {
     console.error("Binance Futures positions: enabled (header panel)");
@@ -1932,7 +1941,15 @@ async function main() {
           scannerApi.getChartData(symbol, searchParams),
         postTelegramSignal: (symbol, searchParams) =>
           scannerApi.postTelegramSignal(symbol, searchParams),
-        getPositions: getOpenPositions,
+        getPositions: getOpenPositionsWithHistory,
+        getPositionsHistory: async () => {
+          if (!lastPositionsSnapshot) lastPositionsSnapshot = await getOpenPositions();
+          return positionsHistory.list(lastPositionsSnapshot);
+        },
+        updatePositionsHistoryComment: async (body) => {
+          const row = positionsHistory.setComment(body?.id, body?.comment ?? "");
+          return { ok: true, item: row };
+        },
         auth,
         onConfigUpdate: async (patch) => {
           const updates = validateLiveConfigPatch(patch);
