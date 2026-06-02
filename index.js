@@ -52,6 +52,7 @@ const {
 const { createPositionsHistoryStore } = require("./lib/positions-history");
 const { createTelegramAuth } = require("./lib/telegram-auth");
 const { dataPath, migrateLegacyCache, resolveDataDir } = require("./lib/data-dir");
+const scannerConfig = require("./lib/scanner-config");
 
 const REST_BASE = "https://fapi.binance.com";
 // DO NOT CHANGE BASE wss://stream.binance.com:443
@@ -59,6 +60,7 @@ const WS_STREAM_BASE = "wss://stream.binance.com:443/stream";
 const KLINE_MAX = 1500;
 const SIGNAL_RETENTION_MS = 24 * 60 * 60 * 1000;
 migrateLegacyCache();
+scannerConfig.migrateFromResultsJson();
 console.error(`Persistent data: ${resolveDataDir()}`);
 const EXCHANGE_INFO_CACHE = dataPath("futures-exchangeInfo.json");
 const KLINES_CACHE_DIR = dataPath("klines");
@@ -112,6 +114,8 @@ const cfg = {
   signalNotifyCooldownMs: 60 * 60 * 1000,
 };
 
+applyBarConfig(cfg);
+scannerConfig.loadInto(cfg);
 applyBarConfig(cfg);
 
 const restLimiter = { chain: Promise.resolve() };
@@ -1962,6 +1966,7 @@ async function main() {
           const updates = validateLiveConfigPatch(patch);
           Object.assign(cfg, updates);
           applyBarConfig(cfg);
+          scannerConfig.saveFrom(cfg);
           dashboard.syncConfigFromCfg();
           dashboard.pushEvent(
             "CONFIG",

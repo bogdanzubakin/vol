@@ -1118,33 +1118,20 @@
     let uiSettingsSaveTimer = null;
     const uiPendingPatch = {};
 
-    async function runStorageMaintenance(action) {
-      const pretty = action === "prune" ? "prune legacy cache" : "copy legacy cache";
-      const ok = window.confirm(
-        `Are you sure you want to ${pretty}? This action targets /app/.cache/klines legacy files.`
-      );
-      if (!ok) return;
-      const el = document.getElementById("storageInfo");
-      try {
-        const res = await fetch("/api/storage-maintenance", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, confirm: "YES" }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || res.statusText);
-        if (el) {
-          el.hidden = false;
-          const changed = Number(out.changed || 0);
-          el.innerHTML = `Storage admin: <span class="pass">${escapeHtml(action)}</span> done · changed ${changed} files`;
-        }
-        await loadStorageInfo();
-      } catch (e) {
-        if (el) {
-          el.hidden = false;
-          el.innerHTML = `Storage admin error: <span class="near">${escapeHtml(e.message)}</span>`;
-        }
-      }
+    function formatStorageUsage(info) {
+      const usage = info.usage || {};
+      const entries = usage.entries || {};
+      const rows = Object.entries(entries)
+        .map(([name, e]) => {
+          if (!e?.exists) return null;
+          const extra =
+            name === "klines" && e.jsonFiles != null
+              ? ` (${e.jsonFiles} json${e.liveFiles ? `, ${e.liveFiles} live` : ""})`
+              : "";
+          return `${name} ${e.bytesFormatted || "0 B"}${extra}`;
+        })
+        .filter(Boolean);
+      return rows.length ? rows.join(" · ") : "no data files yet";
     }
 
     async function loadStorageInfo() {
@@ -1157,12 +1144,11 @@
         const mode = info.persistent ? "persistent" : "ephemeral";
         const modeCls = info.persistent ? "pass" : "near";
         const files = info.files || {};
+        const usage = info.usage || {};
         const fileBits = [
+          files.scannerConfig ? "scanner-config" : null,
           files.uiSettings ? "ui-settings" : null,
-          files.klineCacheFiles ? `${files.klineCacheFiles} kline caches` : null,
-          files.legacyKlineCacheFiles
-            ? `${files.legacyKlineCacheFiles} legacy caches`
-            : null,
+          files.klineCacheFiles ? `${files.klineCacheFiles} kline files` : null,
           files.historyComments ? "comments" : null,
         ].filter(Boolean);
         el.hidden = false;
@@ -1170,17 +1156,79 @@
           `Storage <span class="${modeCls}">${mode}</span> · ` +
           `<code style="font-size:0.72rem;color:var(--muted)">${escapeHtml(info.dataDir || "—")}</code>` +
           (info.source ? ` · ${escapeHtml(info.source)}` : "") +
+          (usage.totalBytesFormatted
+            ? ` · total ${escapeHtml(usage.totalBytesFormatted)}`
+            : "") +
           (fileBits.length ? ` · ${escapeHtml(fileBits.join(", "))}` : "") +
-          ` · <button type="button" class="btn secondary sm" id="copyLegacyCacheBtn">Copy legacy</button>` +
-          ` <button type="button" class="btn secondary sm" id="pruneLegacyCacheBtn">Prune legacy</button>`;
-        document
-          .getElementById("copyLegacyCacheBtn")
-          ?.addEventListener("click", () => runStorageMaintenance("copy"));
-        document
-          .getElementById("pruneLegacyCacheBtn")
-          ?.addEventListener("click", () => runStorageMaintenance("prune"));
+          `<br><span style="color:var(--muted)">${escapeHtml(formatStorageUsage(info))}</span>`;
       } catch {
         /* ignore */
+      }
+    }
+
+    function applyUiSettingsFromCache() {
+      const fields = [
+        ["evaluateAt", "ui_evaluateAt"],
+        ["historyFromDate", "ui_historyFromDate"],
+        ["calcStartAmount", "ui_calcStartAmount"],
+        ["calcPct", "ui_calcPct"],
+        ["calcIterations", "ui_calcIterations"],
+        ["pairsSearch", "ui_pairsSearch"],
+        ["pairsFilter", "ui_pairsFilter"],
+        ["pairsCriterionPass", "ui_pairsCriterionPass"],
+        ["moversSearch", "ui_moversSearch"],
+        ["topMoversSearch", "ui_topMoversSearch"],
+        ["fastCorridorSearch", "ui_fastCorridorSearch"],
+      ];
+      for (const [id, key] of fields) {
+        const el = document.getElementById(id);
+        const v = getUiSetting(key);
+        if (el && v != null && v !== "") el.value = v;
+      }
+      const criterion = getUiSetting("ui_pairsCriterion");
+      if (criterion != null && criterion !== "") {
+        const sel = document.getElementById("pairsCriterion");
+        if (sel) sel.value = criterion;
+      }
+      if (getUiSetting("ui_calcStartAmount")) {
+        const calcEl = document.getElementById("calcStartAmount");
+        if (calcEl) calcEl.dataset.userEdited = "1";
+      }
+    }
+
+    function bindUiSettingsPersistence() {
+      const bind = (id, key, eventName = "change") => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener(eventName, () => setUiSetting(key, el.value));
+      };
+      bind("evaluateAt", "ui_evaluateAt", "change");
+      bind("historyFromDate", "ui_historyFromDate", "change");
+      bind("calcStartAmount", "ui_calcStartAmount", "input");
+      bind("calcPct", "ui_calcPct", "input");
+      bind("calcIterations", "ui_calcIterations", "input");
+      bind("pairsSearch", "ui_pairsSearch", "input");
+      bind("pairsFilter", "ui_pairsFilter", "change");
+      bind("pairsCriterion", "ui_pairsCriterion", "change");
+      bind("pairsCriterionPass", "ui_pairsCriterionPass", "change");
+      bind("moversSearch", "ui_moversSearch", "input");
+      bind("topMoversSearch", "ui_topMoversSearch", "input");
+      bind("fastCorridorSearch", "ui_fastCorridorSearch", "input");
+
+      for (const k of MOVERS_CONFIG_KEYS) {
+        document.getElementById(k)?.addEventListener("input", (e) => {
+          setUiSetting(`movers_${k}`, e.target.value);
+        });
+      }
+      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
+        document.getElementById(elId)?.addEventListener("input", (e) => {
+          setUiSetting(`fastcorridor_${param}`, e.target.value);
+        });
+      }
+      for (const k of TOP_MOVERS_CONFIG_KEYS) {
+        document.getElementById(k)?.addEventListener("input", (e) => {
+          setUiSetting(`topMovers_${k}`, e.target.value);
+        });
       }
     }
 
@@ -1196,7 +1244,7 @@
         /* offline / static mode */
       }
       const patch = {};
-      const prefixes = ["movers_", "topMovers_", "fastcorridor_"];
+      const prefixes = ["movers_", "topMovers_", "fastcorridor_", "ui_"];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (!k || !prefixes.some((p) => k.startsWith(p))) continue;
@@ -2797,6 +2845,8 @@
       if (window.__appStarted) return;
       window.__appStarted = true;
       loadUiSettings().then(() => {
+        applyUiSettingsFromCache();
+        bindUiSettingsPersistence();
         loadStorageInfo();
         initCalcStartAmount();
         if (
