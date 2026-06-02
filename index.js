@@ -371,20 +371,9 @@ function minPrefetchBars() {
   return cfg.limit;
 }
 
-const PREFETCH_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
-
+/** Disk cache is enough for startup prefetch when it has the eval window of bars (age ignored — WS fills the live bar). */
 function symbolCacheSufficientFromMeta(meta) {
-  if (!meta?.barCount || meta.barCount < minPrefetchBars()) return false;
-  if (meta.lastCloseTime == null) return false;
-  return Date.now() - meta.lastCloseTime <= PREFETCH_CACHE_MAX_AGE_MS;
-}
-
-/** True when disk cache can seed live eval without a REST prefetch for this symbol. */
-function symbolCacheSufficient(cached) {
-  if (!cached?.length || cached.length < minPrefetchBars()) return false;
-  const last = cached[cached.length - 1];
-  if (!last?.closeTime) return false;
-  return Date.now() - last.closeTime <= PREFETCH_CACHE_MAX_AGE_MS;
+  return Boolean(meta?.barCount && meta.barCount >= minPrefetchBars());
 }
 
 async function runConcurrent(items, limit, fn) {
@@ -1167,14 +1156,20 @@ async function prefetchAllSymbols(
   });
 
   console.error(
-    `Prefetch plan: ${cacheSymbols.length} cache-only · ${restSymbols.length} REST`
+    `Prefetch plan: ${cacheSymbols.length} from disk (≥${minPrefetchBars()} bars) · ${restSymbols.length} REST`
   );
 
   await runConcurrent(cacheSymbols, cfg.prefetchCacheConcurrency, async (sym) => {
     try {
       const bars = loadSymbolFromCache(sym);
-      historyBuffers.set(sym, bars);
-      fromCache++;
+      if (bars.length < minPrefetchBars()) {
+        const loaded = await loadSymbolHistory(sym);
+        historyBuffers.set(sym, loaded);
+        refreshed++;
+      } else {
+        historyBuffers.set(sym, bars);
+        fromCache++;
+      }
     } catch (e) {
       failed++;
       console.error(`Prefetch cache load failed ${sym}: ${e.message}`);

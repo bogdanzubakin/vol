@@ -838,7 +838,6 @@
                   <span class="sort-mark"></span>
                 </span>
               </th>
-              <th class="sortable" data-mover-sort="close">Close <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="linearChangePct">Linear % <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="move24hPct">24h move <span class="sort-mark"></span></th>
@@ -849,7 +848,7 @@
             </tr>
           </thead>
           <tbody id="moversBody">
-            <tr><td colspan="9" class="empty">Open this tab to load fast movers</td></tr>
+            <tr><td colspan="8" class="empty">Open this tab to load fast movers</td></tr>
           </tbody>
         </table>
       </div>
@@ -892,7 +891,6 @@
               <th class="sym-search-header">
                 <input type="search" id="topMoversSearch" class="th-search" placeholder="Search symbol…" aria-label="Search symbol" />
               </th>
-              <th>Direction</th>
               <th>Move %</th>
               <th>Fast avg move %</th>
               <th>Used / excl.</th>
@@ -900,7 +898,7 @@
             </tr>
           </thead>
           <tbody id="topMoversBody">
-            <tr><td colspan="6" class="empty">Open this tab to load top movers</td></tr>
+            <tr><td colspan="5" class="empty">Open this tab to load top movers</td></tr>
           </tbody>
         </table>
       </div>
@@ -1734,7 +1732,7 @@
       } catch (e) {
         setMoversMsg(e.message, false);
         document.getElementById("moversBody").innerHTML =
-          `<tr><td colspan="9" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
       } finally {
         fastMoversLoading = false;
       }
@@ -1749,7 +1747,7 @@
       const tbody = document.getElementById("moversBody");
       if (!lastFastMovers.length) {
         tbody.innerHTML =
-          '<tr><td colspan="9" class="empty">No fast movers match</td></tr>';
+          '<tr><td colspan="8" class="empty">No fast movers match</td></tr>';
         return;
       }
 
@@ -1771,7 +1769,6 @@
                 : `${bullish24h ? "▲" : "▼"} ${fmt(p.move24hPct, 3)}%`;
             return `<tr>
             <td class="sym-cell">${symLink(p.symbol)}</td>
-            <td>${fmt(p.close, 6)}</td>
             <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
             <td class="${linearCls}">${linearMark}</td>
             <td class="${dirCls}">${dirMark}</td>
@@ -2069,7 +2066,7 @@
       } catch (e) {
         setTopMoversMsg(e.message, false);
         document.getElementById("topMoversBody").innerHTML =
-          `<tr><td colspan="6" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="5" class="empty">${escapeHtml(e.message)}</td></tr>`;
       } finally {
         topMoversLoading = false;
       }
@@ -2082,19 +2079,18 @@
       const tbody = document.getElementById("topMoversBody");
       if (!data.movers?.length) {
         tbody.innerHTML =
-          '<tr><td colspan="6" class="empty">No top movers match</td></tr>';
+          '<tr><td colspan="5" class="empty">No top movers match</td></tr>';
         return;
       }
 
       tbody.innerHTML = data.movers
         .map((p) => {
           const bullish = p.direction === "bullish";
-          const dirMark = bullish ? "▲ bullish" : "▼ bearish";
           const dirCls = bullish ? "pass" : "bad";
+          const moveMark = `${bullish ? "▲" : "▼"} ${fmt(p.movePct, 3)}%`;
           return `<tr>
             <td class="sym-cell">${symLink(p.symbol)}</td>
-            <td class="${dirCls}">${dirMark}</td>
-            <td class="${dirCls}">${fmt(p.movePct, 3)}%</td>
+            <td class="${dirCls}">${moveMark}</td>
             <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}">Chart</button></td>
