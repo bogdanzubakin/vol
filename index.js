@@ -62,6 +62,7 @@ migrateLegacyCache();
 console.error(`Persistent data: ${resolveDataDir()}`);
 const EXCHANGE_INFO_CACHE = dataPath("futures-exchangeInfo.json");
 const KLINES_CACHE_DIR = dataPath("klines");
+console.error(`Kline cache dir: ${KLINES_CACHE_DIR}`);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
