@@ -1899,14 +1899,7 @@ async function main() {
 
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
-  const positionsHistory = createPositionsHistoryStore();
-  let lastPositionsSnapshot = null;
-  const getOpenPositionsWithHistory = async () => {
-    const snapshot = await getOpenPositions();
-    lastPositionsSnapshot = snapshot;
-    positionsHistory.ingestSnapshot(snapshot);
-    return snapshot;
-  };
+  const positionsHistory = createPositionsHistoryStore({ kv });
   const binanceCreds = resolveBinanceCredentials(kv);
   if (binanceCreds.enabled) {
     console.error("Binance Futures positions: enabled (header panel)");
@@ -1941,11 +1934,9 @@ async function main() {
           scannerApi.getChartData(symbol, searchParams),
         postTelegramSignal: (symbol, searchParams) =>
           scannerApi.postTelegramSignal(symbol, searchParams),
-        getPositions: getOpenPositionsWithHistory,
-        getPositionsHistory: async () => {
-          if (!lastPositionsSnapshot) lastPositionsSnapshot = await getOpenPositions();
-          return positionsHistory.list(lastPositionsSnapshot);
-        },
+        getPositions: getOpenPositions,
+        getPositionsHistory: async (searchParams) =>
+          positionsHistory.list(searchParams),
         updatePositionsHistoryComment: async (body) => {
           const row = positionsHistory.setComment(body?.id, body?.comment ?? "");
           return { ok: true, item: row };

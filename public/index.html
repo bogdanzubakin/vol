@@ -978,6 +978,14 @@
   <div id="panel-history" class="tab-panel" role="tabpanel">
     <section>
       <h2>Binance positions history <span id="historyCount"></span></h2>
+      <div class="pairs-toolbar">
+        <div class="field" style="min-width: 220px;">
+          <label for="historyFromDate">From date</label>
+          <input type="date" id="historyFromDate" />
+          <div class="hint">Show positions closed from this date (inclusive)</div>
+        </div>
+        <button type="button" class="btn secondary sm" id="historyRefresh">Refresh</button>
+      </div>
       <div class="pairs-table-wrap table-wrap">
         <table>
           <thead>
@@ -2227,6 +2235,20 @@
       return `${s}s`;
     }
 
+    function fmtHistoryDate(t) {
+      const s = String(t || "");
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+      if (m) return `${m[2]}.${m[3]} ${m[4]}:${m[5]}`;
+      const ms = parseDisplayIso(t);
+      if (ms == null) return "—";
+      const d = new Date(ms);
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      return `${mm}.${dd} ${hh}:${mi}`;
+    }
+
     function setHistoryMsg(text, ok) {
       const el = document.getElementById("historyMsg");
       el.textContent = text || "";
@@ -2243,6 +2265,10 @@
         tbody.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(hint)}</td></tr>`;
         return;
       }
+      if (data?.error) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(data.error)}</td></tr>`;
+        return;
+      }
       if (!data?.items?.length) {
         tbody.innerHTML = '<tr><td colspan="5" class="empty">No closed positions yet</td></tr>';
         return;
@@ -2250,14 +2276,16 @@
 
       tbody.innerHTML = data.items
         .map((h) => {
-          const dir = String(h.direction || "").toUpperCase() === "SHORT" ? "SHORT" : "LONG";
-          const dirCls = dir === "LONG" ? "dir-long" : "dir-short";
-          const dirTri = dir === "LONG" ? "▲" : "▼";
+          const directionRaw = String(h.direction || "").toUpperCase();
+          const isShort = directionRaw === "SHORT";
+          const isLong = directionRaw === "LONG";
+          const dirCls = isShort ? "dir-short" : "dir-long";
+          const dirTri = isShort ? "▼" : isLong ? "▲" : "•";
           const pnlCls =
             h.profit == null ? "" : Number(h.profit) >= 0 ? "pnl-pos" : "pnl-neg";
           return `<tr>
             <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(h.symbol)}</td>
-            <td class="history-date">${escapeHtml(h.closedAt || h.openedAt || "—")}</td>
+            <td class="history-date">${escapeHtml(fmtHistoryDate(h.closedAt || h.openedAt))}</td>
             <td class="history-duration">${escapeHtml(fmtDuration(h.durationSec))}</td>
             <td class="${pnlCls}">${fmtPnl(h.profit)}</td>
             <td>
@@ -2292,7 +2320,13 @@
       if (historyLoading) return;
       historyLoading = true;
       try {
-        const res = await fetch("/api/positions-history", { cache: "no-store" });
+        const params = new URLSearchParams();
+        const fromDate = document.getElementById("historyFromDate")?.value;
+        if (fromDate) params.set("fromDate", fromDate);
+        const url = params.toString()
+          ? `/api/positions-history?${params}`
+          : "/api/positions-history";
+        const res = await fetch(url, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPositionsHistory(data);
@@ -2307,6 +2341,13 @@
         historyLoading = false;
       }
     }
+
+    document.getElementById("historyFromDate")?.addEventListener("change", () => {
+      loadPositionsHistory();
+    });
+    document.getElementById("historyRefresh")?.addEventListener("click", () => {
+      loadPositionsHistory();
+    });
 
     async function poll() {
       const errEl = document.getElementById("error");
