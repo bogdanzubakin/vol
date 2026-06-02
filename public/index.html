@@ -2274,7 +2274,13 @@
         return;
       }
 
-      tbody.innerHTML = data.items
+      const rows = [...data.items].sort(
+        (a, b) =>
+          (Date.parse(b.closedAt || b.openedAt || "") || 0) -
+          (Date.parse(a.closedAt || a.openedAt || "") || 0)
+      );
+
+      tbody.innerHTML = rows
         .map((h) => {
           const directionRaw = String(h.direction || "").toUpperCase();
           const isShort = directionRaw === "SHORT";
