@@ -366,6 +366,25 @@ async function fetchKlinesGap(symbol, startTime, endTime) {
   return merged;
 }
 
+function minPrefetchBars() {
+  return cfg.limit;
+}
+
+/** True when disk cache can seed live eval without a REST prefetch for this symbol. */
+function symbolCacheSufficient(cached) {
+  if (!cached?.length || cached.length < minPrefetchBars()) return false;
+  const last = cached[cached.length - 1];
+  if (!last?.closeTime) return false;
+  const maxStaleMs =
+    cfg.barMs * Math.max(1, cfg.staleSymbolRefreshAfterBars ?? 3);
+  return Date.now() - last.closeTime <= maxStaleMs;
+}
+
+function loadSymbolFromCache(symbol) {
+  const cached = klineCache.read(symbol) ?? [];
+  return klineCache.capBars(cached, memoryMaxBars());
+}
+
 async function loadSymbolHistory(symbol) {
   const cached = klineCache.read(symbol) ?? [];
   const fetched = await fetchKlines(symbol, cfg.limit);
@@ -1092,6 +1111,7 @@ async function prefetchAllSymbols(
   prefetching = true;
   let done = 0;
   let fromCache = 0;
+  let refreshed = 0;
   let fetched = 0;
   let failed = 0;
   const t0 = Date.now();
@@ -1102,6 +1122,7 @@ async function prefetchAllSymbols(
         done,
         total: symbols.length,
         fromCache,
+        refreshed,
         fetched,
         failed,
         elapsedSec: Math.round((Date.now() - t0) / 1000),
@@ -1117,10 +1138,17 @@ async function prefetchAllSymbols(
 
   for (const sym of symbols) {
     try {
-      const hadCache = Boolean(klineCache.read(sym)?.length);
-      const bars = await loadSymbolHistory(sym);
-      if (hadCache) fromCache++;
-      else fetched++;
+      const cached = klineCache.read(sym) ?? [];
+      let bars;
+      if (symbolCacheSufficient(cached)) {
+        bars = loadSymbolFromCache(sym);
+        fromCache++;
+      } else {
+        const hadCache = cached.length > 0;
+        bars = await loadSymbolHistory(sym);
+        if (hadCache) refreshed++;
+        else fetched++;
+      }
 
       historyBuffers.set(sym, bars);
       evaluateAfterPrefetch(
@@ -1148,7 +1176,7 @@ async function prefetchAllSymbols(
       const elapsed = ((Date.now() - t0) / 1000).toFixed(0);
       console.error(
         `Prefetch ${done}/${symbols.length} | cache ${fromCache} | ` +
-          `rest ${fetched} | fail ${failed} | ${elapsed}s`
+          `refresh ${refreshed} | rest ${fetched} | fail ${failed} | ${elapsed}s`
       );
     }
     await sleep(cfg.prefetchPauseMs);
@@ -1161,6 +1189,7 @@ async function prefetchAllSymbols(
       done,
       total: symbols.length,
       fromCache,
+      refreshed,
       fetched,
       failed,
       elapsedSec: Math.round((Date.now() - t0) / 1000),
@@ -1168,7 +1197,7 @@ async function prefetchAllSymbols(
   });
   printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
   console.error(
-    `Prefetch done: ${fromCache} from cache, ${fetched} from REST, ${failed} failed`
+    `Prefetch done: ${fromCache} cache-only, ${refreshed} refreshed, ${fetched} cold REST, ${failed} failed`
   );
 }
 
@@ -1221,15 +1250,6 @@ function applyCloudDefaults(flags) {
   }
 }
 
-function hasKlineCacheFiles() {
-  try {
-    const files = fs.readdirSync(KLINES_CACHE_DIR);
-    return files.some((name) => name.endsWith(`_${cfg.interval}.json`));
-  } catch {
-    return false;
-  }
-}
-
 async function main() {
   const { flags, kv } = parseArgs(process.argv);
   applyCloudDefaults(flags);
@@ -1270,8 +1290,7 @@ async function main() {
   const gapArg = kv.get("prefetch-gap-ms");
   if (gapArg) cfg.restMinGapMs = Math.max(200, Number(gapArg) || cfg.restMinGapMs);
 
-  const skipPrefetchByCache = hasKlineCacheFiles();
-  const wantPrefetch = !flags.has("no-prefetch") && !skipPrefetchByCache;
+  const wantPrefetch = !flags.has("no-prefetch");
 
   let quoteVolMap = new Map();
   const historyBuffers = new Map();
@@ -2029,9 +2048,7 @@ async function main() {
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
       `eval window: ${cfg.limit} bars | cache max: ${cfg.cacheMaxBars} | ` +
-      `live prefetch: ${wantPrefetch ? "yes" : "no"}${
-        skipPrefetchByCache ? " (cache exists)" : ""
-      }`
+      `live prefetch: ${wantPrefetch ? "yes (per-symbol if cache insufficient)" : "no"}`
   );
 
   klineCache.startPeriodicFlush(historyBuffers);
@@ -2079,13 +2096,8 @@ async function main() {
       quoteVolMap
     );
   } else {
-    const reason = flags.has("no-prefetch")
-      ? "--no-prefetch"
-      : skipPrefetchByCache
-        ? "cache already exists"
-        : "disabled";
     console.error(
-      `Skipping prefetch (${reason}). History will build from cache/WebSocket.`
+      "Skipping prefetch (--no-prefetch). History will build from cache/WebSocket."
     );
   }
 

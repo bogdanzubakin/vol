@@ -2229,7 +2229,8 @@
       const p = state.prefetchStatus;
       if (!p) return state.prefetching ? "running…" : "done";
       const base = `${p.done ?? 0}/${p.total ?? state.symbolCount ?? "?"}`;
-      const detail = `cache ${p.fromCache ?? 0} · rest ${p.fetched ?? 0} · fail ${p.failed ?? 0}`;
+      const detail =
+        `cache ${p.fromCache ?? 0} · refresh ${p.refreshed ?? 0} · rest ${p.fetched ?? 0} · fail ${p.failed ?? 0}`;
       const elapsed = p.elapsedSec != null ? ` · ${p.elapsedSec}s` : "";
       return state.prefetching
         ? `${base} done · ${detail}${elapsed}`
