@@ -1190,9 +1190,10 @@
         const sel = document.getElementById("pairsCriterion");
         if (sel) sel.value = criterion;
       }
-      if (getUiSetting("ui_calcStartAmount")) {
-        const calcEl = document.getElementById("calcStartAmount");
-        if (calcEl) calcEl.dataset.userEdited = "1";
+      const calcEl = document.getElementById("calcStartAmount");
+      if (getUiSetting("ui_calcStartAmount") && calcEl) {
+        calcEl.dataset.userEdited = "1";
+        normalizeCalcStartAmountInput(calcEl);
       }
     }
 
@@ -2509,7 +2510,7 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         if (data?.enabled && Number.isFinite(Number(data.usdtBalance))) {
           if (!el.dataset.userEdited) {
-            el.value = String(Number(data.usdtBalance));
+            el.value = fmt2Trim(roundAmount2(Number(data.usdtBalance)));
           }
         }
       } catch {
@@ -2519,13 +2520,38 @@
       }
     }
 
+    function roundAmount2(n) {
+      if (!Number.isFinite(n)) return NaN;
+      return Math.round(n * 100) / 100;
+    }
+
     function fmt2Trim(n) {
       if (n == null || Number.isNaN(n)) return "—";
       return Number(n).toFixed(2).replace(/\.?0+$/, "");
     }
 
+    function normalizeCalcStartAmountInput(el) {
+      if (!el || el.value === "") return;
+      const n = roundAmount2(Number(el.value));
+      if (!Number.isFinite(n) || n < 0) return;
+      el.value = fmt2Trim(n);
+    }
+
+    function clampCalcStartAmountTyping(el) {
+      if (!el) return;
+      const v = el.value;
+      if (!v.includes(".")) return;
+      const [whole, frac = ""] = v.split(".");
+      if (frac.length > 2) {
+        el.value = `${whole}.${frac.slice(0, 2)}`;
+      }
+    }
+
     function renderCalculations() {
-      const startAmount = Number(document.getElementById("calcStartAmount").value);
+      normalizeCalcStartAmountInput(document.getElementById("calcStartAmount"));
+      const startAmount = roundAmount2(
+        Number(document.getElementById("calcStartAmount").value)
+      );
       const pct = Number(document.getElementById("calcPct").value);
       const iterationsRaw = Number(document.getElementById("calcIterations").value);
       const iterations = Math.max(1, Math.min(500, Math.round(iterationsRaw || 0)));
@@ -2709,8 +2735,13 @@
       e.preventDefault();
       renderCalculations();
     });
-    document.getElementById("calcStartAmount")?.addEventListener("input", () => {
-      document.getElementById("calcStartAmount").dataset.userEdited = "1";
+    document.getElementById("calcStartAmount")?.addEventListener("input", (e) => {
+      e.target.dataset.userEdited = "1";
+      clampCalcStartAmountTyping(e.target);
+    });
+    document.getElementById("calcStartAmount")?.addEventListener("blur", (e) => {
+      normalizeCalcStartAmountInput(e.target);
+      setUiSetting("ui_calcStartAmount", e.target.value);
     });
 
     async function poll() {
