@@ -102,7 +102,8 @@ const cfg = {
   memoryMaxBars: 0,
   klineCacheFlushMs: 60_000,
   klineCacheWriteDebounceMs: 3000,
-  prefetchPauseMs: 200,
+  prefetchPauseMs: 50,
+  prefetchCacheConcurrency: 48,
   streamsPerSocket: 60,
   staleSymbolRefreshMs: 30_000,
   staleSymbolRefreshBatchSize: 30,
@@ -372,12 +373,31 @@ function minPrefetchBars() {
 
 const PREFETCH_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
 
+function symbolCacheSufficientFromMeta(meta) {
+  if (!meta?.barCount || meta.barCount < minPrefetchBars()) return false;
+  if (meta.lastCloseTime == null) return false;
+  return Date.now() - meta.lastCloseTime <= PREFETCH_CACHE_MAX_AGE_MS;
+}
+
 /** True when disk cache can seed live eval without a REST prefetch for this symbol. */
 function symbolCacheSufficient(cached) {
   if (!cached?.length || cached.length < minPrefetchBars()) return false;
   const last = cached[cached.length - 1];
   if (!last?.closeTime) return false;
   return Date.now() - last.closeTime <= PREFETCH_CACHE_MAX_AGE_MS;
+}
+
+async function runConcurrent(items, limit, fn) {
+  if (!items.length) return;
+  const n = Math.max(1, Math.min(limit, items.length));
+  let next = 0;
+  const workers = Array.from({ length: n }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function loadSymbolFromCache(symbol) {
@@ -1106,7 +1126,8 @@ async function prefetchAllSymbols(
   lastPass,
   lastNearBreak,
   lastFc,
-  quoteVolMap
+  quoteVolMap,
+  reevaluateAllFn
 ) {
   prefetching = true;
   let done = 0;
@@ -1136,34 +1157,40 @@ async function prefetchAllSymbols(
       `cache up to ${cfg.cacheMaxBars} bars → ${KLINES_CACHE_DIR})…`
   );
 
-  for (const sym of symbols) {
-    try {
-      const cached = klineCache.read(sym) ?? [];
-      let bars;
-      if (symbolCacheSufficient(cached)) {
-        bars = loadSymbolFromCache(sym);
-        fromCache++;
-      } else {
-        const hadCache = cached.length > 0;
-        bars = await loadSymbolHistory(sym);
-        if (hadCache) refreshed++;
-        else fetched++;
-      }
+  const cacheSymbols = [];
+  const restSymbols = [];
 
+  await runConcurrent(symbols, cfg.prefetchCacheConcurrency * 2, (sym) => {
+    const meta = klineCache.readMeta(sym);
+    if (symbolCacheSufficientFromMeta(meta)) cacheSymbols.push(sym);
+    else restSymbols.push(sym);
+  });
+
+  console.error(
+    `Prefetch plan: ${cacheSymbols.length} cache-only · ${restSymbols.length} REST`
+  );
+
+  await runConcurrent(cacheSymbols, cfg.prefetchCacheConcurrency, async (sym) => {
+    try {
+      const bars = loadSymbolFromCache(sym);
       historyBuffers.set(sym, bars);
-      evaluateAfterPrefetch(
-        sym,
-        historyBuffers,
-        activeHits,
-        nearBreakHits,
-        signalHistory,
-        fcActive,
-        fcHistory,
-        lastPass,
-        lastNearBreak,
-        lastFc,
-        quoteVolMap
-      );
+      fromCache++;
+    } catch (e) {
+      failed++;
+      console.error(`Prefetch cache load failed ${sym}: ${e.message}`);
+      historyBuffers.set(sym, []);
+    }
+    done++;
+    if (done % 50 === 0) publishPrefetchStatus();
+  });
+
+  for (const sym of restSymbols) {
+    try {
+      const hadCache = Boolean(klineCache.readMeta(sym)?.barCount);
+      const bars = await loadSymbolHistory(sym);
+      if (hadCache) refreshed++;
+      else fetched++;
+      historyBuffers.set(sym, bars);
     } catch (e) {
       failed++;
       console.error(`Prefetch failed ${sym}: ${e.message}`);
@@ -1179,8 +1206,10 @@ async function prefetchAllSymbols(
           `refresh ${refreshed} | rest ${fetched} | fail ${failed} | ${elapsed}s`
       );
     }
-    await sleep(cfg.prefetchPauseMs);
+    if (cfg.prefetchPauseMs > 0) await sleep(cfg.prefetchPauseMs);
   }
+
+  if (reevaluateAllFn) reevaluateAllFn();
 
   prefetching = false;
   dashboard?.setMeta({
@@ -2093,7 +2122,8 @@ async function main() {
       lastPass,
       lastNearBreak,
       lastFc,
-      quoteVolMap
+      quoteVolMap,
+      reevaluateAll
     );
   } else {
     console.error(
