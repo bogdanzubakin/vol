@@ -2302,23 +2302,40 @@
         .join("");
 
       tbody.querySelectorAll(".history-comment").forEach((el) => {
+        let saveTimer = null;
+        let lastSavedValue = el.value;
         const save = async () => {
           const id = el.dataset.historyId;
+          const nextValue = el.value;
+          if (nextValue === lastSavedValue) return;
           try {
             const res = await fetch("/api/positions-history/comment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id, comment: el.value }),
+              body: JSON.stringify({ id, comment: nextValue }),
             });
             const out = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(out.error || res.statusText);
+            lastSavedValue = nextValue;
             setHistoryMsg(`Comment saved ${formatTimeShort(Date.now())} ${TZ_LABEL}`, true);
           } catch (e) {
             setHistoryMsg(e.message, false);
           }
         };
-        el.addEventListener("change", save);
-        el.addEventListener("blur", save);
+        el.addEventListener("input", () => {
+          if (saveTimer) clearTimeout(saveTimer);
+          saveTimer = setTimeout(() => {
+            saveTimer = null;
+            save();
+          }, 30_000);
+        });
+        el.addEventListener("blur", () => {
+          if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+          }
+          save();
+        });
       });
     }
 
