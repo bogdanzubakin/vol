@@ -1113,6 +1113,70 @@
     let lastInterval = null;
     let diagChartInstance = null;
 
+    let uiSettingsCache = {};
+    let uiSettingsSaveTimer = null;
+    const uiPendingPatch = {};
+
+    async function loadUiSettings() {
+      try {
+        const res = await fetch("/api/ui-settings", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          uiSettingsCache =
+            data.settings && typeof data.settings === "object" ? data.settings : {};
+        }
+      } catch {
+        /* offline / static mode */
+      }
+      const patch = {};
+      const prefixes = ["movers_", "topMovers_", "fastcorridor_"];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !prefixes.some((p) => k.startsWith(p))) continue;
+        if (uiSettingsCache[k] == null || uiSettingsCache[k] === "") {
+          const v = localStorage.getItem(k);
+          if (v != null && v !== "") patch[k] = v;
+        }
+      }
+      if (Object.keys(patch).length) {
+        Object.assign(uiSettingsCache, patch);
+        await flushUiSettings(patch);
+        for (const k of Object.keys(patch)) localStorage.removeItem(k);
+      }
+    }
+
+    function getUiSetting(key) {
+      const v = uiSettingsCache[key];
+      return v != null && v !== "" ? v : null;
+    }
+
+    function setUiSetting(key, value) {
+      uiSettingsCache[key] = String(value);
+      queueUiSettingsSave({ [key]: String(value) });
+    }
+
+    function queueUiSettingsSave(patch) {
+      if (patch) Object.assign(uiPendingPatch, patch);
+      clearTimeout(uiSettingsSaveTimer);
+      uiSettingsSaveTimer = setTimeout(flushUiSettings, 500);
+    }
+
+    async function flushUiSettings(immediatePatch) {
+      if (immediatePatch) Object.assign(uiPendingPatch, immediatePatch);
+      const patch = { ...uiPendingPatch };
+      for (const k of Object.keys(uiPendingPatch)) delete uiPendingPatch[k];
+      if (!Object.keys(patch).length) return;
+      try {
+        await fetch("/api/ui-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patch }),
+        });
+      } catch {
+        /* keep values in memory */
+      }
+    }
+
     if (window.Chart && window["chartjs-plugin-annotation"]) {
       Chart.register(window["chartjs-plugin-annotation"]);
     }
@@ -1452,7 +1516,7 @@
 
     function loadMoversConfigForm() {
       for (const k of MOVERS_CONFIG_KEYS) {
-        const v = localStorage.getItem(`movers_${k}`);
+        const v = getUiSetting(`movers_${k}`);
         const el = document.getElementById(k);
         if (el && v != null && v !== "") el.value = v;
       }
@@ -1474,10 +1538,13 @@
     }
 
     function saveMoversConfigForm() {
+      const patch = {};
       for (const k of MOVERS_CONFIG_KEYS) {
         const el = document.getElementById(k);
-        if (el) localStorage.setItem(`movers_${k}`, el.value);
+        if (el) patch[`movers_${k}`] = el.value;
       }
+      Object.assign(uiSettingsCache, patch);
+      queueUiSettingsSave(patch);
     }
 
     function setMoversMsg(text, ok) {
@@ -1620,7 +1687,7 @@
     function loadFastCorridorConfigForm() {
       loadMoversConfigForm();
       for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
-        const v = localStorage.getItem(`fastcorridor_${param}`);
+        const v = getUiSetting(`fastcorridor_${param}`);
         const el = document.getElementById(elId);
         if (el && v != null && v !== "") el.value = v;
       }
@@ -1636,10 +1703,13 @@
     }
 
     function saveFastCorridorConfigForm() {
+      const patch = {};
       for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
         const el = document.getElementById(elId);
-        if (el) localStorage.setItem(`fastcorridor_${param}`, el.value);
+        if (el) patch[`fastcorridor_${param}`] = el.value;
       }
+      Object.assign(uiSettingsCache, patch);
+      queueUiSettingsSave(patch);
     }
 
     function setFastCorridorMsg(text, ok) {
@@ -1820,17 +1890,20 @@
 
     function loadTopMoversConfigForm() {
       for (const k of TOP_MOVERS_CONFIG_KEYS) {
-        const v = localStorage.getItem(`topMovers_${k}`);
+        const v = getUiSetting(`topMovers_${k}`);
         const el = document.getElementById(k);
         if (el && v != null && v !== "") el.value = v;
       }
     }
 
     function saveTopMoversConfigForm() {
+      const patch = {};
       for (const k of TOP_MOVERS_CONFIG_KEYS) {
         const el = document.getElementById(k);
-        if (el) localStorage.setItem(`topMovers_${k}`, el.value);
+        if (el) patch[`topMovers_${k}`] = el.value;
       }
+      Object.assign(uiSettingsCache, patch);
+      queueUiSettingsSave(patch);
     }
 
     function topMoversParams() {
@@ -1847,7 +1920,7 @@
         fastMoveExcludeMult: "fastExcludeMult",
       };
       for (const [key, param] of Object.entries(fastMap)) {
-        const stored = localStorage.getItem(`movers_${key}`);
+        const stored = getUiSetting(`movers_${key}`);
         const fallback = document.getElementById(key)?.value;
         const value = stored ?? fallback;
         if (value != null && value !== "") params.set(param, value);
@@ -1932,7 +2005,7 @@
     });
     document.getElementById("topMoversRefresh").addEventListener("click", loadTopMovers);
     document.getElementById("topMoversWindow").addEventListener("change", () => {
-      localStorage.setItem(
+      setUiSetting(
         "topMovers_topMoversWindow",
         document.getElementById("topMoversWindow").value
       );
@@ -2656,19 +2729,24 @@
     function startApp() {
       if (window.__appStarted) return;
       window.__appStarted = true;
-      initCalcStartAmount();
-      if (document.getElementById("historyFromDate") && !document.getElementById("historyFromDate").value) {
-        const d = new Date();
-        d.setDate(d.getDate() - 1);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        document.getElementById("historyFromDate").value = `${y}-${m}-${dd}`;
-      }
-      poll();
-      pollPositions();
-      setInterval(poll, 2000);
-      setInterval(pollPositions, 5000);
+      loadUiSettings().then(() => {
+        initCalcStartAmount();
+        if (
+          document.getElementById("historyFromDate") &&
+          !document.getElementById("historyFromDate").value
+        ) {
+          const d = new Date();
+          d.setDate(d.getDate() - 1);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          document.getElementById("historyFromDate").value = `${y}-${m}-${dd}`;
+        }
+        poll();
+        pollPositions();
+        setInterval(poll, 2000);
+        setInterval(pollPositions, 5000);
+      });
     }
 
     initAuth();

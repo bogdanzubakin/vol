@@ -7,6 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { migrateLegacyCache, resolveDataDir } = require("../lib/data-dir");
 const { startDashboard, RESULTS_JSON } = require("../lib/dashboard-server");
 const { nowIsoUtcPlus3 } = require("../lib/time-format");
 const { createTelegramAuth } = require("../lib/telegram-auth");
@@ -25,7 +26,10 @@ function readState() {
   }
 }
 
+migrateLegacyCache();
+
 const auth = createTelegramAuth({});
 
 startDashboard(readState, { auth });
 console.error(`Public dashboard: results from ${RESULTS_JSON}`);
+console.error(`Persistent data: ${resolveDataDir()}`);

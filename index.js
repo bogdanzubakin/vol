@@ -51,15 +51,17 @@ const {
 } = require("./lib/binance-positions");
 const { createPositionsHistoryStore } = require("./lib/positions-history");
 const { createTelegramAuth } = require("./lib/telegram-auth");
+const { dataPath, migrateLegacyCache, resolveDataDir } = require("./lib/data-dir");
 
 const REST_BASE = "https://fapi.binance.com";
 // DO NOT CHANGE BASE wss://stream.binance.com:443
 const WS_STREAM_BASE = "wss://stream.binance.com:443/stream";
 const KLINE_MAX = 1500;
 const SIGNAL_RETENTION_MS = 24 * 60 * 60 * 1000;
-const CACHE_DIR = path.join(__dirname, ".cache");
-const EXCHANGE_INFO_CACHE = path.join(CACHE_DIR, "futures-exchangeInfo.json");
-const KLINES_CACHE_DIR = path.join(CACHE_DIR, "klines");
+migrateLegacyCache();
+console.error(`Persistent data: ${resolveDataDir()}`);
+const EXCHANGE_INFO_CACHE = dataPath("futures-exchangeInfo.json");
+const KLINES_CACHE_DIR = dataPath("klines");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -246,7 +248,7 @@ function readExchangeInfoCache() {
 }
 
 function writeExchangeInfoCache(symbols) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  fs.mkdirSync(path.dirname(EXCHANGE_INFO_CACHE), { recursive: true });
   fs.writeFileSync(
     EXCHANGE_INFO_CACHE,
     JSON.stringify({ savedAt: Date.now(), symbols })
