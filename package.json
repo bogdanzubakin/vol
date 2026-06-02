@@ -12,7 +12,8 @@
     "telegram:chats": "node scripts/telegram-chats.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18",
+
   },
   "author": "",
   "license": "ISC",
