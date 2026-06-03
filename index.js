@@ -48,6 +48,7 @@ const {
 const {
   runPaperBotBacktest,
   loadLastBacktestResult,
+  resolveBacktestSymbols,
   DEFAULT_DAYS,
 } = require("./lib/paper-bot-backtest");
 const {
@@ -2119,12 +2120,10 @@ async function main() {
             1,
             Math.min(14, Number(body?.days) || DEFAULT_DAYS)
           );
-          const maxSymbols = Math.max(
-            0,
-            Math.min(2000, Number(body?.maxSymbols) || 0)
+          const { symList, unknown, mode, requested } = resolveBacktestSymbols(
+            body,
+            symbols
           );
-          const symList =
-            maxSymbols > 0 ? symbols.slice(0, maxSymbols) : [...symbols];
           backtestJob = {
             running: true,
             progress: {
@@ -2170,6 +2169,9 @@ async function main() {
             started: true,
             days,
             symbols: symList.length,
+            mode,
+            requested,
+            unknown,
           };
         },
         auth,

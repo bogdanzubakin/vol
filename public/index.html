@@ -1064,7 +1064,7 @@
             <input type="checkbox" id="paperBotAddOnEnabled" name="addOnEnabled" />
             Add to position on move (pyramid)
           </label>
-          <div class="hint">Extra margin when price rises from initial entry</div>
+          <div class="hint">Extra margin when price rises from initial entry; SL moves to avg entry ±% after each add</div>
         </div>
         <div class="field">
           <label for="paperBotAddOnDepositPct">Add-on size % of deposit</label>
@@ -1084,7 +1084,7 @@
             <input type="checkbox" id="paperBotMoveStopEnabled" name="moveStopEnabled" />
             Move stop to entry after move
           </label>
-          <div class="hint">Replaces corridor SL when price rises enough</div>
+          <div class="hint">Uses first entry; add-ons move SL to avg entry ±% above</div>
         </div>
         <div class="field">
           <label for="paperBotMoveStopAfterPct">After +% from entry</label>
@@ -1179,7 +1179,12 @@
         <div class="field">
           <label for="backtestMaxSymbols">Max symbols (0 = all)</label>
           <input type="number" id="backtestMaxSymbols" min="0" max="2000" value="0" step="1" />
-          <div class="hint">Use a small number for a quick test</div>
+          <div class="hint">Ignored when a symbol list is set below</div>
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <label for="backtestSymbolList">Symbol list (optional)</label>
+          <textarea id="backtestSymbolList" rows="4" placeholder="BTCUSDT, ETHUSDT&#10;SOL&#10;DOGEUSDT" spellcheck="false" style="width:100%;max-width:420px;font-family:ui-monospace,monospace;font-size:0.82rem;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:inherit;resize:vertical;"></textarea>
+          <div class="hint">One per line or comma-separated. Short names like <code>BTC</code> become <code>BTCUSDT</code>. Only pairs from the scanner universe are used.</div>
         </div>
         <div class="settings-actions">
           <button type="button" class="btn sm" id="backtestStart">Run backtest</button>
@@ -1445,6 +1450,9 @@
         ["moversSearch", "ui_moversSearch"],
         ["topMoversSearch", "ui_topMoversSearch"],
         ["fastCorridorSearch", "ui_fastCorridorSearch"],
+        ["backtestDays", "ui_backtestDays"],
+        ["backtestMaxSymbols", "ui_backtestMaxSymbols"],
+        ["backtestSymbolList", "ui_backtestSymbolList"],
       ];
       for (const [id, key] of fields) {
         const el = document.getElementById(id);
@@ -1481,6 +1489,9 @@
       bind("moversSearch", "ui_moversSearch", "input");
       bind("topMoversSearch", "ui_topMoversSearch", "input");
       bind("fastCorridorSearch", "ui_fastCorridorSearch", "input");
+      bind("backtestDays", "ui_backtestDays", "change");
+      bind("backtestMaxSymbols", "ui_backtestMaxSymbols", "change");
+      bind("backtestSymbolList", "ui_backtestSymbolList", "input");
 
       for (const k of MOVERS_CONFIG_KEYS) {
         document.getElementById(k)?.addEventListener("input", (e) => {
@@ -2776,25 +2787,52 @@
       }
     }
 
+    function parseBacktestSymbolListInput(raw) {
+      return String(raw || "")
+        .split(/[\s,;]+/)
+        .map((p) => {
+          let sym = p.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+          if (!sym) return "";
+          if (!sym.endsWith("USDT")) sym += "USDT";
+          return sym;
+        })
+        .filter(Boolean)
+        .filter((sym, i, arr) => arr.indexOf(sym) === i);
+    }
+
     document.getElementById("backtestStart").addEventListener("click", async () => {
       const days = Number(document.getElementById("backtestDays").value) || 4;
       const maxSymbols = Number(document.getElementById("backtestMaxSymbols").value) || 0;
+      const symbolListRaw = document.getElementById("backtestSymbolList").value.trim();
+      const symbolList = parseBacktestSymbolListInput(symbolListRaw);
+      const scope = symbolList.length
+        ? `${symbolList.length} listed pair${symbolList.length === 1 ? "" : "s"}`
+        : maxSymbols > 0
+          ? `first ${maxSymbols} pairs`
+          : "all pairs";
       if (
         !confirm(
-          `Run backtest on ${maxSymbols > 0 ? maxSymbols : "all"} pairs with ${days} days of history? This may take a long time.`
+          `Run backtest on ${scope} with ${days} days of history? This may take a long time.`
         )
       ) {
         return;
       }
       try {
+        const body = { days, maxSymbols };
+        if (symbolList.length) body.symbolList = symbolListRaw;
         const res = await fetch("/api/paper-bot/backtest/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ days, maxSymbols }),
+          body: JSON.stringify(body),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        setBacktestMsg(`Started · ${data.symbols ?? "?"} symbols · ${data.days}d`, true);
+        let msg = `Started · ${data.symbols ?? "?"} symbols · ${data.days}d`;
+        if (data.unknown?.length) {
+          msg += ` · skipped unknown: ${data.unknown.slice(0, 5).join(", ")}`;
+          if (data.unknown.length > 5) msg += ` +${data.unknown.length - 5}`;
+        }
+        setBacktestMsg(msg, true);
         loadBacktestStatus();
       } catch (e) {
         setBacktestMsg(e.message, false);
