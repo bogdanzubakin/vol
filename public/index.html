@@ -1207,7 +1207,7 @@
         <div><div class="stat-label">Pairs</div><div class="stat-value" id="btStatPairs">—</div></div>
       </div>
       <p class="sub" id="backtestSignalHint" style="margin: 8px 12px; font-size: 0.75rem"></p>
-      <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Closed trades</h3>
+      <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Positions history</h3>
       <div class="table-wrap">
         <table>
           <thead>
@@ -1219,10 +1219,13 @@
               <th>Reason</th>
               <th>PnL</th>
               <th>PnL %</th>
+              <th>Opened</th>
+              <th>Closed</th>
+              <th>Chart</th>
             </tr>
           </thead>
           <tbody id="backtestTradesBody">
-            <tr><td colspan="7" class="empty">Run a backtest to see results</td></tr>
+            <tr><td colspan="10" class="empty">Run a backtest to see results</td></tr>
           </tbody>
         </table>
       </div>
@@ -1901,12 +1904,16 @@
       }
     }
 
-    function openTradeSnapshot(snapshotId, symbol) {
+    function openTradeSnapshot(snapshotId, symbol, kind = "live") {
       const modal = document.getElementById("chartModal");
       const body = document.getElementById("chartModalBody");
       document.getElementById("chartModalTitle").textContent =
-        `${symbol} — position snapshot`;
-      const url = `/api/paper-bot/snapshot/${encodeURIComponent(snapshotId)}`;
+        `${symbol} — ${kind === "backtest" ? "backtest " : ""}position snapshot`;
+      const base =
+        kind === "backtest"
+          ? "/api/paper-bot/backtest/snapshot/"
+          : "/api/paper-bot/snapshot/";
+      const url = `${base}${encodeURIComponent(snapshotId)}`;
       body.innerHTML = `
         <div class="modal-chart-wrap">
           <img class="trade-snapshot" src="${url}" alt="Trade snapshot" />
@@ -2714,10 +2721,12 @@
         `${r.symbolsProcessed ?? "—"} ok · ${r.symbolsSkipped ?? 0} skip`;
 
       const tradesBody = document.getElementById("backtestTradesBody");
-      const trades = r.closedTrades ?? [];
+      const trades = [...(r.closedTrades ?? [])].sort(
+        (a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0)
+      );
       if (!trades.length) {
         tradesBody.innerHTML =
-          '<tr><td colspan="7" class="empty">No closed trades</td></tr>';
+          '<tr><td colspan="10" class="empty">No closed trades</td></tr>';
       } else {
         tradesBody.innerHTML = trades
           .slice(0, 200)
@@ -2733,6 +2742,9 @@
                 : t.exitReason === "stop_loss"
                   ? '<span class="bad">SL</span>'
                   : escapeHtml(t.exitReason ?? "—");
+            const previewBtn = t.snapshotId
+              ? `<button type="button" class="btn secondary sm backtest-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
+              : '<span class="time">—</span>';
             return `<tr>
               <td class="sym-cell">${symLink(t.symbol)}</td>
               <td>${kind}</td>
@@ -2741,9 +2753,17 @@
               <td>${reason}</td>
               <td class="${cls}">${fmtUsd(t.pnl)}</td>
               <td class="${cls}">${fmt(t.pnlPct, 2)}%</td>
+              <td class="time">${fmtDisplayDateTime(t.openedAtIso ?? t.openedAt)}</td>
+              <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td>${previewBtn}</td>
             </tr>`;
           })
           .join("");
+        tradesBody.querySelectorAll(".backtest-snapshot-btn").forEach((btn) => {
+          btn.addEventListener("click", () =>
+            openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol, "backtest")
+          );
+        });
       }
 
       const symBody = document.getElementById("backtestSymbolsBody");
