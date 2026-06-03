@@ -2644,17 +2644,26 @@
     function renderBacktest(data) {
       const badge = document.getElementById("backtestStatusBadge");
       const prog = document.getElementById("backtestProgress");
+      const p = data.progress || {};
       if (data.running) {
         badge.textContent = "running";
         badge.className = "paper-enabled-badge on";
         prog.style.display = "grid";
-        const p = data.progress || {};
         const pct =
           p.total > 0 ? Math.round((100 * (p.done ?? 0)) / p.total) : 0;
         document.getElementById("backtestProgressText").textContent =
           `${p.phase ?? "…"} · ${p.done ?? 0}/${p.total ?? "?"} (${pct}%)` +
           (p.symbol ? ` · ${p.symbol}` : "") +
           (p.message ? ` — ${p.message}` : "");
+        document.getElementById("btStatDeposit").textContent = "…";
+        document.getElementById("btStatEquity").textContent = "…";
+        document.getElementById("btStatTotalPnl").textContent = "…";
+        document.getElementById("btStatTotalPnl").className = "stat-value";
+        document.getElementById("btStatTrades").textContent = "…";
+        document.getElementById("btStatWinLoss").textContent = "…";
+        document.getElementById("btStatPairs").textContent =
+          `${p.done ?? 0}/${p.total ?? "?"}` +
+          ` · ${p.ok ?? 0} ok · ${p.skip ?? 0} skip`;
       } else {
         badge.textContent = data.error ? "error" : data.result || data.last ? "done" : "idle";
         badge.className =
@@ -2667,6 +2676,11 @@
         const s = data.signalConfig;
         hint.textContent =
           `Signals: ${s.interval} · corridor ${s.corridorDays}d · ${s.signalCandles} vol↑ · break vol ×${s.minBreakVolumeMultiplier} (from Scanner tab / saved config)`;
+      }
+
+      if (data.running && !data.result?.summary) {
+        if (data.error) setBacktestMsg(data.error, false);
+        return;
       }
 
       const r = data.result || data.last;
