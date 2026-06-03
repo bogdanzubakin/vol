@@ -41,6 +41,7 @@ const {
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
 const { createPaperBot } = require("./lib/paper-bot");
+const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
   mergeBarsByOpenTime,
   createKlineCacheStore,
@@ -126,6 +127,7 @@ let prefetching = false;
 let dashboard = null;
 let telegram = null;
 let paperBot = null;
+let stopPaperBotReport = () => {};
 let klineCache = null;
 const lastSignalNotifyAt = new Map();
 
@@ -2175,8 +2177,22 @@ async function main() {
     }
   }, 15_000);
 
+  if (telegram.enabled && tgConfig.paperBotReport !== false) {
+    stopPaperBotReport = startPaperBotMorningReports({
+      enabled: true,
+      hour: tgConfig.paperBotReportHour,
+      minute: tgConfig.paperBotReportMinute,
+      getReportState: () => {
+        refreshAllPaperBotPrices(historyBuffers);
+        return paperBot.getPublicState();
+      },
+      sendText: (text) => telegram.sendText(text),
+    });
+  }
+
   const shutdown = () => {
     console.error("Flushing kline cache…");
+    stopPaperBotReport();
     clearInterval(paperBotPriceTimer);
     stopStaleRefresh();
     klineCache.flushAll(historyBuffers);
