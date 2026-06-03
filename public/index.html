@@ -1540,7 +1540,7 @@
         if (!paperBotPollTimer) {
           paperBotPollTimer = setInterval(() => {
             if (activeTab === "paperbot") loadPaperBot();
-          }, 3000);
+          }, 60_000);
         }
       }
       if (name === "history") {
