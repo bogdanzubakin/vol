@@ -17,12 +17,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "ws": "^8.20.1"
-  },
-  "devDependencies": {
     "chart.js": "^4.4.8",
     "chartjs-node-canvas": "^5.0.0",
-    "chartjs-plugin-annotation": "^3.1.0"
+    "chartjs-plugin-annotation": "^3.1.0",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "ws": "^8.20.1"
   },
   "keywords": [],
   "description": ""

@@ -44,7 +44,6 @@ const { createPaperBot } = require("./lib/paper-bot");
 const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
   saveTradeSnapshot,
-  sliceBarsForTrade,
 } = require("./lib/paper-bot-snapshot");
 const {
   runPaperBotBacktest,
@@ -2005,7 +2004,12 @@ async function main() {
     if (bars.length < 30 && klineCache) {
       bars = klineCache.read(symbol) ?? bars;
     }
-    return sliceBarsForTrade(bars, openedAt, closedAt, 100);
+    const corridorMs = (cfg.corridorDays ?? 2) * 24 * 60 * 60 * 1000;
+    const needStart = openedAt - corridorMs - cfg.barMs * 60;
+    const needEnd = closedAt + cfg.barMs * 30;
+    return bars.filter(
+      (b) => b.closeTime >= needStart && b.openTime <= needEnd
+    );
   }
 
   async function captureTradeSnapshot(trade, posSnap) {
@@ -2026,6 +2030,9 @@ async function main() {
       trade: fullTrade,
       bars,
       interval: cfg.interval,
+      corridorDays: cfg.corridorDays,
+      corridorExcludeMinutes: cfg.corridorExcludeMinutes,
+      signalCandles: cfg.signalCandles,
     });
     return { snapshotId };
   }
