@@ -1021,7 +1021,7 @@
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Simulated Binance futures LONG on new <span class="status-tag signal">SIGNAL</span> triggers (optional
         <span class="status-tag fc">FAST CORRIDOR</span>). No real orders — state is saved on the server volume.
-        Default test deposit <strong>$1,000</strong>.
+        Simulated starting capital <strong>$1,000</strong> (reset restores this). Deposit below is free cash after margin in/out.
       </p>
       <form class="settings-form movers-settings" id="paperBotConfigForm">
         <div class="field" style="min-width: 200px;">
@@ -1031,13 +1031,9 @@
           </label>
         </div>
         <div class="field">
-          <label for="paperBotDeposit">Test deposit ($)</label>
-          <input type="number" id="paperBotDeposit" step="1" min="10" max="1000000" value="1000" required />
-        </div>
-        <div class="field">
           <label for="paperBotPositionPct">Position size %</label>
           <input type="number" id="paperBotPositionPct" step="0.1" min="0.1" max="100" value="1" required />
-          <div class="hint">Margin per trade = balance × this %</div>
+          <div class="hint">Margin per trade = deposit × this %</div>
         </div>
         <div class="field">
           <label for="paperBotStopPct">Stop loss below corridor high %</label>
@@ -1089,10 +1085,12 @@
         </div>
       </form>
       <div class="paper-summary" id="paperBotSummary">
-        <div><div class="stat-label">Balance</div><div class="stat-value" id="paperStatBalance">—</div></div>
+        <div><div class="stat-label">Deposit (free)</div><div class="stat-value" id="paperStatDeposit">—</div></div>
+        <div><div class="stat-label">In positions</div><div class="stat-value" id="paperStatLocked">—</div></div>
         <div><div class="stat-label">Equity</div><div class="stat-value" id="paperStatEquity">—</div></div>
         <div><div class="stat-label">Unrealized</div><div class="stat-value" id="paperStatUnrealized">—</div></div>
         <div><div class="stat-label">Realized PnL</div><div class="stat-value" id="paperStatRealized">—</div></div>
+        <div><div class="stat-label">Total PnL</div><div class="stat-value" id="paperStatTotalPnl">—</div></div>
         <div><div class="stat-label">Open</div><div class="stat-value" id="paperStatOpen">—</div></div>
         <div><div class="stat-label">Closed</div><div class="stat-value" id="paperStatClosed">—</div></div>
       </div>
@@ -2294,7 +2292,6 @@
     function paperBotConfigFromForm() {
       return {
         enabled: document.getElementById("paperBotEnabled").checked,
-        initialDeposit: Number(document.getElementById("paperBotDeposit").value),
         positionSizePct: Number(document.getElementById("paperBotPositionPct").value),
         stopLossBelowCorridorPct: Number(document.getElementById("paperBotStopPct").value),
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
@@ -2310,7 +2307,6 @@
     function fillPaperBotForm(cfg) {
       if (!cfg) return;
       document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
-      document.getElementById("paperBotDeposit").value = cfg.initialDeposit ?? 1000;
       document.getElementById("paperBotPositionPct").value = cfg.positionSizePct ?? 1;
       document.getElementById("paperBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
       document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 10;
@@ -2342,7 +2338,9 @@
       const s = data.summary ?? {};
       const pnlCls = (n) =>
         n == null ? "" : n >= 0 ? "pass" : "bad";
-      document.getElementById("paperStatBalance").textContent = fmtUsd(s.balance);
+      const deposit = s.deposit ?? s.balance;
+      document.getElementById("paperStatDeposit").textContent = fmtUsd(deposit);
+      document.getElementById("paperStatLocked").textContent = fmtUsd(s.lockedMargin ?? 0);
       document.getElementById("paperStatEquity").textContent = fmtUsd(s.equity);
       const unr = document.getElementById("paperStatUnrealized");
       unr.textContent = fmtUsd(s.unrealizedPnl);
@@ -2350,6 +2348,9 @@
       const real = document.getElementById("paperStatRealized");
       real.textContent = fmtUsd(s.realizedPnl);
       real.className = "stat-value " + pnlCls(s.realizedPnl);
+      const total = document.getElementById("paperStatTotalPnl");
+      total.textContent = fmtUsd(s.totalPnl);
+      total.className = "stat-value " + pnlCls(s.totalPnl);
       document.getElementById("paperStatOpen").textContent = s.openCount ?? 0;
       document.getElementById("paperStatClosed").textContent = s.closedCount ?? 0;
 
