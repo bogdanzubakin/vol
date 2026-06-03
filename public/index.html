@@ -268,6 +268,42 @@
       background: rgba(56, 189, 248, 0.2);
       color: #38bdf8;
     }
+    .paper-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin: 12px 12px 16px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .paper-summary .stat-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .paper-summary .stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .paper-enabled-badge {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+      font-weight: 600;
+    }
+    .paper-enabled-badge.on {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--green);
+    }
+    .paper-enabled-badge.off {
+      background: rgba(148, 163, 184, 0.15);
+      color: var(--muted);
+    }
     .empty {
       padding: 32px 16px;
       text-align: center;
@@ -632,6 +668,7 @@
     <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
     <button type="button" class="tab" data-tab="topmovers" role="tab">Top movers</button>
     <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
+    <button type="button" class="tab" data-tab="paperbot" role="tab">Paper bot</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="history" role="tab">History</button>
     <button type="button" class="tab" data-tab="calculations" role="tab">Calculations</button>
@@ -975,6 +1012,119 @@
     </section>
   </div>
 
+  <div id="panel-paperbot" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>
+        Signal paper bot
+        <span id="paperBotEnabledBadge" class="paper-enabled-badge off">off</span>
+      </h2>
+      <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
+        Simulated Binance futures LONG on new <span class="status-tag signal">SIGNAL</span> triggers (optional
+        <span class="status-tag fc">FAST CORRIDOR</span>). No real orders — state is saved on the server volume.
+        Default test deposit <strong>$1,000</strong>.
+      </p>
+      <form class="settings-form movers-settings" id="paperBotConfigForm">
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotEnabled" name="enabled" />
+            Enable bot (open on new signals)
+          </label>
+        </div>
+        <div class="field">
+          <label for="paperBotDeposit">Test deposit ($)</label>
+          <input type="number" id="paperBotDeposit" step="1" min="10" max="1000000" value="1000" required />
+        </div>
+        <div class="field">
+          <label for="paperBotPositionPct">Position size %</label>
+          <input type="number" id="paperBotPositionPct" step="0.1" min="0.1" max="100" value="1" required />
+          <div class="hint">Margin per trade = balance × this %</div>
+        </div>
+        <div class="field">
+          <label for="paperBotStopPct">Stop loss below corridor %</label>
+          <input type="number" id="paperBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
+          <div class="hint">SL at corridor low × (1 − %)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotTpPct">Take profit %</label>
+          <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
+          <div class="hint">TP at entry × (1 + %)</div>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeSpike" name="tradeSpikeSignals" checked />
+            Trade spike signals
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeFc" name="tradeFastCorridorSignals" />
+            Trade fast corridor signals
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
+          <button type="button" class="btn secondary sm" id="paperBotRefresh">Refresh</button>
+          <button type="button" class="btn secondary sm" id="paperBotReset">Reset account</button>
+          <span class="config-msg" id="paperBotMsg"></span>
+        </div>
+      </form>
+      <div class="paper-summary" id="paperBotSummary">
+        <div><div class="stat-label">Balance</div><div class="stat-value" id="paperStatBalance">—</div></div>
+        <div><div class="stat-label">Equity</div><div class="stat-value" id="paperStatEquity">—</div></div>
+        <div><div class="stat-label">Unrealized</div><div class="stat-value" id="paperStatUnrealized">—</div></div>
+        <div><div class="stat-label">Realized PnL</div><div class="stat-value" id="paperStatRealized">—</div></div>
+        <div><div class="stat-label">Open</div><div class="stat-value" id="paperStatOpen">—</div></div>
+        <div><div class="stat-label">Closed</div><div class="stat-value" id="paperStatClosed">—</div></div>
+      </div>
+      <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Open positions</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Signal</th>
+              <th>Entry</th>
+              <th>Last</th>
+              <th>Margin</th>
+              <th>Corridor low</th>
+              <th>Stop</th>
+              <th>Take profit</th>
+              <th>Unrealized</th>
+              <th>Opened</th>
+            </tr>
+          </thead>
+          <tbody id="paperBotOpenBody">
+            <tr><td colspan="10" class="empty">No open paper positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Closed trades</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Signal</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>Reason</th>
+              <th>PnL</th>
+              <th>PnL %</th>
+              <th>Closed</th>
+            </tr>
+          </thead>
+          <tbody id="paperBotClosedBody">
+            <tr><td colspan="8" class="empty">No closed trades yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Bot log</h3>
+      <ul class="events" id="paperBotLog" style="max-height: 240px;">
+        <li class="empty">No events yet</li>
+      </ul>
+    </section>
+  </div>
+
   <div id="panel-history" class="tab-panel" role="tabpanel">
     <section>
       <h2>Binance positions history <span id="historyCount"></span></h2>
@@ -1108,6 +1258,7 @@
     let lastFastMovers = [];
     let moversSort = { key: "avgMovePct", dir: "desc" };
     let topMoversLoading = false;
+    let paperBotPollTimer = null;
     let historyLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
@@ -1361,6 +1512,14 @@
       if (name === "fastcorridor") {
         loadFastCorridorConfigForm();
         loadFastCorridor();
+      }
+      if (name === "paperbot") {
+        loadPaperBot();
+        if (!paperBotPollTimer) {
+          paperBotPollTimer = setInterval(() => {
+            if (activeTab === "paperbot") loadPaperBot();
+          }, 3000);
+        }
       }
       if (name === "history") {
         loadPositionsHistory();
@@ -2102,6 +2261,198 @@
         btn.addEventListener("click", () => openChart(btn.dataset.symbol));
       });
     }
+
+    function setPaperBotMsg(text, ok) {
+      const el = document.getElementById("paperBotMsg");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "config-msg" + (ok ? " ok" : text ? " err" : "");
+    }
+
+    function paperBotConfigFromForm() {
+      return {
+        enabled: document.getElementById("paperBotEnabled").checked,
+        initialDeposit: Number(document.getElementById("paperBotDeposit").value),
+        positionSizePct: Number(document.getElementById("paperBotPositionPct").value),
+        stopLossBelowCorridorPct: Number(document.getElementById("paperBotStopPct").value),
+        takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
+        tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
+        tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
+      };
+    }
+
+    function fillPaperBotForm(cfg) {
+      if (!cfg) return;
+      document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
+      document.getElementById("paperBotDeposit").value = cfg.initialDeposit ?? 1000;
+      document.getElementById("paperBotPositionPct").value = cfg.positionSizePct ?? 1;
+      document.getElementById("paperBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
+      document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 10;
+      document.getElementById("paperBotTradeSpike").checked =
+        cfg.tradeSpikeSignals !== false;
+      document.getElementById("paperBotTradeFc").checked = Boolean(
+        cfg.tradeFastCorridorSignals
+      );
+      const badge = document.getElementById("paperBotEnabledBadge");
+      if (badge) {
+        badge.textContent = cfg.enabled ? "on" : "off";
+        badge.className = "paper-enabled-badge " + (cfg.enabled ? "on" : "off");
+      }
+    }
+
+    function fmtUsd(n) {
+      if (n == null || Number.isNaN(n)) return "—";
+      const v = Number(n);
+      const sign = v < 0 ? "−" : "";
+      return sign + "$" + Math.abs(v).toFixed(2);
+    }
+
+    function renderPaperBot(data) {
+      fillPaperBotForm(data.config);
+      const s = data.summary ?? {};
+      const pnlCls = (n) =>
+        n == null ? "" : n >= 0 ? "pass" : "bad";
+      document.getElementById("paperStatBalance").textContent = fmtUsd(s.balance);
+      document.getElementById("paperStatEquity").textContent = fmtUsd(s.equity);
+      const unr = document.getElementById("paperStatUnrealized");
+      unr.textContent = fmtUsd(s.unrealizedPnl);
+      unr.className = "stat-value " + pnlCls(s.unrealizedPnl);
+      const real = document.getElementById("paperStatRealized");
+      real.textContent = fmtUsd(s.realizedPnl);
+      real.className = "stat-value " + pnlCls(s.realizedPnl);
+      document.getElementById("paperStatOpen").textContent = s.openCount ?? 0;
+      document.getElementById("paperStatClosed").textContent = s.closedCount ?? 0;
+
+      const openBody = document.getElementById("paperBotOpenBody");
+      if (!data.openPositions?.length) {
+        openBody.innerHTML =
+          '<tr><td colspan="10" class="empty">No open paper positions</td></tr>';
+      } else {
+        openBody.innerHTML = data.openPositions
+          .map((p) => {
+            const unrCls = pnlCls(p.unrealizedPnl);
+            const kind =
+              p.signalKind === "fast-corridor"
+                ? '<span class="status-tag fc">FC</span>'
+                : '<span class="status-tag signal">SPIKE</span>';
+            return `<tr>
+              <td class="sym-cell">${symLink(p.symbol)}</td>
+              <td>${kind}</td>
+              <td>${fmt(p.entryPrice, 6)}</td>
+              <td>${fmt(p.lastPrice, 6)}</td>
+              <td>${fmtUsd(p.margin)}</td>
+              <td>${fmt(p.corridorLow, 6)}</td>
+              <td class="bad">${fmt(p.stopLoss, 6)}</td>
+              <td class="pass">${fmt(p.takeProfit, 6)}</td>
+              <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
+              <td class="time">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      const closedBody = document.getElementById("paperBotClosedBody");
+      if (!data.closedTrades?.length) {
+        closedBody.innerHTML =
+          '<tr><td colspan="8" class="empty">No closed trades yet</td></tr>';
+      } else {
+        closedBody.innerHTML = data.closedTrades
+          .map((t) => {
+            const pnlCls2 = pnlCls(t.pnl);
+            const reason =
+              t.exitReason === "take_profit"
+                ? '<span class="pass">TP</span>'
+                : t.exitReason === "stop_loss"
+                  ? '<span class="bad">SL</span>'
+                  : escapeHtml(t.exitReason ?? "—");
+            const kind =
+              t.signalKind === "fast-corridor"
+                ? '<span class="status-tag fc">FC</span>'
+                : '<span class="status-tag signal">SPIKE</span>';
+            return `<tr>
+              <td class="sym-cell">${symLink(t.symbol)}</td>
+              <td>${kind}</td>
+              <td>${fmt(t.entryPrice, 6)}</td>
+              <td>${fmt(t.exitPrice, 6)}</td>
+              <td>${reason}</td>
+              <td class="${pnlCls2}">${fmtUsd(t.pnl)}</td>
+              <td class="${pnlCls2}">${fmt(t.pnlPct, 2)}%</td>
+              <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      const logEl = document.getElementById("paperBotLog");
+      if (!data.log?.length) {
+        logEl.innerHTML = '<li class="empty">No events yet</li>';
+      } else {
+        logEl.innerHTML = data.log
+          .map((e) => {
+            const cls =
+              e.type === "OPEN"
+                ? "new"
+                : e.type === "CLOSE"
+                  ? "end"
+                  : e.type === "SKIP"
+                    ? "near"
+                    : "";
+            return `<li class="${cls}">
+              <div class="time">${fmtTimeShort(e.atIso ?? e.at)} ${TZ_LABEL}</div>
+              <strong>${escapeHtml(e.type)}</strong> ${e.symbol && e.symbol !== "—" ? symLink(e.symbol) : ""}
+              <span class="time">${escapeHtml(e.detail ?? "")}</span>
+            </li>`;
+          })
+          .join("");
+      }
+    }
+
+    async function loadPaperBot() {
+      try {
+        const res = await fetch("/api/paper-bot", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPaperBot(data);
+        setPaperBotMsg(
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+      }
+    }
+
+    document.getElementById("paperBotConfigForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch("/api/paper-bot/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patch: paperBotConfigFromForm() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPaperBot(data);
+        setPaperBotMsg("Settings saved", true);
+      } catch (err) {
+        setPaperBotMsg(err.message, false);
+      }
+    });
+
+    document.getElementById("paperBotRefresh").addEventListener("click", loadPaperBot);
+
+    document.getElementById("paperBotReset").addEventListener("click", async () => {
+      if (!confirm("Reset paper account? Clears open positions and trade history.")) return;
+      try {
+        const res = await fetch("/api/paper-bot/reset", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPaperBot(data);
+        setPaperBotMsg("Account reset", true);
+      } catch (err) {
+        setPaperBotMsg(err.message, false);
+      }
+    });
 
     document.getElementById("topMoversConfigForm").addEventListener("submit", (e) => {
       e.preventDefault();

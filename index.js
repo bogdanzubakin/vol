@@ -40,6 +40,7 @@ const {
   resolveTelegramConfig,
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
+const { createPaperBot } = require("./lib/paper-bot");
 const {
   mergeBarsByOpenTime,
   createKlineCacheStore,
@@ -124,6 +125,7 @@ let lastHitsPrintAt = 0;
 let prefetching = false;
 let dashboard = null;
 let telegram = null;
+let paperBot = null;
 let klineCache = null;
 const lastSignalNotifyAt = new Map();
 
@@ -674,6 +676,7 @@ function applySymbolSignal(
       const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
       dashboard?.pushEvent("NEW", sym, detail);
       console.log(`NEW SPIKE\t${sym}\t${detail}`);
+      paperBot?.onSpikeSignal(sym, m);
       if (shouldNotifySignal(sym)) {
         telegram?.onNewSignal(sym, m, cfg);
       } else {
@@ -753,6 +756,7 @@ function applyFastCorridorSignal(
       const detail = `corridor ${fc.corridorWidthPct}% · ${fc.halfWaves} half-waves · avg move ${fc.avgMovePct}%`;
       dashboard?.pushEvent("NEW_FC", sym, detail);
       console.log(`NEW FAST CORRIDOR\t${sym}\t${detail}`);
+      paperBot?.onFastCorridorSignal(sym, fc);
       if (shouldNotifySignal(sym, "fast-corridor")) {
         telegram?.onFastCorridorSignal(sym, fc, cfg);
       } else {
@@ -843,6 +847,12 @@ function reevaluateAllSymbols(
       lastFc
     );
   }
+  paperBot?.updatePrices((sym) => {
+    const bars = historyBuffers.get(sym);
+    const b = bars?.[bars.length - 1];
+    if (!b) return null;
+    return { close: b.close, low: b.low, high: b.high };
+  });
   printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
 }
 
@@ -909,6 +919,13 @@ function createWsShards(
     if (pass !== prevPass || near !== prevNear || fcPass !== prevFc) {
       printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
     }
+    paperBot?.updatePrices((s) => {
+      if (s !== sym) return null;
+      const bars = historyBuffers.get(sym);
+      const b = bars?.[bars.length - 1];
+      if (!b) return null;
+      return { close: b.close, low: b.low, high: b.high };
+    });
   };
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
@@ -1957,6 +1974,11 @@ async function main() {
 
   dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
+  paperBot = createPaperBot();
+  console.error(
+    `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
+      `${paperBot.getPublicState().config.enabled ? "enabled" : "disabled (enable in Paper bot tab)"}`
+  );
 
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
@@ -2004,6 +2026,9 @@ async function main() {
           const row = positionsHistory.setComment(body?.id, body?.comment ?? "");
           return { ok: true, item: row };
         },
+        getPaperBot: () => paperBot.getPublicState(),
+        patchPaperBotConfig: (patch) => paperBot.patchConfig(patch),
+        resetPaperBot: () => paperBot.reset(),
         auth,
         onConfigUpdate: async (patch) => {
           const updates = validateLiveConfigPatch(patch);
@@ -2131,6 +2156,7 @@ async function main() {
     stopStaleRefresh();
     klineCache.flushAll(historyBuffers);
     klineCache.stop();
+    paperBot?.flush();
     sockets.forEach((s) => s.close());
     process.exit(0);
   };
