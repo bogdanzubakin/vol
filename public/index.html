@@ -1040,9 +1040,9 @@
           <div class="hint">Margin per trade = balance × this %</div>
         </div>
         <div class="field">
-          <label for="paperBotStopPct">Stop loss below corridor %</label>
+          <label for="paperBotStopPct">Stop loss below corridor high %</label>
           <input type="number" id="paperBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
-          <div class="hint">SL at corridor low × (1 − %)</div>
+          <div class="hint">SL at top corridor border × (1 − %)</div>
         </div>
         <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
@@ -1086,7 +1086,7 @@
               <th>Entry</th>
               <th>Last</th>
               <th>Margin</th>
-              <th>Corridor low</th>
+              <th>Corridor high</th>
               <th>Stop</th>
               <th>Take profit</th>
               <th>Unrealized</th>
@@ -2341,7 +2341,7 @@
               <td>${fmt(p.entryPrice, 6)}</td>
               <td>${fmt(p.lastPrice, 6)}</td>
               <td>${fmtUsd(p.margin)}</td>
-              <td>${fmt(p.corridorLow, 6)}</td>
+              <td>${fmt(p.corridorHigh, 6)}</td>
               <td class="bad">${fmt(p.stopLoss, 6)}</td>
               <td class="pass">${fmt(p.takeProfit, 6)}</td>
               <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
