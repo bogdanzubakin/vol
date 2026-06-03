@@ -1077,6 +1077,22 @@
           <label for="paperBotAddOnMaxAdds">Max add-ons</label>
           <input type="number" id="paperBotAddOnMaxAdds" step="1" min="0" max="50" value="10" required />
         </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotMoveStopEnabled" name="moveStopEnabled" />
+            Move stop to entry after move
+          </label>
+          <div class="hint">Replaces corridor SL when price rises enough</div>
+        </div>
+        <div class="field">
+          <label for="paperBotMoveStopAfterPct">After +% from entry</label>
+          <input type="number" id="paperBotMoveStopAfterPct" step="0.1" min="0.1" max="100" value="5" required />
+        </div>
+        <div class="field">
+          <label for="paperBotMoveStopOffsetPct">Stop at entry ±%</label>
+          <input type="number" id="paperBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
+          <div class="hint">LONG: +0 = at entry, +0.5 = 0.5% below, −0.5 = 0.5% above</div>
+        </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
           <button type="button" class="btn secondary sm" id="paperBotRefresh">Refresh</button>
@@ -2301,6 +2317,9 @@
         addOnDepositPct: Number(document.getElementById("paperBotAddOnDepositPct").value),
         addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
         addOnMaxAdds: Number(document.getElementById("paperBotAddOnMaxAdds").value),
+        moveStopEnabled: document.getElementById("paperBotMoveStopEnabled").checked,
+        moveStopAfterMovePct: Number(document.getElementById("paperBotMoveStopAfterPct").value),
+        moveStopOffsetPct: Number(document.getElementById("paperBotMoveStopOffsetPct").value),
       };
     }
 
@@ -2319,6 +2338,11 @@
       document.getElementById("paperBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
       document.getElementById("paperBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
       document.getElementById("paperBotAddOnMaxAdds").value = cfg.addOnMaxAdds ?? 10;
+      document.getElementById("paperBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
+      document.getElementById("paperBotMoveStopAfterPct").value =
+        cfg.moveStopAfterMovePct ?? 5;
+      document.getElementById("paperBotMoveStopOffsetPct").value =
+        cfg.moveStopOffsetPct ?? 0;
       const badge = document.getElementById("paperBotEnabledBadge");
       if (badge) {
         badge.textContent = cfg.enabled ? "on" : "off";
@@ -2381,7 +2405,12 @@
               <td>${fmt(p.lastPrice, 6)}</td>
               <td>${fmtUsd(p.margin)}</td>
               <td>${fmt(p.corridorHigh, 6)}</td>
-              <td class="bad">${fmt(p.stopLoss, 6)}</td>
+              <td class="bad">${fmt(p.stopLoss, 6)}${
+                p.initialStopLoss != null &&
+                Math.abs(p.stopLoss - p.initialStopLoss) > 1e-8
+                  ? `<div class="time" style="font-size:0.72rem">was ${fmt(p.initialStopLoss, 6)}</div>`
+                  : ""
+              }</td>
               <td class="pass">${fmt(p.takeProfit, 6)}</td>
               <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
               <td class="time">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
@@ -2431,7 +2460,7 @@
             const cls =
               e.type === "OPEN"
                 ? "new"
-                : e.type === "ADD"
+                : e.type === "ADD" || e.type === "MOVE_SL"
                   ? "cfg"
                 : e.type === "CLOSE"
                   ? "end"
