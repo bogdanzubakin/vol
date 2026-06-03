@@ -1061,6 +1061,26 @@
             Trade fast corridor signals
           </label>
         </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAddOnEnabled" name="addOnEnabled" />
+            Add to position on move (pyramid)
+          </label>
+          <div class="hint">Extra margin when price rises from initial entry</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAddOnDepositPct">Add-on size % of deposit</label>
+          <input type="number" id="paperBotAddOnDepositPct" step="0.1" min="0.1" max="100" value="1" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAddOnMovePct">Add every +% from entry</label>
+          <input type="number" id="paperBotAddOnMovePct" step="0.1" min="0.1" max="100" value="5" required />
+          <div class="hint">e.g. 5 → add at +5%, +10%, +15%… from first entry</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAddOnMaxAdds">Max add-ons</label>
+          <input type="number" id="paperBotAddOnMaxAdds" step="1" min="0" max="50" value="10" required />
+        </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
           <button type="button" class="btn secondary sm" id="paperBotRefresh">Refresh</button>
@@ -1083,7 +1103,9 @@
             <tr>
               <th>Symbol</th>
               <th>Signal</th>
-              <th>Entry</th>
+              <th>Entry / avg</th>
+              <th>Move %</th>
+              <th>Adds</th>
               <th>Last</th>
               <th>Margin</th>
               <th>Corridor high</th>
@@ -1094,7 +1116,7 @@
             </tr>
           </thead>
           <tbody id="paperBotOpenBody">
-            <tr><td colspan="10" class="empty">No open paper positions</td></tr>
+            <tr><td colspan="12" class="empty">No open paper positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -2278,6 +2300,10 @@
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
         tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
+        addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
+        addOnDepositPct: Number(document.getElementById("paperBotAddOnDepositPct").value),
+        addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
+        addOnMaxAdds: Number(document.getElementById("paperBotAddOnMaxAdds").value),
       };
     }
 
@@ -2293,6 +2319,10 @@
       document.getElementById("paperBotTradeFc").checked = Boolean(
         cfg.tradeFastCorridorSignals
       );
+      document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
+      document.getElementById("paperBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
+      document.getElementById("paperBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
+      document.getElementById("paperBotAddOnMaxAdds").value = cfg.addOnMaxAdds ?? 10;
       const badge = document.getElementById("paperBotEnabledBadge");
       if (badge) {
         badge.textContent = cfg.enabled ? "on" : "off";
@@ -2326,7 +2356,7 @@
       const openBody = document.getElementById("paperBotOpenBody");
       if (!data.openPositions?.length) {
         openBody.innerHTML =
-          '<tr><td colspan="10" class="empty">No open paper positions</td></tr>';
+          '<tr><td colspan="12" class="empty">No open paper positions</td></tr>';
       } else {
         openBody.innerHTML = data.openPositions
           .map((p) => {
@@ -2335,10 +2365,18 @@
               p.signalKind === "fast-corridor"
                 ? '<span class="status-tag fc">FC</span>'
                 : '<span class="status-tag signal">SPIKE</span>';
+            const entryLabel =
+              p.addCount > 0
+                ? `${fmt(p.initialEntryPrice, 6)} → ${fmt(p.entryPrice, 6)}`
+                : fmt(p.entryPrice, 6);
+            const movePct = p.movePctFromEntry ?? 0;
+            const moveCls = movePct >= 0 ? "pass" : "bad";
             return `<tr>
               <td class="sym-cell">${symLink(p.symbol)}</td>
               <td>${kind}</td>
-              <td>${fmt(p.entryPrice, 6)}</td>
+              <td class="time">${entryLabel}</td>
+              <td class="${moveCls}">${fmt(movePct, 2)}%</td>
+              <td>${p.addCount ?? 0}</td>
               <td>${fmt(p.lastPrice, 6)}</td>
               <td>${fmtUsd(p.margin)}</td>
               <td>${fmt(p.corridorHigh, 6)}</td>
@@ -2392,6 +2430,8 @@
             const cls =
               e.type === "OPEN"
                 ? "new"
+                : e.type === "ADD"
+                  ? "cfg"
                 : e.type === "CLOSE"
                   ? "end"
                   : e.type === "SKIP"
