@@ -1536,7 +1536,7 @@
         loadFastCorridor();
       }
       if (name === "paperbot") {
-        loadPaperBot();
+        loadPaperBot(true);
         if (!paperBotPollTimer) {
           paperBotPollTimer = setInterval(() => {
             if (activeTab === "paperbot") loadPaperBot();
@@ -2337,8 +2337,8 @@
       return sign + "$" + Math.abs(v).toFixed(2);
     }
 
-    function renderPaperBot(data) {
-      fillPaperBotForm(data.config);
+    function renderPaperBot(data, syncForm = false) {
+      if (syncForm) fillPaperBotForm(data.config);
       const s = data.summary ?? {};
       const pnlCls = (n) =>
         n == null ? "" : n >= 0 ? "pass" : "bad";
@@ -2447,12 +2447,12 @@
       }
     }
 
-    async function loadPaperBot() {
+    async function loadPaperBot(syncForm = false) {
       try {
         const res = await fetch("/api/paper-bot", { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        renderPaperBot(data);
+        renderPaperBot(data, syncForm);
         setPaperBotMsg(
           `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`,
           true
@@ -2472,7 +2472,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        renderPaperBot(data);
+        renderPaperBot(data, true);
         setPaperBotMsg("Settings saved", true);
       } catch (err) {
         setPaperBotMsg(err.message, false);
@@ -2487,7 +2487,7 @@
         const res = await fetch("/api/paper-bot/reset", { method: "POST" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        renderPaperBot(data);
+        renderPaperBot(data, true);
         setPaperBotMsg("Account reset", true);
       } catch (err) {
         setPaperBotMsg(err.message, false);

@@ -133,6 +133,25 @@ function evalBars(sym, historyBuffers) {
   return klineCache.evalWindow(historyBuffers.get(sym) ?? [], memoryMaxBars());
 }
 
+function getPaperBotBar(sym, historyBuffers) {
+  const bars = historyBuffers.get(sym);
+  let b = bars?.[bars.length - 1];
+  if (!b && klineCache) {
+    const cached = klineCache.read(sym);
+    b = cached?.[cached.length - 1];
+  }
+  if (!b) return null;
+  return {
+    close: +b.close,
+    low: +(b.low ?? b.close),
+    high: +(b.high ?? b.close),
+  };
+}
+
+function refreshAllPaperBotPrices(historyBuffers) {
+  paperBot?.updatePrices((s) => getPaperBotBar(s, historyBuffers));
+}
+
 function memoryMaxBars() {
   if (cfg.memoryMaxBars > 0) return cfg.memoryMaxBars;
   const dayBars = Math.ceil((24 * 60 * 60 * 1000) / cfg.barMs) + 5;
@@ -847,12 +866,7 @@ function reevaluateAllSymbols(
       lastFc
     );
   }
-  paperBot?.updatePrices((sym) => {
-    const bars = historyBuffers.get(sym);
-    const b = bars?.[bars.length - 1];
-    if (!b) return null;
-    return { close: b.close, low: b.low, high: b.high };
-  });
+  refreshAllPaperBotPrices(historyBuffers);
   printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
 }
 
@@ -919,13 +933,7 @@ function createWsShards(
     if (pass !== prevPass || near !== prevNear || fcPass !== prevFc) {
       printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
     }
-    paperBot?.updatePrices((s) => {
-      if (s !== sym) return null;
-      const bars = historyBuffers.get(sym);
-      const b = bars?.[bars.length - 1];
-      if (!b) return null;
-      return { close: b.close, low: b.low, high: b.high };
-    });
+    refreshAllPaperBotPrices(historyBuffers);
   };
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
@@ -2026,9 +2034,19 @@ async function main() {
           const row = positionsHistory.setComment(body?.id, body?.comment ?? "");
           return { ok: true, item: row };
         },
-        getPaperBot: () => paperBot.getPublicState(),
-        patchPaperBotConfig: (patch) => paperBot.patchConfig(patch),
-        resetPaperBot: () => paperBot.reset(),
+        getPaperBot: () => {
+          refreshAllPaperBotPrices(historyBuffers);
+          return paperBot.getPublicState();
+        },
+        patchPaperBotConfig: (patch) => {
+          const result = paperBot.patchConfig(patch);
+          refreshAllPaperBotPrices(historyBuffers);
+          return paperBot.getPublicState();
+        },
+        resetPaperBot: () => {
+          paperBot.reset();
+          return paperBot.getPublicState();
+        },
         auth,
         onConfigUpdate: async (patch) => {
           const updates = validateLiveConfigPatch(patch);
@@ -2151,8 +2169,15 @@ async function main() {
     );
   }
 
+  const paperBotPriceTimer = setInterval(() => {
+    if (paperBot?.getPublicState().summary?.openCount > 0) {
+      refreshAllPaperBotPrices(historyBuffers);
+    }
+  }, 15_000);
+
   const shutdown = () => {
     console.error("Flushing kline cache…");
+    clearInterval(paperBotPriceTimer);
     stopStaleRefresh();
     klineCache.flushAll(historyBuffers);
     klineCache.stop();
