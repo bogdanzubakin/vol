@@ -43,6 +43,15 @@ const {
 const { createPaperBot } = require("./lib/paper-bot");
 const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
+  saveTradeSnapshot,
+  sliceBarsForTrade,
+} = require("./lib/paper-bot-snapshot");
+const {
+  runPaperBotBacktest,
+  loadLastBacktestResult,
+  DEFAULT_DAYS,
+} = require("./lib/paper-bot-backtest");
+const {
   mergeBarsByOpenTime,
   createKlineCacheStore,
 } = require("./lib/kline-cache");
@@ -128,6 +137,12 @@ let dashboard = null;
 let telegram = null;
 let paperBot = null;
 let stopPaperBotReport = () => {};
+let backtestJob = {
+  running: false,
+  progress: null,
+  result: null,
+  error: null,
+};
 let klineCache = null;
 const lastSignalNotifyAt = new Map();
 
@@ -1984,7 +1999,38 @@ async function main() {
 
   dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
-  paperBot = createPaperBot();
+
+  function getBarsForTradeSnapshot(symbol, openedAt, closedAt) {
+    let bars = historyBuffers.get(symbol) ?? [];
+    if (bars.length < 30 && klineCache) {
+      bars = klineCache.read(symbol) ?? bars;
+    }
+    return sliceBarsForTrade(bars, openedAt, closedAt, 100);
+  }
+
+  async function captureTradeSnapshot(trade, posSnap) {
+    const bars = getBarsForTradeSnapshot(
+      trade.symbol,
+      trade.openedAt,
+      trade.closedAt
+    );
+    if (bars.length < 10) return null;
+    const fullTrade = {
+      ...trade,
+      stopLoss: posSnap.stopLoss ?? trade.stopLoss,
+      takeProfit: posSnap.takeProfit ?? trade.takeProfit,
+      corridorHigh: posSnap.corridorHigh ?? trade.corridorHigh,
+      corridorLow: posSnap.corridorLow ?? trade.corridorLow,
+    };
+    const { snapshotId } = await saveTradeSnapshot({
+      trade: fullTrade,
+      bars,
+      interval: cfg.interval,
+    });
+    return { snapshotId };
+  }
+
+  paperBot = createPaperBot({ onTradeClosed: captureTradeSnapshot });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
       `${paperBot.getPublicState().config.enabled ? "enabled" : "disabled (enable in Paper bot tab)"}`
@@ -2041,13 +2087,83 @@ async function main() {
           return paperBot.getPublicState();
         },
         patchPaperBotConfig: (patch) => {
-          const result = paperBot.patchConfig(patch);
+          paperBot.patchConfig(patch);
           refreshAllPaperBotPrices(historyBuffers);
           return paperBot.getPublicState();
         },
         resetPaperBot: () => {
           paperBot.reset();
           return paperBot.getPublicState();
+        },
+        getBacktestStatus: () => ({
+          running: backtestJob.running,
+          progress: backtestJob.progress,
+          result: backtestJob.result,
+          error: backtestJob.error,
+          last: loadLastBacktestResult(),
+          defaultDays: DEFAULT_DAYS,
+          signalConfig: pickLiveConfig(cfg),
+        }),
+        startBacktest: async (body) => {
+          if (backtestJob.running) {
+            throw new Error("Backtest already running");
+          }
+          const days = Math.max(
+            1,
+            Math.min(14, Number(body?.days) || DEFAULT_DAYS)
+          );
+          const maxSymbols = Math.max(
+            0,
+            Math.min(2000, Number(body?.maxSymbols) || 0)
+          );
+          const symList =
+            maxSymbols > 0 ? symbols.slice(0, maxSymbols) : [...symbols];
+          backtestJob = {
+            running: true,
+            progress: {
+              phase: "starting",
+              done: 0,
+              total: symList.length,
+              message: `Starting ${symList.length} symbols × ${days}d…`,
+            },
+            result: null,
+            error: null,
+          };
+          runPaperBotBacktest({
+            symbols: symList,
+            signalCfg: cfg,
+            botConfig: paperBot.getPublicState().config,
+            days,
+            fetchKlinesForSymbol: (sym, limit) => fetchKlines(sym, limit),
+            onProgress: (p) => {
+              backtestJob.progress = p;
+            },
+            restGapMs: cfg.restMinGapMs,
+          })
+            .then((result) => {
+              backtestJob.running = false;
+              backtestJob.result = result;
+              backtestJob.progress = {
+                phase: "done",
+                done: symList.length,
+                total: symList.length,
+                message: "Complete",
+              };
+              console.error(
+                `Paper bot backtest done: ${result.summary.closedCount} trades · PnL ${result.summary.totalPnl}`
+              );
+            })
+            .catch((e) => {
+              backtestJob.running = false;
+              backtestJob.error = e.message || String(e);
+              console.error(`Paper bot backtest failed: ${backtestJob.error}`);
+            });
+          return {
+            ok: true,
+            started: true,
+            days,
+            symbols: symList.length,
+          };
         },
         auth,
         onConfigUpdate: async (patch) => {
