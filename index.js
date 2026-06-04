@@ -44,6 +44,7 @@ const { createPaperBot } = require("./lib/paper-bot");
 const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
   saveTradeSnapshot,
+  saveOpenPositionSnapshot,
 } = require("./lib/paper-bot-snapshot");
 const {
   runPaperBotBacktest,
@@ -2038,6 +2039,25 @@ async function main() {
     return { snapshotId };
   }
 
+  async function generatePaperBotOpenSnapshot(positionId) {
+    refreshAllPaperBotPrices(historyBuffers);
+    const state = paperBot.getPublicState();
+    const pos = state.openPositions.find((p) => p.id === positionId);
+    if (!pos) throw new Error("Open position not found");
+    const asOf = Date.now();
+    const bars = getBarsForTradeSnapshot(pos.symbol, pos.openedAt, asOf);
+    if (bars.length < 10) throw new Error("Not enough price history for snapshot");
+    const { snapshotId } = await saveOpenPositionSnapshot({
+      position: pos,
+      bars,
+      interval: cfg.interval,
+      corridorDays: cfg.corridorDays,
+      corridorExcludeMinutes: cfg.corridorExcludeMinutes,
+      signalCandles: cfg.signalCandles,
+    });
+    return { snapshotId, symbol: pos.symbol };
+  }
+
   paperBot = createPaperBot({ onTradeClosed: captureTradeSnapshot });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -2103,6 +2123,7 @@ async function main() {
           paperBot.reset();
           return paperBot.getPublicState();
         },
+        generatePaperBotOpenSnapshot,
         getBacktestStatus: () => ({
           running: backtestJob.running,
           progress: backtestJob.progress,
