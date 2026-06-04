@@ -668,7 +668,7 @@ function printHits(
   console.clear();
   console.log(
     formatIsoUtcPlus3(Date.now()),
-    `${cfg.interval}: ${cfg.signalCandles} vol↑ bars break ${cfg.corridorDays}d range high` +
+    `${cfg.interval}: ${cfg.signalCandles}+ candles above corridor break ${cfg.corridorDays}d range high` +
       (prefetching ? " (prefetching…)" : "")
   );
   console.table(rows);
@@ -709,7 +709,7 @@ function applySymbolSignal(
     signalHistory.set(sym, row);
     nearBreakHits.delete(sym);
     if (!prevPass) {
-      const detail = `close ${m.close} > ${m.corridorHigh} range×${m.rangeRatio}`;
+      const detail = `close ${m.close} > ${m.corridorHigh} · ${m.aboveCorridorCount}/${m.minAboveCorridorCandles} above`;
       dashboard?.pushEvent("NEW", sym, detail);
       console.log(`NEW SPIKE\t${sym}\t${detail}`);
       paperBot?.onSpikeSignal(sym, m);
@@ -737,7 +737,7 @@ function applySymbolSignal(
       activeHits.delete(sym);
     }
     if (!prevNear) {
-      const detail = `${m.breakGapPct}% below ${m.corridorHigh} range×${m.rangeRatio}`;
+      const detail = `${m.breakGapPct}% below ${m.corridorHigh} · ${m.aboveCorridorCount}/${m.minAboveCorridorCandles} above`;
       dashboard?.pushEvent("NEAR", sym, detail);
       console.log(`NEAR BREAK\t${sym}\t${detail}`);
       telegram?.onNearSignal(sym, m, cfg);

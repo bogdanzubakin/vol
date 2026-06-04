@@ -9,6 +9,7 @@
     :root {
       --bg: #0f172a;
       --panel: #1e293b;
+      --surface: #1e293b;
       --border: #334155;
       --text: #e2e8f0;
       --muted: #94a3b8;
@@ -569,6 +570,223 @@
       justify-content: center;
     }
     .modal-loading { padding: 48px; color: var(--muted); }
+
+    .sym-with-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 10px;
+      justify-content: space-between;
+    }
+    .snap-in-symbol { display: none; }
+    .table-wrap--cards .scroll-hint {
+      display: none;
+      font-size: 0.72rem;
+      color: var(--muted);
+      padding: 0 12px 8px;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 12px 10px 28px; }
+      h1 { font-size: 1.15rem; }
+      .page-top {
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .positions-panel {
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        max-height: 40vh;
+      }
+      .settings-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .settings-actions .btn {
+        width: 100%;
+      }
+      .status {
+        padding: 10px 12px;
+        gap: 8px 14px;
+        font-size: 0.8rem;
+      }
+      .tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+        gap: 0;
+        margin: 0 -10px 12px;
+        padding: 0 8px;
+        scrollbar-width: thin;
+      }
+      .tab {
+        flex: 0 0 auto;
+        padding: 12px 14px;
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+      .settings-form {
+        grid-template-columns: 1fr;
+        padding: 12px;
+      }
+      .settings-form .field[style*="min-width"] {
+        min-width: 0 !important;
+      }
+      .paper-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin: 8px;
+        padding: 10px;
+        gap: 8px;
+      }
+      .paper-summary .stat-value { font-size: 1rem; }
+      section h2 {
+        padding: 10px 12px;
+        font-size: 0.9rem;
+        flex-wrap: wrap;
+      }
+      .pairs-toolbar {
+        padding: 10px 12px;
+      }
+      .pairs-toolbar input { min-width: 0; flex: 1 1 140px; }
+      .pairs-table-wrap {
+        max-height: none;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .btn,
+      .btn.sm,
+      .btn.secondary,
+      .btn.secondary.sm {
+        min-height: 44px;
+        padding: 10px 16px;
+        font-size: 0.88rem;
+      }
+      .trade-snapshot-btn,
+      .backtest-snapshot-btn {
+        min-width: 7.5rem;
+      }
+      .modal {
+        padding: 0;
+        align-items: stretch;
+      }
+      .modal-box {
+        max-width: 100%;
+        width: 100%;
+        max-height: 100%;
+        height: 100%;
+        border-radius: 0;
+        border: none;
+        display: flex;
+        flex-direction: column;
+      }
+      .modal-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        padding: 8px;
+      }
+      .modal-chart-wrap {
+        max-height: none;
+      }
+      .modal-head {
+        padding: 12px;
+        flex-shrink: 0;
+      }
+      .modal-head h3 {
+        font-size: 0.9rem;
+        line-height: 1.3;
+        padding-right: 8px;
+      }
+      .modal-actions {
+        flex-shrink: 0;
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+      }
+      .snap-in-symbol {
+        display: inline-flex;
+      }
+      .table-wrap--cards {
+        overflow-x: visible;
+      }
+      .table-wrap--cards .scroll-hint {
+        display: block;
+      }
+      .table-wrap--cards table {
+        min-width: 0;
+        width: 100%;
+      }
+      .table-wrap--cards thead {
+        display: none;
+      }
+      .table-wrap--cards tbody tr.data-row {
+        display: block;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin: 0 8px 12px;
+        padding: 0;
+        background: rgba(15, 23, 42, 0.35);
+      }
+      .table-wrap--cards tbody tr.data-row td {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        text-align: right;
+      }
+      .table-wrap--cards tbody tr.data-row td:last-child {
+        border-bottom: none;
+      }
+      .table-wrap--cards tbody tr.data-row td::before {
+        content: attr(data-label);
+        font-size: 0.7rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        text-align: left;
+        flex: 0 1 42%;
+        padding-right: 8px;
+      }
+      .table-wrap--cards tbody tr.data-row td.sym-cell {
+        display: block;
+        text-align: left;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .table-wrap--cards tbody tr.data-row td.sym-cell::before {
+        display: none;
+      }
+      .table-wrap--cards tbody tr.data-row td.col-chart-desktop {
+        display: none !important;
+      }
+      .table-wrap--cards tbody tr.empty-row,
+      .table-wrap--cards tbody tr td.empty {
+        display: block;
+        text-align: center;
+        padding: 24px 16px;
+      }
+      .table-wrap--cards tbody tr.empty-row::before,
+      .table-wrap--cards tbody tr td.empty::before {
+        display: none;
+      }
+      .evaluate-bar {
+        margin: 0 0 12px;
+        padding: 10px 12px;
+      }
+      .movers-settings .settings-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .movers-settings .settings-actions .btn {
+        width: 100%;
+      }
+    }
+
     .evaluate-bar {
       display: flex;
       flex-wrap: wrap;
@@ -694,9 +912,9 @@
         <div class="hint">Ignore last N minutes before signal</div>
       </div>
       <div class="field">
-        <label for="signalCandles">Signal candles</label>
+        <label for="signalCandles">Candles above corridor</label>
         <input type="number" id="signalCandles" name="signalCandles" step="1" min="2" max="12" required />
-        <div class="hint">Vol↑ bars before break</div>
+        <div class="hint">Min count with open &amp; close above corridor high (last N bars)</div>
       </div>
       <div class="field">
         <label for="bullishLookbackCandles">Bullish lookback</label>
@@ -712,11 +930,6 @@
         <label for="maxCorridorWidthPct">Max corridor width %</label>
         <input type="number" id="maxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="40" required />
         <div class="hint">Flat corridor threshold</div>
-      </div>
-      <div class="field">
-        <label for="minRangeMultiplier">Min range multiplier</label>
-        <input type="number" id="minRangeMultiplier" name="minRangeMultiplier" step="0.1" min="1" max="10" required />
-        <div class="hint">Signal vs avg corridor range</div>
       </div>
       <div class="field">
         <label for="minCorridorRangePct">Min corridor range %</label>
@@ -747,7 +960,7 @@
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         <span class="status-tag signal">SIGNAL</span> full break ·
         <span class="status-tag fc">FAST CORRIDOR</span> fast mover in target corridor with half-waves ·
-        <span class="status-tag near">NEAR</span> all criteria except break (within gap %) ·
+        <span class="status-tag near">NEAR</span> setup except close break (within gap %) ·
         signals stay <strong>24h</strong> after trigger (newest first)
       </p>
       <div class="table-wrap">
@@ -760,7 +973,7 @@
               <th>2d high</th>
               <th>Range×</th>
               <th>Corridor %</th>
-              <th>Vol↑</th>
+              <th>Above</th>
               <th>Break / gap</th>
             </tr>
           </thead>
@@ -1113,7 +1326,8 @@
         <div><div class="stat-label">Closed</div><div class="stat-value" id="paperStatClosed">—</div></div>
       </div>
       <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Open positions</h3>
-      <div class="table-wrap">
+      <div class="table-wrap table-wrap--cards">
+        <p class="scroll-hint">Tap a row for details · swipe tables horizontally where needed</p>
         <table>
           <thead>
             <tr>
@@ -1137,7 +1351,8 @@
         </table>
       </div>
       <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Positions history</h3>
-      <div class="table-wrap">
+      <div class="table-wrap table-wrap--cards">
+        <p class="scroll-hint">Chart preview on each trade card</p>
         <table>
           <thead>
             <tr>
@@ -1208,7 +1423,8 @@
       </div>
       <p class="sub" id="backtestSignalHint" style="margin: 8px 12px; font-size: 0.75rem"></p>
       <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Positions history</h3>
-      <div class="table-wrap">
+      <div class="table-wrap table-wrap--cards">
+        <p class="scroll-hint">Chart preview on each trade card</p>
         <table>
           <thead>
             <tr>
@@ -1365,7 +1581,6 @@
       "bullishLookbackCandles",
       "minBullishCandles",
       "maxCorridorWidthPct",
-      "minRangeMultiplier",
       "minCorridorRangePct",
       "minBreakVolumeMultiplier",
       "breakVolumeNearBars",
@@ -2513,7 +2728,7 @@
       const openBody = document.getElementById("paperBotOpenBody");
       if (!data.openPositions?.length) {
         openBody.innerHTML =
-          '<tr><td colspan="12" class="empty">No open paper positions</td></tr>';
+          '<tr class="empty-row"><td colspan="12" class="empty">No open paper positions</td></tr>';
       } else {
         openBody.innerHTML = data.openPositions
           .map((p) => {
@@ -2528,24 +2743,24 @@
                 : fmt(p.entryPrice, 6);
             const movePct = p.movePctFromEntry ?? 0;
             const moveCls = movePct >= 0 ? "pass" : "bad";
-            return `<tr>
-              <td class="sym-cell">${symLink(p.symbol)}</td>
-              <td>${kind}</td>
-              <td class="time">${entryLabel}</td>
-              <td class="${moveCls}">${fmt(movePct, 2)}%</td>
-              <td>${p.addCount ?? 0}</td>
-              <td>${fmt(p.lastPrice, 6)}</td>
-              <td>${fmtUsd(p.margin)}</td>
-              <td>${fmt(p.corridorHigh, 6)}</td>
-              <td class="bad">${fmt(p.stopLoss, 6)}${
+            return `<tr class="data-row">
+              <td class="sym-cell" data-label="Symbol">${symLink(p.symbol)}</td>
+              <td data-label="Signal">${kind}</td>
+              <td class="time" data-label="Entry / avg">${entryLabel}</td>
+              <td class="${moveCls}" data-label="Move %">${fmt(movePct, 2)}%</td>
+              <td data-label="Adds">${p.addCount ?? 0}</td>
+              <td data-label="Last">${fmt(p.lastPrice, 6)}</td>
+              <td data-label="Margin">${fmtUsd(p.margin)}</td>
+              <td data-label="Corridor high">${fmt(p.corridorHigh, 6)}</td>
+              <td class="bad" data-label="Stop">${fmt(p.stopLoss, 6)}${
                 p.initialStopLoss != null &&
                 Math.abs(p.stopLoss - p.initialStopLoss) > 1e-8
                   ? `<div class="time" style="font-size:0.72rem">was ${fmt(p.initialStopLoss, 6)}</div>`
                   : ""
               }</td>
-              <td class="pass">${fmt(p.takeProfit, 6)}</td>
-              <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
-              <td class="time">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
+              <td class="pass" data-label="Take profit">${fmt(p.takeProfit, 6)}</td>
+              <td class="${unrCls}" data-label="Unrealized">${fmtUsd(p.unrealizedPnl)}</td>
+              <td class="time" data-label="Opened">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
             </tr>`;
           })
           .join("");
@@ -2554,7 +2769,7 @@
       const closedBody = document.getElementById("paperBotClosedBody");
       if (!data.closedTrades?.length) {
         closedBody.innerHTML =
-          '<tr><td colspan="9" class="empty">No closed positions yet</td></tr>';
+          '<tr class="empty-row"><td colspan="9" class="empty">No closed positions yet</td></tr>';
       } else {
         closedBody.innerHTML = data.closedTrades
           .map((t) => {
@@ -2571,17 +2786,20 @@
                 : '<span class="status-tag signal">SPIKE</span>';
             const previewBtn = t.snapshotId
               ? `<button type="button" class="btn secondary sm trade-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
-              : '<span class="time">—</span>';
-            return `<tr>
-              <td class="sym-cell">${symLink(t.symbol)}</td>
-              <td>${kind}</td>
-              <td>${fmt(t.entryPrice, 6)}</td>
-              <td>${fmt(t.exitPrice, 6)}</td>
-              <td>${reason}</td>
-              <td class="${pnlCls2}">${fmtUsd(t.pnl)}</td>
-              <td class="${pnlCls2}">${fmt(t.pnlPct, 2)}%</td>
-              <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
-              <td>${previewBtn}</td>
+              : "";
+            const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
+              previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
+            }</div>`;
+            return `<tr class="data-row">
+              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td data-label="Signal">${kind}</td>
+              <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
+              <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
+              <td data-label="Reason">${reason}</td>
+              <td class="${pnlCls2}" data-label="PnL">${fmtUsd(t.pnl)}</td>
+              <td class="${pnlCls2}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
+              <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
             </tr>`;
           })
           .join("");
@@ -2693,7 +2911,7 @@
       if (data.signalConfig) {
         const s = data.signalConfig;
         hint.textContent =
-          `Signals: ${s.interval} · corridor ${s.corridorDays}d · ${s.signalCandles} vol↑ · break vol ×${s.minBreakVolumeMultiplier} (from Scanner tab / saved config)`;
+          `Signals: ${s.interval} · corridor ${s.corridorDays}d · ${s.signalCandles}+ above corridor · break vol ×${s.minBreakVolumeMultiplier} (from Scanner tab / saved config)`;
       }
 
       if (data.running && !data.result?.summary) {
@@ -2726,7 +2944,7 @@
       );
       if (!trades.length) {
         tradesBody.innerHTML =
-          '<tr><td colspan="10" class="empty">No closed trades</td></tr>';
+          '<tr class="empty-row"><td colspan="10" class="empty">No closed trades</td></tr>';
       } else {
         tradesBody.innerHTML = trades
           .slice(0, 200)
@@ -2744,18 +2962,21 @@
                   : escapeHtml(t.exitReason ?? "—");
             const previewBtn = t.snapshotId
               ? `<button type="button" class="btn secondary sm backtest-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
-              : '<span class="time">—</span>';
-            return `<tr>
-              <td class="sym-cell">${symLink(t.symbol)}</td>
-              <td>${kind}</td>
-              <td>${fmt(t.entryPrice, 6)}</td>
-              <td>${fmt(t.exitPrice, 6)}</td>
-              <td>${reason}</td>
-              <td class="${cls}">${fmtUsd(t.pnl)}</td>
-              <td class="${cls}">${fmt(t.pnlPct, 2)}%</td>
-              <td class="time">${fmtDisplayDateTime(t.openedAtIso ?? t.openedAt)}</td>
-              <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
-              <td>${previewBtn}</td>
+              : "";
+            const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
+              previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
+            }</div>`;
+            return `<tr class="data-row">
+              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td data-label="Signal">${kind}</td>
+              <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
+              <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
+              <td data-label="Reason">${reason}</td>
+              <td class="${cls}" data-label="PnL">${fmtUsd(t.pnl)}</td>
+              <td class="${cls}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
+              <td class="time" data-label="Opened">${fmtDisplayDateTime(t.openedAtIso ?? t.openedAt)}</td>
+              <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
             </tr>`;
           })
           .join("");
@@ -2947,7 +3168,7 @@
       const body = {};
       for (const k of CONFIG_KEYS) {
         const el = document.getElementById(k);
-        body[k] = Number(el.value);
+        if (el) body[k] = Number(el.value);
       }
       return body;
     }
@@ -3022,8 +3243,8 @@
 
       const sub = document.getElementById("subtitle");
       sub.textContent =
-        `${state.interval} · ${state.signalCandles} vol↑ candles · break ${state.corridorDays}d range high · ` +
-        `corridor ≤${state.maxCorridorWidthPct}% · range×≥${state.minRangeMultiplier}`;
+        `${state.interval} · ${state.signalCandles}+ candles above corridor · break ${state.corridorDays}d range high · ` +
+        `corridor ≤${state.maxCorridorWidthPct}%`;
 
       document.getElementById("status").innerHTML = `
         <div><span>Updated</span> <strong>${fmtTimeShort(state.updatedAt) ?? "—"} ${TZ_LABEL}</strong></div>
@@ -3080,7 +3301,9 @@
             const rangeCell = isFc
               ? `${fmt(h.avgMovePct, 3)}%`
               : fmt(h.rangeRatio, 2);
-            const volCell = isFc ? "—" : yn(h.volIncreasing);
+            const volCell = isFc
+              ? "—"
+              : `${h.aboveCorridorCount ?? 0}/${h.minAboveCorridorCandles ?? state.signalCandles ?? 3}`;
             const breakCell = isNear
               ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
               : isFc
