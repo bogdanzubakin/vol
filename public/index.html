@@ -1321,9 +1321,9 @@
           <input type="number" id="paperBotFalseSpikeAfterMinutes" step="1" min="1" max="1440" value="30" required />
         </div>
         <div class="field">
-          <label for="paperBotFalseSpikeBelowEntryPct">Close % below initial entry</label>
-          <input type="number" id="paperBotFalseSpikeBelowEntryPct" step="0.01" min="0" max="50" value="0" required />
-          <div class="hint">0 = at/below first entry; 0.5 = 0.5% below initial open price</div>
+          <label for="paperBotFalseSpikeBelowEntryPct">Close at entry ±%</label>
+          <input type="number" id="paperBotFalseSpikeBelowEntryPct" step="0.01" min="-20" max="50" value="0" required />
+          <div class="hint">LONG: +0.5 = 0.5% below first entry, −0.5 = 0.5% above; 0 = at/below entry</div>
         </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
