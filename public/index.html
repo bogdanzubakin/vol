@@ -1314,12 +1314,16 @@
             <input type="checkbox" id="paperBotFalseSpikeEnabled" name="falseSpikeEnabled" />
             False spike exit
           </label>
-          <div class="hint">Close if price returns to initial entry (back in corridor) after hold time</div>
+          <div class="hint">Close when price drops to % below initial entry after hold time</div>
         </div>
         <div class="field">
           <label for="paperBotFalseSpikeAfterMinutes">After minutes open</label>
           <input type="number" id="paperBotFalseSpikeAfterMinutes" step="1" min="1" max="1440" value="30" required />
-          <div class="hint">Only if last price ≤ first entry (open price)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotFalseSpikeBelowEntryPct">Close % below initial entry</label>
+          <input type="number" id="paperBotFalseSpikeBelowEntryPct" step="0.01" min="0" max="50" value="0" required />
+          <div class="hint">0 = at/below first entry; 0.5 = 0.5% below initial open price</div>
         </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
@@ -2720,6 +2724,9 @@
         falseSpikeAfterMinutes: Number(
           document.getElementById("paperBotFalseSpikeAfterMinutes").value
         ),
+        falseSpikeBelowEntryPct: Number(
+          document.getElementById("paperBotFalseSpikeBelowEntryPct").value
+        ),
       };
     }
 
@@ -2748,6 +2755,8 @@
       );
       document.getElementById("paperBotFalseSpikeAfterMinutes").value =
         cfg.falseSpikeAfterMinutes ?? 30;
+      document.getElementById("paperBotFalseSpikeBelowEntryPct").value =
+        cfg.falseSpikeBelowEntryPct ?? 0;
       const badge = document.getElementById("paperBotEnabledBadge");
       if (badge) {
         badge.textContent = cfg.enabled ? "on" : "off";
