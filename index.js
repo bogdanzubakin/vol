@@ -49,6 +49,7 @@ const {
 const {
   runPaperBotBacktest,
   loadLastBacktestResult,
+  resetBacktestData,
   resolveBacktestSymbols,
   DEFAULT_DAYS,
 } = require("./lib/paper-bot-backtest");
@@ -138,12 +139,46 @@ let dashboard = null;
 let telegram = null;
 let paperBot = null;
 let stopPaperBotReport = () => {};
+const BACKTEST_STALE_MS = 12 * 60 * 1000;
+
 let backtestJob = {
   running: false,
+  cancelled: false,
   progress: null,
   result: null,
   error: null,
+  startedAt: null,
+  lastProgressAt: null,
 };
+
+function freshBacktestJobState() {
+  return {
+    running: false,
+    cancelled: false,
+    progress: null,
+    result: null,
+    error: null,
+    startedAt: null,
+    lastProgressAt: null,
+  };
+}
+
+function touchBacktestProgress(p) {
+  backtestJob.progress = p;
+  backtestJob.lastProgressAt = Date.now();
+}
+
+function reconcileBacktestJob() {
+  if (!backtestJob.running || !backtestJob.lastProgressAt) return;
+  const idle = Date.now() - backtestJob.lastProgressAt;
+  if (idle <= BACKTEST_STALE_MS) return;
+  backtestJob.running = false;
+  const mins = Math.round(idle / 60_000);
+  backtestJob.error =
+    backtestJob.error ||
+    `Backtest stalled (no progress for ${mins} min). Use a symbol list, reduce pairs, or wait for rate-limit cooldown and retry.`;
+  console.error(backtestJob.error);
+}
 let klineCache = null;
 const lastSignalNotifyAt = new Map();
 
@@ -245,6 +280,13 @@ async function waitForBan(banUntil) {
   if (waitMs <= 0) return;
   const sec = Math.ceil(waitMs / 1000);
   console.error(`IP banned — waiting ${sec}s before retry...`);
+  if (backtestJob.running) {
+    touchBacktestProgress({
+      ...(backtestJob.progress ?? {}),
+      phase: "rate_limit",
+      message: `Binance API cooldown — waiting ${sec}s…`,
+    });
+  }
   await sleep(waitMs + 500);
 }
 
@@ -454,6 +496,47 @@ async function loadSymbolHistory(symbol) {
   bars = klineCache.capBars(bars, cfg.cacheMaxBars);
   klineCache.replace(symbol, bars);
   return klineCache.capBars(bars, memoryMaxBars());
+}
+
+/** Backtest bars: disk cache + live buffer first; REST only to extend history. */
+async function fetchKlinesForBacktest(symbol, barCount, historyBuffers) {
+  const cached = klineCache?.read(symbol) ?? [];
+  const live = historyBuffers?.get(symbol) ?? [];
+  let bars = mergeBarsByOpenTime(cached, live);
+
+  const slice = () => (bars.length > barCount ? bars.slice(-barCount) : bars);
+
+  if (bars.length >= barCount) {
+    return slice();
+  }
+
+  try {
+    const fetched = await fetchKlines(symbol, barCount);
+    bars = mergeBarsByOpenTime(bars, fetched);
+
+    if (cached.length && fetched.length) {
+      const lastCached = cached[cached.length - 1];
+      const firstFetched = fetched[0];
+      if (lastCached.closeTime + cfg.barMs < firstFetched.openTime) {
+        const gap = await fetchKlinesGap(
+          symbol,
+          lastCached.closeTime + 1,
+          firstFetched.openTime - 1
+        );
+        bars = mergeBarsByOpenTime(cached, gap, fetched, live);
+      }
+    }
+    return slice();
+  } catch (e) {
+    const need = minHistoryBars(cfg);
+    if (bars.length >= need) {
+      console.error(
+        `Backtest ${symbol}: REST failed (${e.message}), using ${bars.length} cached bars`
+      );
+      return slice();
+    }
+    throw e;
+  }
 }
 
 function closedCandleFromKline(k) {
@@ -2124,15 +2207,42 @@ async function main() {
           return paperBot.getPublicState();
         },
         generatePaperBotOpenSnapshot,
-        getBacktestStatus: () => ({
-          running: backtestJob.running,
-          progress: backtestJob.progress,
-          result: backtestJob.result,
-          error: backtestJob.error,
-          last: loadLastBacktestResult(),
-          defaultDays: DEFAULT_DAYS,
-          signalConfig: pickLiveConfig(cfg),
-        }),
+        getBacktestStatus: () => {
+          reconcileBacktestJob();
+          return {
+            running: backtestJob.running,
+            progress: backtestJob.progress,
+            result: backtestJob.result,
+            error: backtestJob.error,
+            last: loadLastBacktestResult(),
+            defaultDays: DEFAULT_DAYS,
+            signalConfig: pickLiveConfig(cfg),
+          };
+        },
+        stopAndResetBacktest: () => {
+          const wasRunning = backtestJob.running;
+          backtestJob.cancelled = true;
+          backtestJob.running = false;
+          backtestJob.result = null;
+          backtestJob.error = null;
+          backtestJob.progress = null;
+          backtestJob.startedAt = null;
+          backtestJob.lastProgressAt = null;
+          resetBacktestData();
+          if (wasRunning) {
+            console.error("Paper bot backtest stopped and reset");
+          }
+          return {
+            running: false,
+            progress: null,
+            result: null,
+            error: null,
+            last: null,
+            defaultDays: DEFAULT_DAYS,
+            signalConfig: pickLiveConfig(cfg),
+            reset: true,
+          };
+        },
         startBacktest: async (body) => {
           if (backtestJob.running) {
             throw new Error("Backtest already running");
@@ -2145,42 +2255,55 @@ async function main() {
             body,
             symbols
           );
-          backtestJob = {
-            running: true,
-            progress: {
-              phase: "starting",
-              done: 0,
-              total: symList.length,
-              message: `Starting ${symList.length} symbols × ${days}d…`,
-            },
-            result: null,
-            error: null,
+          const startedAt = Date.now();
+          backtestJob.cancelled = false;
+          backtestJob.running = true;
+          backtestJob.result = null;
+          backtestJob.error = null;
+          backtestJob.startedAt = startedAt;
+          backtestJob.lastProgressAt = startedAt;
+          backtestJob.progress = {
+            phase: "starting",
+            done: 0,
+            total: symList.length,
+            ok: 0,
+            skip: 0,
+            message: `Starting ${symList.length} symbols × ${days}d…`,
           };
           runPaperBotBacktest({
             symbols: symList,
             signalCfg: cfg,
             botConfig: paperBot.getPublicState().config,
             days,
-            fetchKlinesForSymbol: (sym, limit) => fetchKlines(sym, limit),
+            fetchKlinesForSymbol: (sym, limit) =>
+              fetchKlinesForBacktest(sym, limit, historyBuffers),
             onProgress: (p) => {
-              backtestJob.progress = p;
+              touchBacktestProgress(p);
             },
-            restGapMs: cfg.restMinGapMs,
+            restGapMs: Math.max(80, Math.floor(cfg.restMinGapMs / 2)),
+            shouldAbort: () => backtestJob.cancelled,
           })
             .then((result) => {
+              if (backtestJob.cancelled) return;
               backtestJob.running = false;
               backtestJob.result = result;
-              backtestJob.progress = {
+              touchBacktestProgress({
                 phase: "done",
                 done: symList.length,
                 total: symList.length,
+                ok: result.symbolsProcessed ?? symList.length,
+                skip: result.symbolsSkipped ?? 0,
                 message: "Complete",
-              };
+              });
               console.error(
                 `Paper bot backtest done: ${result.summary.closedCount} trades · PnL ${result.summary.totalPnl}`
               );
             })
             .catch((e) => {
+              if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {
+                backtestJob.running = false;
+                return;
+              }
               backtestJob.running = false;
               backtestJob.error = e.message || String(e);
               console.error(`Paper bot backtest failed: ${backtestJob.error}`);

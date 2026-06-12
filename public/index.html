@@ -1422,6 +1422,7 @@
         <div class="settings-actions">
           <button type="button" class="btn sm" id="backtestStart">Run backtest</button>
           <button type="button" class="btn secondary sm" id="backtestRefresh">Refresh status</button>
+          <button type="button" class="btn secondary sm" id="backtestStopReset">Stop &amp; reset</button>
           <span class="config-msg" id="backtestMsg"></span>
         </div>
       </div>
@@ -2951,6 +2952,20 @@
       el.className = "config-msg" + (ok ? " ok" : text ? " err" : "");
     }
 
+    function formatBacktestProgress(p) {
+      const pct =
+        p.total > 0 ? Math.round((100 * (p.done ?? 0)) / p.total) : 0;
+      const parts = [`${p.done ?? 0}/${p.total ?? "?"} (${pct}%)`];
+      if (p.ok != null) parts.push(`${p.ok} ok`);
+      if (p.skip != null) parts.push(`${p.skip} skip`);
+      const phase = p.phase === "fetch_error" ? "loading" : p.phase;
+      if (phase && phase !== "symbol_done") parts.push(phase);
+      if (p.symbol) parts.push(p.symbol);
+      let text = parts.join(" · ");
+      if (p.message) text += ` — ${p.message}`;
+      return text;
+    }
+
     function renderBacktest(data) {
       const badge = document.getElementById("backtestStatusBadge");
       const prog = document.getElementById("backtestProgress");
@@ -2959,12 +2974,8 @@
         badge.textContent = "running";
         badge.className = "paper-enabled-badge on";
         prog.style.display = "grid";
-        const pct =
-          p.total > 0 ? Math.round((100 * (p.done ?? 0)) / p.total) : 0;
         document.getElementById("backtestProgressText").textContent =
-          `${p.phase ?? "…"} · ${p.done ?? 0}/${p.total ?? "?"} (${pct}%)` +
-          (p.symbol ? ` · ${p.symbol}` : "") +
-          (p.message ? ` — ${p.message}` : "");
+          formatBacktestProgress(p);
         document.getElementById("btStatDeposit").textContent = "…";
         document.getElementById("btStatEquity").textContent = "…";
         document.getElementById("btStatTotalPnl").textContent = "…";
@@ -2995,7 +3006,9 @@
 
       const r = data.result || data.last;
       if (!r?.summary) {
+        if (!data.running) clearBacktestResultsUi();
         if (data.error) setBacktestMsg(data.error, false);
+        else if (data.reset) setBacktestMsg("Train bot data cleared", true);
         return;
       }
 
@@ -3086,6 +3099,33 @@
       }
     }
 
+    function clearBacktestResultsUi() {
+      for (const id of [
+        "btStatDeposit",
+        "btStatEquity",
+        "btStatTotalPnl",
+        "btStatTrades",
+        "btStatWinLoss",
+        "btStatPairs",
+      ]) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.textContent = "—";
+          if (id === "btStatTotalPnl") el.className = "stat-value";
+        }
+      }
+      const tradesBody = document.getElementById("backtestTradesBody");
+      if (tradesBody) {
+        tradesBody.innerHTML =
+          '<tr class="empty-row"><td colspan="10" class="empty">Run a backtest to see results</td></tr>';
+      }
+      const symBody = document.getElementById("backtestSymbolsBody");
+      if (symBody) {
+        symBody.innerHTML =
+          '<tr><td colspan="5" class="empty">No symbol stats</td></tr>';
+      }
+    }
+
     async function loadBacktestStatus() {
       try {
         const res = await fetch("/api/paper-bot/backtest", { cache: "no-store" });
@@ -3150,6 +3190,21 @@
     });
 
     document.getElementById("backtestRefresh").addEventListener("click", loadBacktestStatus);
+
+    document.getElementById("backtestStopReset").addEventListener("click", async () => {
+      const msg =
+        "Stop the running backtest (if any) and clear saved results, trade history, and snapshots?";
+      if (!confirm(msg)) return;
+      try {
+        const res = await fetch("/api/paper-bot/backtest/reset", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderBacktest(data);
+        setBacktestMsg("Train bot stopped and reset", true);
+      } catch (e) {
+        setBacktestMsg(e.message, false);
+      }
+    });
 
     document.getElementById("paperBotReset").addEventListener("click", async () => {
       if (!confirm("Reset paper account? Clears open positions and trade history.")) return;
