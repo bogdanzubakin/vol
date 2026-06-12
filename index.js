@@ -28,7 +28,13 @@ const {
   pickLiveConfig,
   parseAtTime,
   barsAtTime,
+  analyzeSweepReclaim,
+  fastMoverPullbackMetrics,
 } = require("./lib/signal-metrics");
+const {
+  evaluateRegime,
+  applyRegimeToSpike,
+} = require("./lib/regime-filter");
 const { getChartPayload } = require("./lib/chart-render");
 const { formatIsoUtcPlus3 } = require("./lib/time-format");
 const {
@@ -106,6 +112,17 @@ const cfg = {
   fastCorridorMinHalfWaves: 3,
   fastCorridorHalfWaveFraction: 0.5,
   fastCorridorHalfWaveLookback: 180,
+  regimeFilterEnabled: 0,
+  regimeMaBars: 20,
+  regimeSymbol: "BTCUSDT",
+  regimeInterval: "1h",
+  sfpLookbackBars: 30,
+  sfpReclaimBars: 5,
+  sfpMinSweepPct: 0.02,
+  pullbackMaBars: 7,
+  pullbackTouchLookback: 12,
+  pullbackMaxDistancePct: 0.35,
+  pullbackMaxAboveMaPct: 1.5,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -423,6 +440,40 @@ async function fetchKlines(symbol, limit = cfg.limit) {
   return all.slice(-limit);
 }
 
+async function fetchKlinesInterval(symbol, interval, limit) {
+  let all = [];
+  let endTime;
+  let remaining = limit;
+  const { ms: barMs } = (() => {
+    const m = /^(\d+)([mhd])$/.exec(interval);
+    if (!m) return { ms: 60_000 };
+    const n = Number(m[1]);
+    const minutes = m[2] === "m" ? n : m[2] === "h" ? n * 60 : n * 24 * 60;
+    return { ms: minutes * 60 * 1000 };
+  })();
+
+  while (remaining > 0) {
+    const batch = Math.min(remaining, KLINE_MAX);
+    const params = {
+      symbol,
+      interval,
+      limit: String(batch),
+    };
+    if (endTime !== undefined) params.endTime = String(endTime);
+
+    const rows = await getJson("/fapi/v1/klines", params);
+    if (!rows.length) break;
+
+    const parsed = parseKlines(rows);
+    all = [...parsed, ...all];
+    endTime = rows[0][0] - 1;
+    remaining -= parsed.length;
+    if (parsed.length < batch) break;
+  }
+
+  return all.slice(-limit);
+}
+
 async function fetchKlinesGap(symbol, startTime, endTime) {
   if (startTime >= endTime) return [];
   let cursor = startTime;
@@ -689,20 +740,55 @@ function markFastCorridorEnded(sym, fcActive, fcHistory, fc) {
   fcActive.delete(sym);
 }
 
-function printHits(
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
-  force = false
-) {
+function markKindSignalEnded(sym, activeMap, historyMap, kind, metrics) {
+  const live = activeMap.get(sym);
+  const rec = historyMap.get(sym);
+  if (!live && !rec) return;
+  const triggeredAt = rec?.triggeredAt ?? live?.triggeredAt ?? Date.now();
+  historyMap.set(sym, {
+    ...(rec ?? live ?? {}),
+    ...(metrics ?? {}),
+    signalKind: kind,
+    triggeredAt,
+    ended: true,
+    endedAt: Date.now(),
+    signalStatus: "ended",
+    quoteVol24h: live?.quoteVol24h ?? rec?.quoteVol24h,
+  });
+  activeMap.delete(sym);
+}
+
+let regimeBtcBars = [];
+let currentRegime = { enabled: false, pass: true, label: "off" };
+
+function spikeMetricsFromBars(bars) {
+  let m = computeVolSpikeMetrics(bars, cfg);
+  if (m && cfg.regimeFilterEnabled) {
+    m = applyRegimeToSpike(m, currentRegime);
+  }
+  return m;
+}
+
+function printHits(maps, force = false) {
+  const {
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    fcActive,
+    fcHistory,
+    sfpActive = new Map(),
+    sfpHistory = new Map(),
+    pbActive = new Map(),
+    pbHistory = new Map(),
+  } = maps;
   const now = Date.now();
   if (!force && now - lastHitsPrintAt < cfg.printHitsMinIntervalMs) return;
   lastHitsPrintAt = now;
 
   pruneSignalHistory(signalHistory);
   pruneSignalHistory(fcHistory);
+  pruneSignalHistory(sfpHistory);
+  pruneSignalHistory(pbHistory);
 
   const rows = [
     ...[...signalHistory.entries()].map(([symbol, m]) => ({
@@ -717,6 +803,20 @@ function printHits(
       status: m.ended ? "ENDED" : "FAST CORRIDOR",
       triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
       signalKind: "fast-corridor",
+      ...m,
+    })),
+    ...[...sfpHistory.entries()].map(([symbol, m]) => ({
+      symbol,
+      status: m.ended ? "ENDED" : "SFP",
+      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
+      signalKind: "sfp",
+      ...m,
+    })),
+    ...[...pbHistory.entries()].map(([symbol, m]) => ({
+      symbol,
+      status: m.ended ? "ENDED" : "PULLBACK",
+      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
+      signalKind: "pullback",
       ...m,
     })),
     ...[...nearBreakHits.entries()].map(([symbol, m]) => ({
@@ -738,13 +838,17 @@ function printHits(
     .slice(0, cfg.maxHitsToPrint);
 
   if (dashboard) {
-    dashboard.setMeta({ prefetching });
+    dashboard.setMeta({ prefetching, regime: currentRegime });
     dashboard.publish(
       activeHits,
       nearBreakHits,
       signalHistory,
       fcActive,
       fcHistory,
+      sfpActive,
+      sfpHistory,
+      pbActive,
+      pbHistory,
       force
     );
   }
@@ -892,6 +996,81 @@ function applyFastCorridorSignal(
   lastFc.set(sym, pass);
 }
 
+function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
+  const pass = Boolean(analysis?.passes);
+  const metrics = analysis?.metrics;
+  const prev = lastSfp.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass && metrics) {
+    const existing = sfpHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        sfpActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...metrics,
+      signalKind: "sfp",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    sfpActive.set(sym, row);
+    sfpHistory.set(sym, row);
+    if (!prev) {
+      const detail = `sweep ${metrics.sweepLow?.toFixed(6)} · reclaim ${metrics.close} · ${metrics.barsSinceSweep} bars`;
+      dashboard?.pushEvent("NEW_SFP", sym, detail);
+      console.log(`NEW SFP\t${sym}\t${detail}`);
+      paperBot?.onSfpSignal(sym, metrics);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", metrics);
+    dashboard?.pushEvent("END_SFP", sym);
+    console.log(`SFP END\t${sym}`);
+  }
+
+  lastSfp.set(sym, pass);
+}
+
+function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
+  const pass = Boolean(pb?.passes);
+  const prev = lastPb.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass) {
+    const existing = pbHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        pbActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...pb,
+      signalKind: "pullback",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    pbActive.set(sym, row);
+    pbHistory.set(sym, row);
+    if (!prev) {
+      const detail = `MA${pb.maBars} ${pb.ma} · +${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
+      dashboard?.pushEvent("NEW_PB", sym, detail);
+      console.log(`NEW PULLBACK\t${sym}\t${detail}`);
+      paperBot?.onPullbackSignal(sym, pb);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, pbActive, pbHistory, "pullback", pb);
+    dashboard?.pushEvent("END_PB", sym);
+    console.log(`PULLBACK END\t${sym}`);
+  }
+
+  lastPb.set(sym, pass);
+}
+
 function evaluateSymbolSignals(
   sym,
   historyBuffers,
@@ -901,13 +1080,21 @@ function evaluateSymbolSignals(
   signalHistory,
   fcActive,
   fcHistory,
+  sfpActive,
+  sfpHistory,
+  pbActive,
+  pbHistory,
   lastPass,
   lastNearBreak,
-  lastFc
+  lastFc,
+  lastSfp,
+  lastPb
 ) {
   const bars = evalBars(sym, historyBuffers);
-  const m = bars ? computeVolSpikeMetrics(bars, cfg) : null;
+  const m = bars ? spikeMetricsFromBars(bars) : null;
   const fc = bars ? fastCorridorMetrics(bars, cfg, fastCorridorOpts()) : null;
+  const sfp = bars ? analyzeSweepReclaim(bars, cfg) : null;
+  const pb = bars ? fastMoverPullbackMetrics(bars, cfg, fastCorridorOpts()) : null;
 
   applySymbolSignal(
     sym,
@@ -920,23 +1107,30 @@ function evaluateSymbolSignals(
     lastNearBreak
   );
   applyFastCorridorSignal(sym, fc, qv, fcActive, fcHistory, lastFc);
+  applySfpSignal(sym, sfp, qv, sfpActive, sfpHistory, lastSfp);
+  applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
 
-  return { m, fc };
+  return { m, fc, sfp, pb };
 }
 
-function reevaluateAllSymbols(
-  symbols,
-  historyBuffers,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
-  lastPass,
-  lastNearBreak,
-  lastFc,
-  quoteVolMap
-) {
+function reevaluateAllSymbols(symbols, historyBuffers, maps, quoteVolMap) {
+  const {
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    fcActive,
+    fcHistory,
+    sfpActive,
+    sfpHistory,
+    pbActive,
+    pbHistory,
+    lastPass,
+    lastNearBreak,
+    lastFc,
+    lastSfp,
+    lastPb,
+  } = maps;
+
   for (const sym of symbols) {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
@@ -946,10 +1140,18 @@ function reevaluateAllSymbols(
       if (lastFc.get(sym)) {
         markFastCorridorEnded(sym, fcActive, fcHistory, null);
       }
+      if (lastSfp.get(sym)) {
+        markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
+      }
+      if (lastPb.get(sym)) {
+        markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
+      }
       if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
       lastNearBreak.set(sym, false);
       lastFc.set(sym, false);
+      lastSfp.set(sym, false);
+      lastPb.set(sym, false);
       continue;
     }
 
@@ -962,28 +1164,38 @@ function reevaluateAllSymbols(
       signalHistory,
       fcActive,
       fcHistory,
+      sfpActive,
+      sfpHistory,
+      pbActive,
+      pbHistory,
       lastPass,
       lastNearBreak,
-      lastFc
+      lastFc,
+      lastSfp,
+      lastPb
     );
   }
   refreshAllPaperBotPrices(historyBuffers);
-  printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
+  printHits(maps, true);
 }
 
-function createWsShards(
-  symbols,
-  historyBuffers,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
-  lastPass,
-  lastNearBreak,
-  lastFc,
-  quoteVolMap
-) {
+function createWsShards(symbols, historyBuffers, maps, quoteVolMap) {
+  const {
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    fcActive,
+    fcHistory,
+    sfpActive,
+    sfpHistory,
+    pbActive,
+    pbHistory,
+    lastPass,
+    lastNearBreak,
+    lastFc,
+    lastSfp,
+    lastPb,
+  } = maps;
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
     symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
@@ -1003,18 +1215,28 @@ function createWsShards(
       if (lastFc.get(sym)) {
         markFastCorridorEnded(sym, fcActive, fcHistory, null);
       }
+      if (lastSfp.get(sym)) {
+        markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
+      }
+      if (lastPb.get(sym)) {
+        markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
+      }
       if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
       lastPass.set(sym, false);
       lastNearBreak.set(sym, false);
       lastFc.set(sym, false);
+      lastSfp.set(sym, false);
+      lastPb.set(sym, false);
       return;
     }
 
     const prevPass = lastPass.get(sym) ?? false;
     const prevNear = lastNearBreak.get(sym) ?? false;
     const prevFc = lastFc.get(sym) ?? false;
+    const prevSfp = lastSfp.get(sym) ?? false;
+    const prevPb = lastPb.get(sym) ?? false;
 
-    const { m, fc } = evaluateSymbolSignals(
+    const { m, fc, sfp, pb } = evaluateSymbolSignals(
       sym,
       historyBuffers,
       qv,
@@ -1023,16 +1245,30 @@ function createWsShards(
       signalHistory,
       fcActive,
       fcHistory,
+      sfpActive,
+      sfpHistory,
+      pbActive,
+      pbHistory,
       lastPass,
       lastNearBreak,
-      lastFc
+      lastFc,
+      lastSfp,
+      lastPb
     );
 
     const pass = Boolean(m?.passes);
     const near = Boolean(m?.nearBreak);
     const fcPass = Boolean(fc?.fastCorridor);
-    if (pass !== prevPass || near !== prevNear || fcPass !== prevFc) {
-      printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
+    const sfpPass = Boolean(sfp?.passes);
+    const pbPass = Boolean(pb?.passes);
+    if (
+      pass !== prevPass ||
+      near !== prevNear ||
+      fcPass !== prevFc ||
+      sfpPass !== prevSfp ||
+      pbPass !== prevPb
+    ) {
+      printHits(maps, true);
     }
     refreshAllPaperBotPrices(historyBuffers);
   };
@@ -1150,19 +1386,23 @@ function createWsShards(
   return sockets;
 }
 
-function startStaleSymbolRefresh(
-  symbols,
-  historyBuffers,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
-  lastPass,
-  lastNearBreak,
-  lastFc,
-  quoteVolMap
-) {
+function startStaleSymbolRefresh(symbols, historyBuffers, maps, quoteVolMap) {
+  const {
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    fcActive,
+    fcHistory,
+    sfpActive,
+    sfpHistory,
+    pbActive,
+    pbHistory,
+    lastPass,
+    lastNearBreak,
+    lastFc,
+    lastSfp,
+    lastPb,
+  } = maps;
   let cursor = 0;
   let running = false;
 
@@ -1211,9 +1451,15 @@ function startStaleSymbolRefresh(
               signalHistory,
               fcActive,
               fcHistory,
+              sfpActive,
+              sfpHistory,
+              pbActive,
+              pbHistory,
               lastPass,
               lastNearBreak,
-              lastFc
+              lastFc,
+              lastSfp,
+              lastPb
             );
           }
         } catch (e) {
@@ -1233,17 +1479,11 @@ function startStaleSymbolRefresh(
 async function prefetchAllSymbols(
   symbols,
   historyBuffers,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
-  lastPass,
-  lastNearBreak,
-  lastFc,
+  maps,
   quoteVolMap,
   reevaluateAllFn
 ) {
+  const { activeHits, nearBreakHits, signalHistory, fcActive, fcHistory } = maps;
   prefetching = true;
   let done = 0;
   let fromCache = 0;
@@ -1345,37 +1585,48 @@ async function prefetchAllSymbols(
       elapsedSec: Math.round((Date.now() - t0) / 1000),
     },
   });
-  printHits(activeHits, nearBreakHits, signalHistory, fcActive, fcHistory, true);
+  printHits(maps, true);
   console.error(
     `Prefetch done: ${fromCache} cache-only, ${refreshed} refreshed, ${fetched} cold REST, ${failed} failed`
   );
 }
 
-function evaluateAfterPrefetch(
-  sym,
-  historyBuffers,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
-  lastPass,
-  lastNearBreak,
-  lastFc,
-  quoteVolMap
-) {
+function evaluateAfterPrefetch(sym, historyBuffers, maps, quoteVolMap) {
+  const {
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    fcActive,
+    fcHistory,
+    sfpActive,
+    sfpHistory,
+    pbActive,
+    pbHistory,
+    lastPass,
+    lastNearBreak,
+    lastFc,
+    lastSfp,
+    lastPb,
+  } = maps;
+
   const bars = evalBars(sym, historyBuffers);
   if (!bars) return;
 
-  const m = computeVolSpikeMetrics(bars, cfg);
+  const m = spikeMetricsFromBars(bars);
   const fc = fastCorridorMetrics(bars, cfg, fastCorridorOpts());
+  const sfp = analyzeSweepReclaim(bars, cfg);
+  const pb = fastMoverPullbackMetrics(bars, cfg, fastCorridorOpts());
   const prevPass = lastPass.get(sym) ?? false;
   const prevNear = lastNearBreak.get(sym) ?? false;
   const prevFc = lastFc.get(sym) ?? false;
+  const prevSfp = lastSfp.get(sym) ?? false;
+  const prevPb = lastPb.get(sym) ?? false;
   const spikeChanged =
     Boolean(m?.passes) !== prevPass || Boolean(m?.nearBreak) !== prevNear;
   const fcChanged = Boolean(fc?.fastCorridor) !== prevFc;
-  if (!spikeChanged && !fcChanged) return;
+  const sfpChanged = Boolean(sfp?.passes) !== prevSfp;
+  const pbChanged = Boolean(pb?.passes) !== prevPb;
+  if (!spikeChanged && !fcChanged && !sfpChanged && !pbChanged) return;
 
   evaluateSymbolSignals(
     sym,
@@ -1386,9 +1637,15 @@ function evaluateAfterPrefetch(
     signalHistory,
     fcActive,
     fcHistory,
+    sfpActive,
+    sfpHistory,
+    pbActive,
+    pbHistory,
     lastPass,
     lastNearBreak,
-    lastFc
+    lastFc,
+    lastSfp,
+    lastPb
   );
 }
 
@@ -1449,12 +1706,63 @@ async function main() {
   const signalHistory = new Map();
   const fcActive = new Map();
   const fcHistory = new Map();
+  const sfpActive = new Map();
+  const sfpHistory = new Map();
+  const pbActive = new Map();
+  const pbHistory = new Map();
   const lastPass = new Map();
   const lastNearBreak = new Map();
   const lastFc = new Map();
+  const lastSfp = new Map();
+  const lastPb = new Map();
+
+  const signalMaps = () => ({
+    activeHits,
+    nearBreakHits,
+    signalHistory,
+    fcActive,
+    fcHistory,
+    sfpActive,
+    sfpHistory,
+    pbActive,
+    pbHistory,
+    lastPass,
+    lastNearBreak,
+    lastFc,
+    lastSfp,
+    lastPb,
+  });
 
   let symbols = [];
   let reevaluateAll = () => {};
+
+  let lastRegimePass = currentRegime.pass;
+
+  async function refreshRegimeBars() {
+    const limit = (cfg.regimeMaBars ?? 20) + 15;
+    const prevPass = lastRegimePass;
+    try {
+      regimeBtcBars = await fetchKlinesInterval(
+        cfg.regimeSymbol ?? "BTCUSDT",
+        cfg.regimeInterval ?? "1h",
+        limit
+      );
+      currentRegime = evaluateRegime(regimeBtcBars, cfg);
+    } catch (e) {
+      currentRegime = {
+        enabled: Boolean(cfg.regimeFilterEnabled),
+        pass: false,
+        label: "error",
+        detail: e.message || String(e),
+        bullish: false,
+      };
+    }
+    lastRegimePass = currentRegime.pass;
+    dashboard?.setMeta({ regime: currentRegime });
+    if (cfg.regimeFilterEnabled && prevPass !== currentRegime.pass && symbols.length) {
+      reevaluateAll();
+    }
+  }
 
   function barsForEvaluation(sym, searchParams) {
     const atRaw = searchParams?.get("at");
@@ -1505,7 +1813,8 @@ async function main() {
 
         const analysis = analyzeVolSpike(
           klineCache.evalWindow(evalBars, cfg.limit),
-          cfg
+          cfg,
+          { regime: currentRegime }
         );
         const m = analysis.metrics;
         const checks = serializeChecks(analysis.checks);
@@ -1940,6 +2249,139 @@ async function main() {
         movers,
       };
     },
+    getSweepReclaim(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      let items = symbols
+        .map((sym) => {
+          let evalBars;
+          let signalBarAt = null;
+          try {
+            const ev = barsForEvaluation(sym, searchParams);
+            evalBars = ev.bars;
+            signalBarAt = ev.signalBarAt;
+          } catch {
+            return null;
+          }
+          const analysis = analyzeSweepReclaim(
+            klineCache.evalWindow(evalBars, cfg.limit),
+            cfg
+          );
+          if (!analysis.passes && analysis.metrics?.sweepLow == null) return null;
+          const m = analysis.metrics;
+          return {
+            symbol: sym,
+            passes: analysis.passes,
+            close: m?.close ?? null,
+            corridorLow: m?.corridorLow ?? null,
+            corridorHigh: m?.corridorHigh ?? null,
+            sweepLow: m?.sweepLow ?? null,
+            barsSinceSweep: m?.barsSinceSweep ?? null,
+            checks: serializeChecks(analysis.checks),
+            signalBarAt:
+              signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
+            live: Boolean(sfpActive.get(sym)),
+          };
+        })
+        .filter(Boolean);
+      if (q) items = items.filter((p) => p.symbol.includes(q));
+      items.sort((a, b) => {
+        if (a.passes !== b.passes) return a.passes ? -1 : 1;
+        return (b.barsSinceSweep ?? 0) - (a.barsSinceSweep ?? 0);
+      });
+      return {
+        updatedAt: formatIsoUtcPlus3(Date.now()),
+        ...pickLiveConfig(cfg),
+        activeCount: sfpActive.size,
+        pairCount: items.length,
+        items,
+      };
+    },
+    getPullback(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      const fmOpts = fastCorridorOpts();
+      let items = symbols
+        .map((sym) => {
+          let evalBars;
+          let signalBarAt = null;
+          try {
+            const ev = barsForEvaluation(sym, searchParams);
+            evalBars = ev.bars;
+            signalBarAt = ev.signalBarAt;
+          } catch {
+            return null;
+          }
+          const analysis = analyzePullback(
+            klineCache.evalWindow(evalBars, cfg.limit),
+            cfg,
+            fmOpts
+          );
+          if (!analysis.passes && !analysis.metrics?.touchedMa) return null;
+          const m = analysis.metrics;
+          return {
+            symbol: sym,
+            passes: analysis.passes,
+            close: m?.close ?? null,
+            ma: m?.ma ?? null,
+            distFromMaPct: m?.distFromMaPct ?? null,
+            avgMovePct: m?.avgMovePct ?? null,
+            corridorHigh: m?.corridorHigh ?? null,
+            corridorLow: m?.corridorLow ?? null,
+            checks: serializeChecks(analysis.checks),
+            signalBarAt:
+              signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
+            live: Boolean(pbActive.get(sym)),
+          };
+        })
+        .filter(Boolean);
+      if (q) items = items.filter((p) => p.symbol.includes(q));
+      items.sort((a, b) => {
+        if (a.passes !== b.passes) return a.passes ? -1 : 1;
+        return (b.avgMovePct ?? 0) - (a.avgMovePct ?? 0);
+      });
+      return {
+        updatedAt: formatIsoUtcPlus3(Date.now()),
+        ...pickLiveConfig(cfg),
+        activeCount: pbActive.size,
+        pairCount: items.length,
+        items,
+      };
+    },
+    getStrategies() {
+      return {
+        updatedAt: formatIsoUtcPlus3(Date.now()),
+        regime: currentRegime,
+        counts: {
+          spikeActive: activeHits.size,
+          fcActive: fcActive.size,
+          sfpActive: sfpActive.size,
+          pullbackActive: pbActive.size,
+          nearBreak: nearBreakHits.size,
+        },
+        config: {
+          regimeFilterEnabled: Boolean(cfg.regimeFilterEnabled),
+          regimeMaBars: cfg.regimeMaBars,
+          sfpLookbackBars: cfg.sfpLookbackBars,
+          sfpReclaimBars: cfg.sfpReclaimBars,
+          sfpMinSweepPct: cfg.sfpMinSweepPct,
+          pullbackMaBars: cfg.pullbackMaBars,
+          pullbackTouchLookback: cfg.pullbackTouchLookback,
+          pullbackMaxDistancePct: cfg.pullbackMaxDistancePct,
+          pullbackMaxAboveMaPct: cfg.pullbackMaxAboveMaPct,
+        },
+        live: {
+          sfp: [...sfpActive.entries()].map(([symbol, row]) => ({
+            symbol,
+            ...row,
+            triggeredAtIso: formatIsoUtcPlus3(row.triggeredAt),
+          })),
+          pullback: [...pbActive.entries()].map(([symbol, row]) => ({
+            symbol,
+            ...row,
+            triggeredAtIso: formatIsoUtcPlus3(row.triggeredAt),
+          })),
+        },
+      };
+    },
     getChartData(symbol, searchParams) {
       const sym = String(symbol).toUpperCase();
       if (!symbols.includes(sym)) {
@@ -2172,7 +2614,11 @@ async function main() {
           nearBreakHits,
           signalHistory,
           fcActive,
-          fcHistory
+          fcHistory,
+          sfpActive,
+          sfpHistory,
+          pbActive,
+          pbHistory
         ),
       {
         port,
@@ -2180,6 +2626,9 @@ async function main() {
         getPairs: (searchParams) => scannerApi.getPairs(searchParams),
         getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
         getFastCorridor: (searchParams) => scannerApi.getFastCorridor(searchParams),
+        getSweepReclaim: (searchParams) => scannerApi.getSweepReclaim(searchParams),
+        getPullback: (searchParams) => scannerApi.getPullback(searchParams),
+        getStrategies: () => scannerApi.getStrategies(),
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
         getChartData: (symbol, searchParams) =>
           scannerApi.getChartData(symbol, searchParams),
@@ -2277,6 +2726,12 @@ async function main() {
             days,
             fetchKlinesForSymbol: (sym, limit) =>
               fetchKlinesForBacktest(sym, limit, historyBuffers),
+            fetchRegimeBars: () =>
+              fetchKlinesInterval(
+                cfg.regimeSymbol ?? "BTCUSDT",
+                cfg.regimeInterval ?? "1h",
+                (cfg.regimeMaBars ?? 20) + 15
+              ),
             onProgress: (p) => {
               touchBacktestProgress(p);
             },
@@ -2344,13 +2799,18 @@ async function main() {
               .map(([k, v]) => `${k}=${v}`)
               .join(", ")} | bars needed: ${cfg.limit}`
           );
+          await refreshRegimeBars();
           reevaluateAll();
           return dashboard.buildState(
             activeHits,
             nearBreakHits,
             signalHistory,
             fcActive,
-            fcHistory
+            fcHistory,
+            sfpActive,
+            sfpHistory,
+            pbActive,
+            pbHistory
           );
         },
       }
@@ -2361,6 +2821,10 @@ async function main() {
       signalHistory,
       fcActive,
       fcHistory,
+      sfpActive,
+      sfpHistory,
+      pbActive,
+      pbHistory,
       true
     );
   }
@@ -2375,20 +2839,11 @@ async function main() {
   }
   dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
 
+  await refreshRegimeBars();
+  setInterval(refreshRegimeBars, 60_000).unref?.();
+
   reevaluateAll = () =>
-    reevaluateAllSymbols(
-      symbols,
-      historyBuffers,
-      activeHits,
-      nearBreakHits,
-      signalHistory,
-      fcActive,
-      fcHistory,
-      lastPass,
-      lastNearBreak,
-      lastFc,
-      quoteVolMap
-    );
+    reevaluateAllSymbols(symbols, historyBuffers, signalMaps(), quoteVolMap);
 
   console.error(
     `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
@@ -2402,27 +2857,13 @@ async function main() {
   const sockets = createWsShards(
     symbols,
     historyBuffers,
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
+    signalMaps(),
     quoteVolMap
   );
   const stopStaleRefresh = startStaleSymbolRefresh(
     symbols,
     historyBuffers,
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
+    signalMaps(),
     quoteVolMap
   );
 
@@ -2430,14 +2871,7 @@ async function main() {
     await prefetchAllSymbols(
       symbols,
       historyBuffers,
-      activeHits,
-      nearBreakHits,
-      signalHistory,
-      fcActive,
-      fcHistory,
-      lastPass,
-      lastNearBreak,
-      lastFc,
+      signalMaps(),
       quoteVolMap,
       reevaluateAll
     );

@@ -269,6 +269,30 @@
       background: rgba(56, 189, 248, 0.2);
       color: #38bdf8;
     }
+    .status-tag.sfp {
+      background: rgba(167, 139, 250, 0.22);
+      color: #c4b5fd;
+    }
+    .status-tag.pb {
+      background: rgba(244, 114, 182, 0.2);
+      color: #f472b6;
+    }
+    .strategy-monitor {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      margin: 12px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.82rem;
+    }
+    .strategy-monitor .stat-label { color: var(--muted); font-size: 0.72rem; }
+    .strategy-monitor .stat-value { font-weight: 600; margin-top: 2px; }
+    .strategy-monitor .stat-value.ok { color: var(--green); }
+    .strategy-monitor .stat-value.bad { color: var(--red); }
+    .strategy-monitor .stat-value.muted { color: var(--muted); }
     .paper-summary {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -888,6 +912,7 @@
     <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
     <button type="button" class="tab" data-tab="topmovers" role="tab">Top movers</button>
     <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
+    <button type="button" class="tab" data-tab="strategies" role="tab">Strategies</button>
     <button type="button" class="tab" data-tab="paperbot" role="tab">Paper bot</button>
     <button type="button" class="tab" data-tab="backtest" role="tab">Train bot</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
@@ -961,6 +986,8 @@
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         <span class="status-tag signal">SIGNAL</span> full break ·
         <span class="status-tag fc">FAST CORRIDOR</span> fast mover in target corridor with half-waves ·
+        <span class="status-tag sfp">SFP</span> sweep below corridor low + reclaim ·
+        <span class="status-tag pb">PULLBACK</span> fast mover touch MA bounce ·
         <span class="status-tag near">NEAR</span> setup except close break (within gap %) ·
         signals stay <strong>24h</strong> after trigger (newest first)
       </p>
@@ -1228,6 +1255,108 @@
     </section>
   </div>
 
+  <div id="panel-strategies" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>Strategy monitor <span id="strategiesLiveCount"></span></h2>
+      <p class="sub" style="margin: 12px 0 8px 12px; font-size: 0.8rem">
+        Tune regime gate (spike entries), SFP sweep-reclaim, and fast-mover pullback. Settings save to live scanner config.
+      </p>
+      <div class="strategy-monitor" id="strategyMonitor">
+        <div><div class="stat-label">BTC regime</div><div class="stat-value muted" id="stratRegime">—</div></div>
+        <div><div class="stat-label">Active SFP</div><div class="stat-value" id="stratSfpActive">0</div></div>
+        <div><div class="stat-label">Active pullback</div><div class="stat-value" id="stratPbActive">0</div></div>
+        <div><div class="stat-label">Spike (live)</div><div class="stat-value" id="stratSpikeActive">0</div></div>
+      </div>
+      <form class="settings-form movers-settings" id="strategiesConfigForm">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="regimeFilterEnabled" />
+            Regime filter on spike entries
+          </label>
+          <div class="hint">Require BTC 1h close ≥ MA before spike passes / opens</div>
+        </div>
+        <div class="field">
+          <label for="regimeMaBars">BTC MA bars (1h)</label>
+          <input type="number" id="regimeMaBars" step="1" min="5" max="200" value="20" required />
+        </div>
+        <div class="field">
+          <label for="sfpLookbackBars">SFP lookback bars</label>
+          <input type="number" id="sfpLookbackBars" step="1" min="5" max="120" value="30" required />
+        </div>
+        <div class="field">
+          <label for="sfpReclaimBars">SFP reclaim within bars</label>
+          <input type="number" id="sfpReclaimBars" step="1" min="1" max="30" value="5" required />
+        </div>
+        <div class="field">
+          <label for="sfpMinSweepPct">SFP min sweep % below low</label>
+          <input type="number" id="sfpMinSweepPct" step="0.01" min="0" max="5" value="0.02" required />
+        </div>
+        <div class="field">
+          <label for="pullbackMaBars">Pullback MA bars (1m)</label>
+          <input type="number" id="pullbackMaBars" step="1" min="3" max="60" value="7" required />
+        </div>
+        <div class="field">
+          <label for="pullbackTouchLookback">Pullback touch lookback</label>
+          <input type="number" id="pullbackTouchLookback" step="1" min="3" max="60" value="12" required />
+        </div>
+        <div class="field">
+          <label for="pullbackMaxDistancePct">Touch within % of MA</label>
+          <input type="number" id="pullbackMaxDistancePct" step="0.05" min="0.05" max="5" value="0.35" required />
+        </div>
+        <div class="field">
+          <label for="pullbackMaxAboveMaPct">Max % above MA at entry</label>
+          <input type="number" id="pullbackMaxAboveMaPct" step="0.1" min="0.1" max="20" value="1.5" required />
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm" id="strategiesApply">Apply</button>
+          <button type="button" class="btn secondary sm" id="strategiesRefresh">Refresh tables</button>
+          <span class="config-msg" id="strategiesMsg"></span>
+        </div>
+      </form>
+    </section>
+    <div class="grid">
+      <section>
+        <h2>SFP / sweep-reclaim <span id="sfpTableCount"></span></h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sym-search-header">
+                  <div class="th-search-wrap">Symbol<input type="search" id="sfpSearch" class="th-search" placeholder="Filter…" /></div>
+                </th>
+                <th>Close</th>
+                <th>Sweep low</th>
+                <th>Since sweep</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="sfpBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h2>Fast-mover pullback <span id="pullbackTableCount"></span></h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sym-search-header">
+                  <div class="th-search-wrap">Symbol<input type="search" id="pullbackSearch" class="th-search" placeholder="Filter…" /></div>
+                </th>
+                <th>Close</th>
+                <th>MA</th>
+                <th>+MA %</th>
+                <th>Avg move</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="pullbackBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
   <div id="panel-paperbot" class="tab-panel" role="tabpanel">
     <section>
       <h2>
@@ -1271,6 +1400,18 @@
           <label>
             <input type="checkbox" id="paperBotTradeFc" name="tradeFastCorridorSignals" />
             Trade fast corridor signals
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeSfp" name="tradeSfpSignals" />
+            Trade SFP / sweep-reclaim
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
+            Trade fast-mover pullback
           </label>
         </div>
         <div class="field" style="min-width: 220px;">
@@ -1615,9 +1756,11 @@
     let formDirty = false;
     let lastServerConfig = null;
     let activeTab = "scanner";
+    let lastScannerState = null;
     let pairsPollTimer = null;
     let fastMoversLoading = false;
     let fastCorridorLoading = false;
+    let strategiesPollTimer = null;
     let lastFastCorridor = [];
     let fastCorridorSort = { key: "halfWaves", dir: "desc" };
     let lastFastMovers = [];
@@ -1890,6 +2033,14 @@
       if (name === "fastcorridor") {
         loadFastCorridorConfigForm();
         loadFastCorridor();
+      }
+      if (name === "strategies") {
+        loadStrategiesTab();
+        if (!strategiesPollTimer) {
+          strategiesPollTimer = setInterval(() => {
+            if (activeTab === "strategies") loadStrategiesTab();
+          }, 8000);
+        }
       }
       if (name === "paperbot") {
         loadPaperBot(true);
@@ -2561,6 +2712,214 @@
       });
     });
 
+    const STRATEGY_CONFIG_KEYS = [
+      "regimeFilterEnabled",
+      "regimeMaBars",
+      "sfpLookbackBars",
+      "sfpReclaimBars",
+      "sfpMinSweepPct",
+      "pullbackMaBars",
+      "pullbackTouchLookback",
+      "pullbackMaxDistancePct",
+      "pullbackMaxAboveMaPct",
+    ];
+
+    function strategyPatchFromForm() {
+      return {
+        regimeFilterEnabled: document.getElementById("regimeFilterEnabled").checked
+          ? 1
+          : 0,
+        regimeMaBars: Number(document.getElementById("regimeMaBars").value),
+        sfpLookbackBars: Number(document.getElementById("sfpLookbackBars").value),
+        sfpReclaimBars: Number(document.getElementById("sfpReclaimBars").value),
+        sfpMinSweepPct: Number(document.getElementById("sfpMinSweepPct").value),
+        pullbackMaBars: Number(document.getElementById("pullbackMaBars").value),
+        pullbackTouchLookback: Number(
+          document.getElementById("pullbackTouchLookback").value
+        ),
+        pullbackMaxDistancePct: Number(
+          document.getElementById("pullbackMaxDistancePct").value
+        ),
+        pullbackMaxAboveMaPct: Number(
+          document.getElementById("pullbackMaxAboveMaPct").value
+        ),
+      };
+    }
+
+    function fillStrategiesForm(state) {
+      if (!state) return;
+      document.getElementById("regimeFilterEnabled").checked = Boolean(
+        state.regimeFilterEnabled
+      );
+      document.getElementById("regimeMaBars").value = state.regimeMaBars ?? 20;
+      document.getElementById("sfpLookbackBars").value = state.sfpLookbackBars ?? 30;
+      document.getElementById("sfpReclaimBars").value = state.sfpReclaimBars ?? 5;
+      document.getElementById("sfpMinSweepPct").value = state.sfpMinSweepPct ?? 0.02;
+      document.getElementById("pullbackMaBars").value = state.pullbackMaBars ?? 7;
+      document.getElementById("pullbackTouchLookback").value =
+        state.pullbackTouchLookback ?? 12;
+      document.getElementById("pullbackMaxDistancePct").value =
+        state.pullbackMaxDistancePct ?? 0.35;
+      document.getElementById("pullbackMaxAboveMaPct").value =
+        state.pullbackMaxAboveMaPct ?? 1.5;
+    }
+
+    function setStrategiesMsg(text, ok) {
+      const el = document.getElementById("strategiesMsg");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "config-msg" + (ok ? " ok" : text ? " err" : "");
+    }
+
+    function renderStrategyMonitor(data) {
+      const regime = data?.regime ?? {};
+      const counts = data?.counts ?? {};
+      const regimeEl = document.getElementById("stratRegime");
+      if (regimeEl) {
+        if (!regime.enabled) {
+          regimeEl.textContent = "off (spikes ungated)";
+          regimeEl.className = "stat-value muted";
+        } else {
+          regimeEl.textContent = regime.detail || regime.label || "—";
+          regimeEl.className =
+            "stat-value " + (regime.pass ? "ok" : "bad");
+        }
+      }
+      const setCount = (id, n) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(n ?? 0);
+      };
+      setCount("stratSfpActive", counts.sfpActive);
+      setCount("stratPbActive", counts.pullbackActive);
+      setCount("stratSpikeActive", counts.spikeActive);
+      const liveN = (counts.sfpActive ?? 0) + (counts.pullbackActive ?? 0);
+      const countEl = document.getElementById("strategiesLiveCount");
+      if (countEl) countEl.textContent = liveN ? `(${liveN} live)` : "";
+    }
+
+    function renderSfpTable(data) {
+      const items = data?.items ?? [];
+      document.getElementById("sfpTableCount").textContent = items.length
+        ? `(${items.length})`
+        : "";
+      const tbody = document.getElementById("sfpBody");
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No SFP setups</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items
+        .slice(0, 80)
+        .map((r) => {
+          const tag = r.passes
+            ? '<span class="status-tag sfp">SFP</span>'
+            : '<span class="near">setup</span>';
+          return `<tr>
+            <td class="sym">${symLink(r.symbol)}</td>
+            <td>${fmt(r.close, 6)}</td>
+            <td>${fmt(r.sweepLow, 6)}</td>
+            <td>${r.barsSinceSweep ?? "—"}</td>
+            <td>${tag}${r.live ? ' <span class="pass">live</span>' : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    function renderPullbackTable(data) {
+      const items = data?.items ?? [];
+      document.getElementById("pullbackTableCount").textContent = items.length
+        ? `(${items.length})`
+        : "";
+      const tbody = document.getElementById("pullbackBody");
+      if (!items.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="6" class="empty">No pullback candidates (need fast mover + MA touch)</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items
+        .slice(0, 80)
+        .map((r) => {
+          const tag = r.passes
+            ? '<span class="status-tag pb">PULLBACK</span>'
+            : '<span class="near">touch</span>';
+          return `<tr>
+            <td class="sym">${symLink(r.symbol)}</td>
+            <td>${fmt(r.close, 6)}</td>
+            <td>${fmt(r.ma, 6)}</td>
+            <td>${fmt(r.distFromMaPct, 3)}%</td>
+            <td>${fmt(r.avgMovePct, 3)}%</td>
+            <td>${tag}${r.live ? ' <span class="pass">live</span>' : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    async function loadStrategiesMonitor() {
+      try {
+        const res = await fetch("/api/strategies", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderStrategyMonitor(data);
+      } catch {
+        /* optional */
+      }
+    }
+
+    async function loadSfpTable() {
+      const q = document.getElementById("sfpSearch")?.value || "";
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      try {
+        const res = await fetch("/api/sweep-reclaim?" + params, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderSfpTable(data);
+      } catch (e) {
+        document.getElementById("sfpBody").innerHTML =
+          `<tr><td colspan="5" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
+    async function loadPullbackTable() {
+      const q = document.getElementById("pullbackSearch")?.value || "";
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      try {
+        const res = await fetch("/api/pullback?" + params, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPullbackTable(data);
+      } catch (e) {
+        document.getElementById("pullbackBody").innerHTML =
+          `<tr><td colspan="6" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
+    function loadStrategiesTab() {
+      if (lastScannerState) fillStrategiesForm(lastScannerState);
+      loadStrategiesMonitor();
+      loadSfpTable();
+      loadPullbackTable();
+    }
+
+    document.getElementById("strategiesConfigForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      applyLivePatch(strategyPatchFromForm())
+        .then(() => {
+          setStrategiesMsg("Applied to live scanner", true);
+          loadStrategiesTab();
+        })
+        .catch((err) => setStrategiesMsg(err.message, false));
+    });
+    document.getElementById("strategiesRefresh").addEventListener("click", loadStrategiesTab);
+    document.getElementById("sfpSearch").addEventListener("input", () => {
+      clearTimeout(window._sfpSearchTimer);
+      window._sfpSearchTimer = setTimeout(loadSfpTable, 300);
+    });
+    document.getElementById("pullbackSearch").addEventListener("input", () => {
+      clearTimeout(window._pbSearchTimer);
+      window._pbSearchTimer = setTimeout(loadPullbackTable, 300);
+    });
+
     document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
       e.preventDefault();
       saveMoversConfigForm();
@@ -2719,6 +3078,13 @@
       return escapeHtml(reason ?? "—");
     }
 
+    function botSignalKindTag(kind) {
+      if (kind === "fast-corridor") return '<span class="status-tag fc">FC</span>';
+      if (kind === "sfp") return '<span class="status-tag sfp">SFP</span>';
+      if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
+      return '<span class="status-tag signal">SPIKE</span>';
+    }
+
     function paperBotConfigFromForm() {
       return {
         enabled: document.getElementById("paperBotEnabled").checked,
@@ -2727,6 +3093,8 @@
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
         tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
+        tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
+        tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
         addOnDepositPct: Number(document.getElementById("paperBotAddOnDepositPct").value),
         addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
@@ -2754,6 +3122,12 @@
         cfg.tradeSpikeSignals !== false;
       document.getElementById("paperBotTradeFc").checked = Boolean(
         cfg.tradeFastCorridorSignals
+      );
+      document.getElementById("paperBotTradeSfp").checked = Boolean(
+        cfg.tradeSfpSignals
+      );
+      document.getElementById("paperBotTradePullback").checked = Boolean(
+        cfg.tradePullbackSignals
       );
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
       document.getElementById("paperBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
@@ -2876,10 +3250,7 @@
       openBody.innerHTML = sortedBotRows(rows, paperBotOpenSort)
         .map((p) => {
           const unrCls = pnlCls(p.unrealizedPnl);
-          const kind =
-            p.signalKind === "fast-corridor"
-              ? '<span class="status-tag fc">FC</span>'
-              : '<span class="status-tag signal">SPIKE</span>';
+          const kind = botSignalKindTag(p.signalKind);
           const entryLabel =
             p.addCount > 0
               ? `${fmt(p.initialEntryPrice, 6)} → ${fmt(p.entryPrice, 6)}`
@@ -2935,10 +3306,7 @@
         .map((t) => {
           const pnlCls2 = pnlCls(t.pnl);
           const reason = paperBotExitReasonHtml(t.exitReason);
-          const kind =
-            t.signalKind === "fast-corridor"
-              ? '<span class="status-tag fc">FC</span>'
-              : '<span class="status-tag signal">SPIKE</span>';
+          const kind = botSignalKindTag(t.signalKind);
           const previewBtn = t.snapshotId
             ? `<button type="button" class="btn secondary sm trade-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
             : "";
@@ -3522,20 +3890,46 @@
     }
 
     function render(state) {
+      lastScannerState = state;
       syncConfigForm(state);
+      fillStrategiesForm(state);
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
       if (activeTab === "fastcorridor") loadFastCorridor();
+      if (activeTab === "strategies") {
+        renderStrategyMonitor({
+          regime: state.regime,
+          counts: {
+            spikeActive: (state.hits ?? []).filter(
+              (h) => h.signalKind === "spike" && h.signalStatus === "active"
+            ).length,
+            sfpActive: state.sfpActiveCount ?? 0,
+            pullbackActive: state.pullbackActiveCount ?? 0,
+          },
+        });
+      }
 
       const sub = document.getElementById("subtitle");
+      const regimeHint = state.regime?.enabled
+        ? ` · regime ${state.regime.pass ? "ON" : "OFF"}`
+        : "";
       sub.textContent =
         `${state.interval} · ${state.signalCandles}+ candles above corridor · break ${state.corridorDays}d range high · ` +
-        `corridor ≤${state.maxCorridorWidthPct}%`;
+        `corridor ≤${state.maxCorridorWidthPct}%${regimeHint}`;
+
+      const regimeStatus = !state.regime?.enabled
+        ? '<span class="muted">off</span>'
+        : state.regime.pass
+          ? `<strong class="pass">${escapeHtml(state.regime.label || "bullish")}</strong>`
+          : `<strong class="bad">${escapeHtml(state.regime.label || "bearish")}</strong>`;
 
       document.getElementById("status").innerHTML = `
         <div><span>Updated</span> <strong>${fmtTimeShort(state.updatedAt) ?? "—"} ${TZ_LABEL}</strong></div>
         <div><span>Symbols</span> <strong>${state.symbolCount ?? "—"}</strong></div>
         <div><span>Signals</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
+        <div><span>SFP</span> <strong>${state.sfpActiveCount ?? 0}</strong></div>
+        <div><span>Pullback</span> <strong>${state.pullbackActiveCount ?? 0}</strong></div>
+        <div><span>Regime</span> ${regimeStatus}</div>
         <div><span>Near break</span> <strong class="near">${state.nearBreakCount ?? 0}</strong></div>
         <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${prefetchLabel(state)}</strong></div>
       `;
@@ -3563,17 +3957,24 @@
         tbody.innerHTML = rows
           .map((h) => {
             const isNear = h.signalStatus === "near";
-            const isFc = h.signalKind === "fast-corridor";
+            const kind = h.signalKind || "spike";
+            const isFc = kind === "fast-corridor";
+            const isSfp = kind === "sfp";
+            const isPb = kind === "pullback";
             const isEnded = h.signalStatus === "ended";
+            const kindTag = isFc
+              ? "FAST CORRIDOR"
+              : isSfp
+                ? "SFP"
+                : isPb
+                  ? "PULLBACK"
+                  : "SIGNAL";
+            const kindCls = isFc ? "fc" : isSfp ? "sfp" : isPb ? "pb" : "signal";
             const tag = isNear
               ? '<span class="status-tag near">NEAR</span>'
-              : isFc
-                ? isEnded
-                  ? '<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag fc">FAST CORRIDOR</span>'
-                  : '<span class="status-tag fc">FAST CORRIDOR</span>'
-                : isEnded
-                  ? '<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag signal">SIGNAL</span>'
-                  : '<span class="status-tag signal">SIGNAL</span>';
+              : isEnded
+                ? `<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag ${kindCls}">${kindTag}</span>`
+                : `<span class="status-tag ${kindCls}">${kindTag}</span>`;
             const rowCls = isNear
               ? "hit-near"
               : isFc
@@ -3583,17 +3984,25 @@
                 : isEnded
                   ? "hit-ended"
                   : "hit-active";
-            const rangeCls = isNear ? "near" : isFc ? "pass" : isEnded ? "" : "pass";
+            const rangeCls = isNear ? "near" : isFc || isSfp || isPb ? "pass" : isEnded ? "" : "pass";
             const rangeCell = isFc
               ? `${fmt(h.avgMovePct, 3)}%`
-              : fmt(h.rangeRatio, 2);
-            const volCell = isFc
+              : isPb
+                ? `${fmt(h.distFromMaPct, 3)}% MA`
+                : isSfp
+                  ? `${h.barsSinceSweep ?? "—"} bars`
+                  : fmt(h.rangeRatio, 2);
+            const volCell = isFc || isSfp || isPb
               ? "—"
               : `${h.aboveCorridorCount ?? 0}/${h.minAboveCorridorCandles ?? state.signalCandles ?? 3}`;
             const breakCell = isNear
               ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
               : isFc
                 ? `<span class="pass">${h.halfWaves ?? "—"} waves</span>`
+                : isSfp
+                  ? `<span class="pass">reclaim</span>`
+                : isPb
+                  ? `<span class="pass">bounce</span>`
                 : isEnded
                   ? `<span class="time">ended</span>`
                   : `<span class="pass">Y</span>`;
