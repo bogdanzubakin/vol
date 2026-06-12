@@ -1348,23 +1348,24 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Signal</th>
-              <th>Entry / avg</th>
-              <th>Move %</th>
-              <th>Adds</th>
-              <th>Last</th>
-              <th>Margin</th>
-              <th>Corridor high</th>
-              <th>Stop</th>
-              <th>Take profit</th>
-              <th>Unrealized</th>
-              <th>Opened</th>
+              <th class="sortable" data-paper-open-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="signalKind">Signal <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="entryPrice">Entry / avg <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="movePctFromEntry">Move % <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="addCount">Adds <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="lastPrice">Last <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="margin">Margin <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="corridorHigh">Corridor high <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="stopLoss">Stop <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="takeProfit">Take profit <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="unrealizedPnl">Unrealized <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="openedAt">Opened <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="durationSec">Duration <span class="sort-mark"></span></th>
               <th>Chart</th>
             </tr>
           </thead>
           <tbody id="paperBotOpenBody">
-            <tr><td colspan="13" class="empty">No open paper positions</td></tr>
+            <tr><td colspan="14" class="empty">No open paper positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -1374,19 +1375,20 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Signal</th>
-              <th>Entry</th>
-              <th>Exit</th>
-              <th>Reason</th>
-              <th>PnL</th>
-              <th>PnL %</th>
-              <th>Closed</th>
+              <th class="sortable" data-paper-closed-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="signalKind">Signal <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="entryPrice">Entry <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="exitPrice">Exit <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="exitReason">Reason <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="pnl">PnL <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="pnlPct">PnL % <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="durationSec">Duration <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-closed-sort="closedAt">Closed <span class="sort-mark"></span></th>
               <th>Chart</th>
             </tr>
           </thead>
           <tbody id="paperBotClosedBody">
-            <tr><td colspan="9" class="empty">No closed positions yet</td></tr>
+            <tr><td colspan="10" class="empty">No closed positions yet</td></tr>
           </tbody>
         </table>
       </div>
@@ -1423,7 +1425,11 @@
           <button type="button" class="btn sm" id="backtestStart">Run backtest</button>
           <button type="button" class="btn secondary sm" id="backtestRefresh">Refresh status</button>
           <button type="button" class="btn secondary sm" id="backtestStopReset">Stop &amp; reset</button>
+          <button type="button" class="btn secondary sm" id="backtestExport">Export optimization data</button>
           <span class="config-msg" id="backtestMsg"></span>
+          <div class="hint" style="grid-column: 1 / -1; margin-top: 4px;">
+            Export downloads a JSON file with backtest settings, all trades, analytics, and bot source code — upload it later for AI-assisted parameter tuning.
+          </div>
         </div>
       </div>
       <div id="backtestProgress" class="paper-summary" style="display: none; margin-bottom: 12px;">
@@ -1447,20 +1453,21 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Signal</th>
-              <th>Entry</th>
-              <th>Exit</th>
-              <th>Reason</th>
-              <th>PnL</th>
-              <th>PnL %</th>
-              <th>Opened</th>
-              <th>Closed</th>
+              <th class="sortable" data-backtest-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="signalKind">Signal <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="entryPrice">Entry <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="exitPrice">Exit <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="exitReason">Reason <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="pnl">PnL <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="pnlPct">PnL % <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="durationSec">Duration <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="openedAt">Opened <span class="sort-mark"></span></th>
+              <th class="sortable" data-backtest-sort="closedAt">Closed <span class="sort-mark"></span></th>
               <th>Chart</th>
             </tr>
           </thead>
           <tbody id="backtestTradesBody">
-            <tr><td colspan="10" class="empty">Run a backtest to see results</td></tr>
+            <tr><td colspan="11" class="empty">Run a backtest to see results</td></tr>
           </tbody>
         </table>
       </div>
@@ -1618,6 +1625,12 @@
     let topMoversLoading = false;
     let paperBotPollTimer = null;
     let backtestPollTimer = null;
+    let lastPaperBotOpen = [];
+    let lastPaperBotClosed = [];
+    let lastBacktestTrades = [];
+    let paperBotOpenSort = { key: "unrealizedPnl", dir: "desc" };
+    let paperBotClosedSort = { key: "pnl", dir: "desc" };
+    let backtestTradesSort = { key: "pnl", dir: "desc" };
     let historyLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
@@ -2772,6 +2785,233 @@
       return sign + "$" + Math.abs(v).toFixed(2);
     }
 
+    function botTableSortValue(row, key) {
+      if (key === "symbol" || key === "signalKind" || key === "exitReason") {
+        return String(row[key] ?? "");
+      }
+      if (key === "durationSec") {
+        const closed = row.closedAtIso ?? row.closedAt;
+        return (
+          positionDurationSec(
+            row.openedAtIso ?? row.openedAt,
+            closed ?? Date.now()
+          ) ?? 0
+        );
+      }
+      if (key === "openedAt") {
+        return parseDisplayIso(row.openedAtIso ?? row.openedAt) ?? 0;
+      }
+      if (key === "closedAt") {
+        return parseDisplayIso(row.closedAtIso ?? row.closedAt) ?? 0;
+      }
+      return Number(row[key] ?? 0);
+    }
+
+    function sortedBotRows(rows, sort) {
+      const { key, dir } = sort;
+      const sign = dir === "asc" ? 1 : -1;
+      return [...(rows ?? [])].sort((a, b) => {
+        const av = botTableSortValue(a, key);
+        const bv = botTableSortValue(b, key);
+        if (typeof av === "string" || typeof bv === "string") {
+          return String(av).localeCompare(String(bv)) * sign;
+        }
+        if (av !== bv) return (av - bv) * sign;
+        return String(a.symbol ?? "").localeCompare(String(b.symbol ?? ""));
+      });
+    }
+
+    function updateBotSortHeaders(attr, sort) {
+      document.querySelectorAll(`[${attr}]`).forEach((th) => {
+        const sortKey = th.getAttribute(attr);
+        const mark = th.querySelector(".sort-mark");
+        const active = sortKey === sort.key;
+        th.setAttribute(
+          "aria-sort",
+          active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
+        );
+        if (mark) {
+          mark.textContent = active ? (sort.dir === "asc" ? "▲" : "▼") : "";
+        }
+      });
+    }
+
+    function defaultBotSortDir(key) {
+      return key === "symbol" || key === "signalKind" || key === "exitReason"
+        ? "asc"
+        : "desc";
+    }
+
+    function wireBotTableSort(attr, getSort, setSort, rerender) {
+      document.querySelectorAll(`[${attr}]`).forEach((th) => {
+        th.addEventListener("click", () => {
+          const key = th.getAttribute(attr);
+          const current = getSort();
+          if (current.key === key) {
+            setSort({
+              key,
+              dir: current.dir === "asc" ? "desc" : "asc",
+            });
+          } else {
+            setSort({ key, dir: defaultBotSortDir(key) });
+          }
+          rerender();
+        });
+      });
+    }
+
+    function paperBotPnlCls(n) {
+      return n == null ? "" : n >= 0 ? "pass" : "bad";
+    }
+
+    function renderPaperBotOpenBody(rows) {
+      const openBody = document.getElementById("paperBotOpenBody");
+      updateBotSortHeaders("data-paper-open-sort", paperBotOpenSort);
+      if (!rows?.length) {
+        openBody.innerHTML =
+          '<tr class="empty-row"><td colspan="14" class="empty">No open paper positions</td></tr>';
+        return;
+      }
+      const pnlCls = paperBotPnlCls;
+      openBody.innerHTML = sortedBotRows(rows, paperBotOpenSort)
+        .map((p) => {
+          const unrCls = pnlCls(p.unrealizedPnl);
+          const kind =
+            p.signalKind === "fast-corridor"
+              ? '<span class="status-tag fc">FC</span>'
+              : '<span class="status-tag signal">SPIKE</span>';
+          const entryLabel =
+            p.addCount > 0
+              ? `${fmt(p.initialEntryPrice, 6)} → ${fmt(p.entryPrice, 6)}`
+              : fmt(p.entryPrice, 6);
+          const movePct = p.movePctFromEntry ?? 0;
+          const moveCls = movePct >= 0 ? "pass" : "bad";
+          const previewBtn = p.id
+            ? `<button type="button" class="btn secondary sm open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
+            : "";
+          const symCell = `<div class="sym-with-actions"><span>${symLink(p.symbol)}</span>${
+            previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
+          }</div>`;
+          return `<tr class="data-row">
+              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td data-label="Signal">${kind}</td>
+              <td class="time" data-label="Entry / avg">${entryLabel}</td>
+              <td class="${moveCls}" data-label="Move %">${fmt(movePct, 2)}%</td>
+              <td data-label="Adds">${p.addCount ?? 0}</td>
+              <td data-label="Last">${fmt(p.lastPrice, 6)}</td>
+              <td data-label="Margin">${fmtUsd(p.margin)}</td>
+              <td data-label="Corridor high">${fmt(p.corridorHigh, 6)}</td>
+              <td class="bad" data-label="Stop">${fmt(p.stopLoss, 6)}${
+            p.initialStopLoss != null &&
+            Math.abs(p.stopLoss - p.initialStopLoss) > 1e-8
+              ? `<div class="time" style="font-size:0.72rem">was ${fmt(p.initialStopLoss, 6)}</div>`
+              : ""
+          }</td>
+              <td class="pass" data-label="Take profit">${fmt(p.takeProfit, 6)}</td>
+              <td class="${unrCls}" data-label="Unrealized">${fmtUsd(p.unrealizedPnl)}</td>
+              <td class="time" data-label="Opened">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
+              <td class="history-duration" data-label="Duration">${fmtPositionDuration(p.openedAtIso ?? p.openedAt)}</td>
+              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
+            </tr>`;
+        })
+        .join("");
+      openBody.querySelectorAll(".open-snapshot-btn").forEach((btn) => {
+        btn.addEventListener("click", () =>
+          generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol)
+        );
+      });
+    }
+
+    function renderPaperBotClosedBody(rows) {
+      const closedBody = document.getElementById("paperBotClosedBody");
+      updateBotSortHeaders("data-paper-closed-sort", paperBotClosedSort);
+      if (!rows?.length) {
+        closedBody.innerHTML =
+          '<tr class="empty-row"><td colspan="10" class="empty">No closed positions yet</td></tr>';
+        return;
+      }
+      const pnlCls = paperBotPnlCls;
+      closedBody.innerHTML = sortedBotRows(rows, paperBotClosedSort)
+        .map((t) => {
+          const pnlCls2 = pnlCls(t.pnl);
+          const reason = paperBotExitReasonHtml(t.exitReason);
+          const kind =
+            t.signalKind === "fast-corridor"
+              ? '<span class="status-tag fc">FC</span>'
+              : '<span class="status-tag signal">SPIKE</span>';
+          const previewBtn = t.snapshotId
+            ? `<button type="button" class="btn secondary sm trade-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
+            : "";
+          const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
+            previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
+          }</div>`;
+          return `<tr class="data-row">
+              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td data-label="Signal">${kind}</td>
+              <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
+              <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
+              <td data-label="Reason">${reason}</td>
+              <td class="${pnlCls2}" data-label="PnL">${fmtUsd(t.pnl)}</td>
+              <td class="${pnlCls2}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
+              <td class="history-duration" data-label="Duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
+              <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
+            </tr>`;
+        })
+        .join("");
+      closedBody.querySelectorAll(".trade-snapshot-btn").forEach((btn) => {
+        btn.addEventListener("click", () =>
+          openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol)
+        );
+      });
+    }
+
+    function renderBacktestTradesBody(rows) {
+      const tradesBody = document.getElementById("backtestTradesBody");
+      updateBotSortHeaders("data-backtest-sort", backtestTradesSort);
+      if (!rows?.length) {
+        tradesBody.innerHTML =
+          '<tr class="empty-row"><td colspan="11" class="empty">No closed trades</td></tr>';
+        return;
+      }
+      const pnlCls = paperBotPnlCls;
+      tradesBody.innerHTML = sortedBotRows(rows, backtestTradesSort)
+        .slice(0, 200)
+        .map((t) => {
+          const cls = pnlCls(t.pnl);
+          const kind =
+            t.signalKind === "fast-corridor"
+              ? '<span class="status-tag fc">FC</span>'
+              : '<span class="status-tag signal">SPIKE</span>';
+          const reason = paperBotExitReasonHtml(t.exitReason);
+          const previewBtn = t.snapshotId
+            ? `<button type="button" class="btn secondary sm backtest-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
+            : "";
+          const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
+            previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
+          }</div>`;
+          return `<tr class="data-row">
+              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td data-label="Signal">${kind}</td>
+              <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
+              <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
+              <td data-label="Reason">${reason}</td>
+              <td class="${cls}" data-label="PnL">${fmtUsd(t.pnl)}</td>
+              <td class="${cls}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
+              <td class="history-duration" data-label="Duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
+              <td class="time" data-label="Opened">${fmtDisplayDateTime(t.openedAtIso ?? t.openedAt)}</td>
+              <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
+            </tr>`;
+        })
+        .join("");
+      tradesBody.querySelectorAll(".backtest-snapshot-btn").forEach((btn) => {
+        btn.addEventListener("click", () =>
+          openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol, "backtest")
+        );
+      });
+    }
+
     function renderPaperBot(data, syncForm = false) {
       if (syncForm) fillPaperBotForm(data.config);
       const s = data.summary ?? {};
@@ -2793,97 +3033,10 @@
       document.getElementById("paperStatOpen").textContent = s.openCount ?? 0;
       document.getElementById("paperStatClosed").textContent = s.closedCount ?? 0;
 
-      const openBody = document.getElementById("paperBotOpenBody");
-      if (!data.openPositions?.length) {
-        openBody.innerHTML =
-          '<tr class="empty-row"><td colspan="13" class="empty">No open paper positions</td></tr>';
-      } else {
-        openBody.innerHTML = data.openPositions
-          .map((p) => {
-            const unrCls = pnlCls(p.unrealizedPnl);
-            const kind =
-              p.signalKind === "fast-corridor"
-                ? '<span class="status-tag fc">FC</span>'
-                : '<span class="status-tag signal">SPIKE</span>';
-            const entryLabel =
-              p.addCount > 0
-                ? `${fmt(p.initialEntryPrice, 6)} → ${fmt(p.entryPrice, 6)}`
-                : fmt(p.entryPrice, 6);
-            const movePct = p.movePctFromEntry ?? 0;
-            const moveCls = movePct >= 0 ? "pass" : "bad";
-            const previewBtn = p.id
-              ? `<button type="button" class="btn secondary sm open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
-              : "";
-            const symCell = `<div class="sym-with-actions"><span>${symLink(p.symbol)}</span>${
-              previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
-            }</div>`;
-            return `<tr class="data-row">
-              <td class="sym-cell" data-label="Symbol">${symCell}</td>
-              <td data-label="Signal">${kind}</td>
-              <td class="time" data-label="Entry / avg">${entryLabel}</td>
-              <td class="${moveCls}" data-label="Move %">${fmt(movePct, 2)}%</td>
-              <td data-label="Adds">${p.addCount ?? 0}</td>
-              <td data-label="Last">${fmt(p.lastPrice, 6)}</td>
-              <td data-label="Margin">${fmtUsd(p.margin)}</td>
-              <td data-label="Corridor high">${fmt(p.corridorHigh, 6)}</td>
-              <td class="bad" data-label="Stop">${fmt(p.stopLoss, 6)}${
-                p.initialStopLoss != null &&
-                Math.abs(p.stopLoss - p.initialStopLoss) > 1e-8
-                  ? `<div class="time" style="font-size:0.72rem">was ${fmt(p.initialStopLoss, 6)}</div>`
-                  : ""
-              }</td>
-              <td class="pass" data-label="Take profit">${fmt(p.takeProfit, 6)}</td>
-              <td class="${unrCls}" data-label="Unrealized">${fmtUsd(p.unrealizedPnl)}</td>
-              <td class="time" data-label="Opened">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
-              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
-            </tr>`;
-          })
-          .join("");
-        openBody.querySelectorAll(".open-snapshot-btn").forEach((btn) => {
-          btn.addEventListener("click", () =>
-            generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol)
-          );
-        });
-      }
-
-      const closedBody = document.getElementById("paperBotClosedBody");
-      if (!data.closedTrades?.length) {
-        closedBody.innerHTML =
-          '<tr class="empty-row"><td colspan="9" class="empty">No closed positions yet</td></tr>';
-      } else {
-        closedBody.innerHTML = data.closedTrades
-          .map((t) => {
-            const pnlCls2 = pnlCls(t.pnl);
-            const reason = paperBotExitReasonHtml(t.exitReason);
-            const kind =
-              t.signalKind === "fast-corridor"
-                ? '<span class="status-tag fc">FC</span>'
-                : '<span class="status-tag signal">SPIKE</span>';
-            const previewBtn = t.snapshotId
-              ? `<button type="button" class="btn secondary sm trade-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
-              : "";
-            const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
-              previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
-            }</div>`;
-            return `<tr class="data-row">
-              <td class="sym-cell" data-label="Symbol">${symCell}</td>
-              <td data-label="Signal">${kind}</td>
-              <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
-              <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
-              <td data-label="Reason">${reason}</td>
-              <td class="${pnlCls2}" data-label="PnL">${fmtUsd(t.pnl)}</td>
-              <td class="${pnlCls2}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
-              <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
-              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
-            </tr>`;
-          })
-          .join("");
-        closedBody.querySelectorAll(".trade-snapshot-btn").forEach((btn) => {
-          btn.addEventListener("click", () =>
-            openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol)
-          );
-        });
-      }
+      lastPaperBotOpen = data.openPositions ?? [];
+      lastPaperBotClosed = data.closedTrades ?? [];
+      renderPaperBotOpenBody(lastPaperBotOpen);
+      renderPaperBotClosedBody(lastPaperBotClosed);
 
       const logEl = document.getElementById("paperBotLog");
       if (!data.log?.length) {
@@ -2944,6 +3097,31 @@
     });
 
     document.getElementById("paperBotRefresh").addEventListener("click", loadPaperBot);
+
+    wireBotTableSort(
+      "data-paper-open-sort",
+      () => paperBotOpenSort,
+      (s) => {
+        paperBotOpenSort = s;
+      },
+      () => renderPaperBotOpenBody(lastPaperBotOpen)
+    );
+    wireBotTableSort(
+      "data-paper-closed-sort",
+      () => paperBotClosedSort,
+      (s) => {
+        paperBotClosedSort = s;
+      },
+      () => renderPaperBotClosedBody(lastPaperBotClosed)
+    );
+    wireBotTableSort(
+      "data-backtest-sort",
+      () => backtestTradesSort,
+      (s) => {
+        backtestTradesSort = s;
+      },
+      () => renderBacktestTradesBody(lastBacktestTrades)
+    );
 
     function setBacktestMsg(text, ok) {
       const el = document.getElementById("backtestMsg");
@@ -3025,49 +3203,8 @@
       document.getElementById("btStatPairs").textContent =
         `${r.symbolsProcessed ?? "—"} ok · ${r.symbolsSkipped ?? 0} skip`;
 
-      const tradesBody = document.getElementById("backtestTradesBody");
-      const trades = [...(r.closedTrades ?? [])].sort(
-        (a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0)
-      );
-      if (!trades.length) {
-        tradesBody.innerHTML =
-          '<tr class="empty-row"><td colspan="10" class="empty">No closed trades</td></tr>';
-      } else {
-        tradesBody.innerHTML = trades
-          .slice(0, 200)
-          .map((t) => {
-            const cls = pnlCls(t.pnl);
-            const kind =
-              t.signalKind === "fast-corridor"
-                ? '<span class="status-tag fc">FC</span>'
-                : '<span class="status-tag signal">SPIKE</span>';
-            const reason = paperBotExitReasonHtml(t.exitReason);
-            const previewBtn = t.snapshotId
-              ? `<button type="button" class="btn secondary sm backtest-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
-              : "";
-            const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
-              previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
-            }</div>`;
-            return `<tr class="data-row">
-              <td class="sym-cell" data-label="Symbol">${symCell}</td>
-              <td data-label="Signal">${kind}</td>
-              <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
-              <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
-              <td data-label="Reason">${reason}</td>
-              <td class="${cls}" data-label="PnL">${fmtUsd(t.pnl)}</td>
-              <td class="${cls}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
-              <td class="time" data-label="Opened">${fmtDisplayDateTime(t.openedAtIso ?? t.openedAt)}</td>
-              <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
-              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
-            </tr>`;
-          })
-          .join("");
-        tradesBody.querySelectorAll(".backtest-snapshot-btn").forEach((btn) => {
-          btn.addEventListener("click", () =>
-            openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol, "backtest")
-          );
-        });
-      }
+      lastBacktestTrades = r.closedTrades ?? [];
+      renderBacktestTradesBody(lastBacktestTrades);
 
       const symBody = document.getElementById("backtestSymbolsBody");
       const rows = (r.perSymbol ?? [])
@@ -3114,11 +3251,13 @@
           if (id === "btStatTotalPnl") el.className = "stat-value";
         }
       }
+      lastBacktestTrades = [];
       const tradesBody = document.getElementById("backtestTradesBody");
       if (tradesBody) {
         tradesBody.innerHTML =
-          '<tr class="empty-row"><td colspan="10" class="empty">Run a backtest to see results</td></tr>';
+          '<tr class="empty-row"><td colspan="11" class="empty">Run a backtest to see results</td></tr>';
       }
+      updateBotSortHeaders("data-backtest-sort", backtestTradesSort);
       const symBody = document.getElementById("backtestSymbolsBody");
       if (symBody) {
         symBody.innerHTML =
@@ -3201,6 +3340,29 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderBacktest(data);
         setBacktestMsg("Train bot stopped and reset", true);
+      } catch (e) {
+        setBacktestMsg(e.message, false);
+      }
+    });
+
+    document.getElementById("backtestExport").addEventListener("click", async () => {
+      try {
+        setBacktestMsg("Preparing export…", true);
+        const res = await fetch("/api/paper-bot/backtest/export", { cache: "no-store" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || res.statusText);
+        }
+        const blob = await res.blob();
+        const disp = res.headers.get("Content-Disposition") || "";
+        const match = disp.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : `train-bot-export-${Date.now()}.json`;
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setBacktestMsg("Optimization export downloaded", true);
       } catch (e) {
         setBacktestMsg(e.message, false);
       }
@@ -3587,6 +3749,18 @@
       if (h > 0) return `${h}h ${m}m`;
       if (m > 0) return `${m}m ${s}s`;
       return `${s}s`;
+    }
+
+    function positionDurationSec(openedAt, closedAt = Date.now()) {
+      const openMs = parseDisplayIso(openedAt);
+      let closeMs =
+        closedAt === Date.now() ? closedAt : parseDisplayIso(closedAt);
+      if (openMs == null || closeMs == null) return null;
+      return Math.max(0, Math.floor((closeMs - openMs) / 1000));
+    }
+
+    function fmtPositionDuration(openedAt, closedAt) {
+      return fmtDuration(positionDurationSec(openedAt, closedAt));
     }
 
     function fmtHistoryDate(t) {
