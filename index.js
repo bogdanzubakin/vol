@@ -2282,6 +2282,13 @@ async function main() {
             },
             restGapMs: Math.max(80, Math.floor(cfg.restMinGapMs / 2)),
             shouldAbort: () => backtestJob.cancelled,
+            runMeta: {
+              days,
+              symbolMode: mode,
+              symbolsRequested: requested,
+              symbolsSelected: symList.length,
+              symbolsUnknown: unknown,
+            },
           })
             .then((result) => {
               if (backtestJob.cancelled) return;
