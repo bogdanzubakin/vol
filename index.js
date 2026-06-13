@@ -47,6 +47,9 @@ const {
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
 const { createPaperBot } = require("./lib/paper-bot");
+const { createLiveBot } = require("./lib/live-bot");
+const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
+const { createFuturesTrader } = require("./lib/binance-futures-trade");
 const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
   saveTradeSnapshot,
@@ -155,6 +158,7 @@ let prefetching = false;
 let dashboard = null;
 let telegram = null;
 let paperBot = null;
+let liveBot = null;
 let stopPaperBotReport = () => {};
 const BACKTEST_STALE_MS = 12 * 60 * 1000;
 
@@ -219,7 +223,9 @@ function getPaperBotBar(sym, historyBuffers) {
 }
 
 function refreshAllPaperBotPrices(historyBuffers) {
-  paperBot?.updatePrices((s) => getPaperBotBar(s, historyBuffers));
+  const getBar = (s) => getPaperBotBar(s, historyBuffers);
+  paperBot?.updatePrices(getBar);
+  void liveBot?.updatePrices(getBar);
 }
 
 function memoryMaxBars() {
@@ -901,6 +907,7 @@ function applySymbolSignal(
       dashboard?.pushEvent("NEW", sym, detail);
       console.log(`NEW SPIKE\t${sym}\t${detail}`);
       paperBot?.onSpikeSignal(sym, m);
+      liveBot?.onSpikeSignal(sym, m);
       if (shouldNotifySignal(sym)) {
         telegram?.onNewSignal(sym, m, cfg);
       } else {
@@ -981,6 +988,7 @@ function applyFastCorridorSignal(
       dashboard?.pushEvent("NEW_FC", sym, detail);
       console.log(`NEW FAST CORRIDOR\t${sym}\t${detail}`);
       paperBot?.onFastCorridorSignal(sym, fc);
+      liveBot?.onFastCorridorSignal(sym, fc);
       if (shouldNotifySignal(sym, "fast-corridor")) {
         telegram?.onFastCorridorSignal(sym, fc, cfg);
       } else {
@@ -1024,6 +1032,7 @@ function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
       dashboard?.pushEvent("NEW_SFP", sym, detail);
       console.log(`NEW SFP\t${sym}\t${detail}`);
       paperBot?.onSfpSignal(sym, metrics);
+      liveBot?.onSfpSignal(sym, metrics);
     }
   } else if (prev) {
     markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", metrics);
@@ -1061,6 +1070,7 @@ function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
       dashboard?.pushEvent("NEW_PB", sym, detail);
       console.log(`NEW PULLBACK\t${sym}\t${detail}`);
       paperBot?.onPullbackSignal(sym, pb);
+      liveBot?.onPullbackSignal(sym, pb);
     }
   } else if (prev) {
     markKindSignalEnded(sym, pbActive, pbHistory, "pullback", pb);
@@ -2583,11 +2593,34 @@ async function main() {
     return { snapshotId, symbol: pos.symbol };
   }
 
-  paperBot = createPaperBot({ onTradeClosed: captureTradeSnapshot });
+  function handleDrawdownStop(payload) {
+    if (!telegram?.enabled) return;
+    const label = payload.bot === "live" ? "Live bot" : "Paper bot";
+    return telegram.sendText(formatDrawdownTelegramMessage(label, payload));
+  }
+
+  paperBot = createPaperBot({
+    onTradeClosed: captureTradeSnapshot,
+    onDrawdownStop: handleDrawdownStop,
+  });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
       `${paperBot.getPublicState().config.enabled ? "enabled" : "disabled (enable in Paper bot tab)"}`
   );
+
+  const futuresTrader = createFuturesTrader({ kv });
+  liveBot = createLiveBot({
+    trader: futuresTrader,
+    onDrawdownStop: handleDrawdownStop,
+  });
+  void liveBot.getPublicState().then((st) => {
+    console.error(
+      `Live bot: ${futuresTrader.enabled ? "API keys ok" : "no API keys"} · ` +
+        `${st.config.armed ? "ARMED" : "disarmed"} · ` +
+        `${st.config.enabled ? "enabled" : "disabled"} · ` +
+        `${st.config.leverage}x isolated`
+    );
+  });
 
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
@@ -2655,6 +2688,18 @@ async function main() {
           paperBot.reset();
           return paperBot.getPublicState();
         },
+        getLiveBot: () => {
+          refreshAllPaperBotPrices(historyBuffers);
+          return liveBot.getPublicState();
+        },
+        patchLiveBotConfig: (patch) => {
+          return liveBot.patchConfig(patch);
+        },
+        armLiveBot: () => liveBot.arm(),
+        disarmLiveBot: () => liveBot.disarm(),
+        closeLiveBotSymbol: (symbol) => liveBot.closeSymbol(symbol),
+        closeAllLiveBot: () => liveBot.closeAll(),
+        syncLiveBot: () => liveBot.syncFromExchange(),
         generatePaperBotOpenSnapshot,
         getBacktestStatus: () => {
           reconcileBacktestJob();
@@ -2882,7 +2927,10 @@ async function main() {
   }
 
   const paperBotPriceTimer = setInterval(() => {
-    if (paperBot?.getPublicState().summary?.openCount > 0) {
+    if (
+      paperBot?.getPublicState().summary?.openCount > 0 ||
+      liveBot?.hasOpenPositions()
+    ) {
       refreshAllPaperBotPrices(historyBuffers);
     }
   }, 15_000);
@@ -2908,6 +2956,7 @@ async function main() {
     klineCache.flushAll(historyBuffers);
     klineCache.stop();
     paperBot?.flush();
+    liveBot?.flush();
     sockets.forEach((s) => s.close());
     process.exit(0);
   };

@@ -325,6 +325,27 @@
       background: rgba(34, 197, 94, 0.2);
       color: var(--green);
     }
+    .paper-enabled-badge.armed {
+      background: rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+    }
+    .live-warning {
+      margin: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      background: rgba(239, 68, 68, 0.08);
+      font-size: 0.82rem;
+      line-height: 1.45;
+      color: #fecaca;
+    }
+    .live-arm-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 0 12px 12px;
+    }
     .paper-enabled-badge.off {
       background: rgba(148, 163, 184, 0.15);
       color: var(--muted);
@@ -914,6 +935,7 @@
     <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
     <button type="button" class="tab" data-tab="strategies" role="tab">Strategies</button>
     <button type="button" class="tab" data-tab="paperbot" role="tab">Paper bot</button>
+    <button type="button" class="tab" data-tab="livebot" role="tab">Live bot</button>
     <button type="button" class="tab" data-tab="backtest" role="tab">Train bot</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="history" role="tab">History</button>
@@ -1466,6 +1488,18 @@
           <input type="number" id="paperBotFalseSpikeBelowEntryPct" step="0.01" min="-20" max="50" value="0" required />
           <div class="hint">LONG: +0.5 = 0.5% below first entry, −0.5 = 0.5% above; 0 = at/below entry</div>
         </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotDrawdownStopEnabled" name="drawdownStopEnabled" />
+            Drawdown stop (auto-disable)
+          </label>
+          <div class="hint">Turns bot off when equity falls by % from baseline (set on enable/reset)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotDrawdownStopPct">Max deposit loss %</label>
+          <input type="number" id="paperBotDrawdownStopPct" step="0.5" min="1" max="100" value="10" required />
+          <div class="hint">e.g. 10 = disable after −10% from baseline equity</div>
+        </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
           <button type="button" class="btn secondary sm" id="paperBotRefresh">Refresh</button>
@@ -1482,6 +1516,8 @@
         <div><div class="stat-label">Total PnL</div><div class="stat-value" id="paperStatTotalPnl">—</div></div>
         <div><div class="stat-label">Open</div><div class="stat-value" id="paperStatOpen">—</div></div>
         <div><div class="stat-label">Closed</div><div class="stat-value" id="paperStatClosed">—</div></div>
+        <div><div class="stat-label">Drawdown</div><div class="stat-value" id="paperStatDrawdown">—</div></div>
+        <div><div class="stat-label">DD limit</div><div class="stat-value" id="paperStatDrawdownLimit">—</div></div>
       </div>
       <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Open positions</h3>
       <div class="table-wrap table-wrap--cards">
@@ -1535,6 +1571,176 @@
       </div>
       <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Bot log</h3>
       <ul class="events" id="paperBotLog" style="max-height: 240px;">
+        <li class="empty">No events yet</li>
+      </ul>
+    </section>
+  </div>
+
+  <div id="panel-livebot" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>
+        Live bot
+        <span id="liveBotArmedBadge" class="paper-enabled-badge off">disarmed</span>
+        <span id="liveBotApiBadge" class="paper-enabled-badge off">no API</span>
+      </h2>
+      <div class="live-warning">
+        <strong>Real Binance USDT-M futures.</strong> Each trade uses <strong>isolated margin</strong> and places
+        market entries plus exchange stop/TP orders. API keys must have <strong>Futures trading</strong> enabled.
+        Disarm stops new orders; open positions remain on the exchange until closed.
+      </div>
+      <div class="live-arm-bar">
+        <button type="button" class="btn sm" id="liveBotArm" style="border-color:#ef4444;color:#fecaca">Arm live trading</button>
+        <button type="button" class="btn secondary sm" id="liveBotDisarm">Disarm</button>
+        <button type="button" class="btn secondary sm" id="liveBotSync">Sync exchange</button>
+        <button type="button" class="btn secondary sm" id="liveBotCloseAll">Close all</button>
+        <span class="config-msg" id="liveBotMsg"></span>
+      </div>
+      <form class="settings-form movers-settings" id="liveBotConfigForm">
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="liveBotEnabled" name="enabled" />
+            Enable bot (listen for signals)
+          </label>
+        </div>
+        <div class="field">
+          <label for="liveBotLeverage">Leverage (isolated)</label>
+          <input type="number" id="liveBotLeverage" step="1" min="1" max="125" value="2" required />
+          <div class="hint">Applied per symbol before each entry (default 2×)</div>
+        </div>
+        <div class="field">
+          <label for="liveBotPositionPct">Position size %</label>
+          <input type="number" id="liveBotPositionPct" step="0.1" min="0.1" max="100" value="1" required />
+          <div class="hint">% of available USDT × leverage = notional</div>
+        </div>
+        <div class="field">
+          <label for="liveBotMaxOpen">Max open positions</label>
+          <input type="number" id="liveBotMaxOpen" step="1" min="1" max="100" value="20" required />
+        </div>
+        <div class="field">
+          <label for="liveBotStopPct">Stop below corridor high %</label>
+          <input type="number" id="liveBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
+        </div>
+        <div class="field">
+          <label for="liveBotTpPct">Take profit %</label>
+          <input type="number" id="liveBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label><input type="checkbox" id="liveBotTradeSpike" checked /> Trade spike</label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label><input type="checkbox" id="liveBotTradeFc" /> Trade fast corridor</label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label><input type="checkbox" id="liveBotTradeSfp" /> Trade SFP</label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label><input type="checkbox" id="liveBotAddOnEnabled" /> Pyramid add-ons</label>
+        </div>
+        <div class="field">
+          <label for="liveBotAddOnDepositPct">Add-on % of available</label>
+          <input type="number" id="liveBotAddOnDepositPct" step="0.1" min="0.1" max="100" value="1" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAddOnMovePct">Add every +%</label>
+          <input type="number" id="liveBotAddOnMovePct" step="0.1" min="0.1" max="100" value="5" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAddOnMaxAdds">Max add-ons</label>
+          <input type="number" id="liveBotAddOnMaxAdds" step="1" min="0" max="50" value="3" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label><input type="checkbox" id="liveBotMoveStopEnabled" /> Move stop to entry</label>
+        </div>
+        <div class="field">
+          <label for="liveBotMoveStopAfterPct">After +%</label>
+          <input type="number" id="liveBotMoveStopAfterPct" step="0.1" min="0.1" max="100" value="5" required />
+        </div>
+        <div class="field">
+          <label for="liveBotMoveStopOffsetPct">Stop at entry ±%</label>
+          <input type="number" id="liveBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label><input type="checkbox" id="liveBotFalseSpikeEnabled" /> False spike exit</label>
+        </div>
+        <div class="field">
+          <label for="liveBotFalseSpikeAfterMinutes">After minutes</label>
+          <input type="number" id="liveBotFalseSpikeAfterMinutes" step="1" min="1" max="1440" value="30" required />
+        </div>
+        <div class="field">
+          <label for="liveBotFalseSpikeBelowEntryPct">Close at entry ±%</label>
+          <input type="number" id="liveBotFalseSpikeBelowEntryPct" step="0.01" min="-20" max="50" value="0" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotDrawdownStopEnabled" name="drawdownStopEnabled" />
+            Drawdown stop (auto-disable)
+          </label>
+          <div class="hint">Disables & disarms when wallet+unrealized drops by % from baseline (set on arm/enable)</div>
+        </div>
+        <div class="field">
+          <label for="liveBotDrawdownStopPct">Max deposit loss %</label>
+          <input type="number" id="liveBotDrawdownStopPct" step="0.5" min="1" max="100" value="10" required />
+        </div>
+        <div class="settings-actions">
+          <button type="submit" class="btn sm" id="liveBotApply">Save settings</button>
+          <button type="button" class="btn secondary sm" id="liveBotRefresh">Refresh</button>
+        </div>
+      </form>
+      <div class="paper-summary" id="liveBotSummary">
+        <div><div class="stat-label">Wallet USDT</div><div class="stat-value" id="liveStatWallet">—</div></div>
+        <div><div class="stat-label">Available</div><div class="stat-value" id="liveStatAvailable">—</div></div>
+        <div><div class="stat-label">Realized PnL</div><div class="stat-value" id="liveStatRealized">—</div></div>
+        <div><div class="stat-label">Unrealized</div><div class="stat-value" id="liveStatUnrealized">—</div></div>
+        <div><div class="stat-label">Open</div><div class="stat-value" id="liveStatOpen">—</div></div>
+        <div><div class="stat-label">Leverage</div><div class="stat-value" id="liveStatLeverage">2× iso</div></div>
+        <div><div class="stat-label">Drawdown</div><div class="stat-value" id="liveStatDrawdown">—</div></div>
+        <div><div class="stat-label">DD limit</div><div class="stat-value" id="liveStatDrawdownLimit">—</div></div>
+      </div>
+      <h3 style="margin: 16px 12px 8px; font-size: 0.95rem">Open positions (bot)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Signal</th>
+              <th>Lev</th>
+              <th>Entry</th>
+              <th>Qty</th>
+              <th>SL</th>
+              <th>TP</th>
+              <th>Unrealized</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="liveBotOpenBody">
+            <tr><td colspan="9" class="empty">No open positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Closed trades</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Signal</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>Reason</th>
+              <th>PnL</th>
+              <th>Closed</th>
+            </tr>
+          </thead>
+          <tbody id="liveBotClosedBody">
+            <tr><td colspan="7" class="empty">No closed trades</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Bot log</h3>
+      <ul class="events" id="liveBotLog" style="max-height: 240px;">
         <li class="empty">No events yet</li>
       </ul>
     </section>
@@ -1767,6 +1973,7 @@
     let moversSort = { key: "avgMovePct", dir: "desc" };
     let topMoversLoading = false;
     let paperBotPollTimer = null;
+    let liveBotPollTimer = null;
     let backtestPollTimer = null;
     let lastPaperBotOpen = [];
     let lastPaperBotClosed = [];
@@ -2048,6 +2255,14 @@
           paperBotPollTimer = setInterval(() => {
             if (activeTab === "paperbot") loadPaperBot();
           }, 60_000);
+        }
+      }
+      if (name === "livebot") {
+        loadLiveBot(true);
+        if (!liveBotPollTimer) {
+          liveBotPollTimer = setInterval(() => {
+            if (activeTab === "livebot") loadLiveBot();
+          }, 15_000);
         }
       }
       if (name === "backtest") {
@@ -3109,6 +3324,8 @@
         falseSpikeBelowEntryPct: Number(
           document.getElementById("paperBotFalseSpikeBelowEntryPct").value
         ),
+        drawdownStopEnabled: document.getElementById("paperBotDrawdownStopEnabled").checked,
+        drawdownStopPct: Number(document.getElementById("paperBotDrawdownStopPct").value),
       };
     }
 
@@ -3145,6 +3362,11 @@
         cfg.falseSpikeAfterMinutes ?? 30;
       document.getElementById("paperBotFalseSpikeBelowEntryPct").value =
         cfg.falseSpikeBelowEntryPct ?? 0;
+      document.getElementById("paperBotDrawdownStopEnabled").checked = Boolean(
+        cfg.drawdownStopEnabled
+      );
+      document.getElementById("paperBotDrawdownStopPct").value =
+        cfg.drawdownStopPct ?? 10;
       const badge = document.getElementById("paperBotEnabledBadge");
       if (badge) {
         badge.textContent = cfg.enabled ? "on" : "off";
@@ -3380,6 +3602,33 @@
       });
     }
 
+    function renderDrawdownStats(dd, lossEl, limitEl) {
+      if (!lossEl || !limitEl) return;
+      if (!dd?.enabled) {
+        lossEl.textContent = "off";
+        lossEl.className = "stat-value";
+        limitEl.textContent = "—";
+        limitEl.className = "stat-value";
+        return;
+      }
+      if (dd.triggeredAt) {
+        lossEl.textContent = `−${dd.lossPct}% (stopped)`;
+        lossEl.className = "stat-value bad";
+        limitEl.textContent = `−${dd.limitPct}%`;
+        limitEl.className = "stat-value";
+        return;
+      }
+      lossEl.textContent =
+        dd.baseline != null ? `−${dd.lossPct}%` : "pending baseline";
+      lossEl.className =
+        "stat-value " + (dd.lossPct >= dd.limitPct * 0.8 ? "bad" : "");
+      limitEl.textContent =
+        dd.remainingPct != null
+          ? `${dd.remainingPct}% left (−${dd.limitPct}%)`
+          : `−${dd.limitPct}%`;
+      limitEl.className = "stat-value";
+    }
+
     function renderPaperBot(data, syncForm = false) {
       if (syncForm) fillPaperBotForm(data.config);
       const s = data.summary ?? {};
@@ -3400,6 +3649,11 @@
       total.className = "stat-value " + pnlCls(s.totalPnl);
       document.getElementById("paperStatOpen").textContent = s.openCount ?? 0;
       document.getElementById("paperStatClosed").textContent = s.closedCount ?? 0;
+      renderDrawdownStats(
+        s.drawdown,
+        document.getElementById("paperStatDrawdown"),
+        document.getElementById("paperStatDrawdownLimit")
+      );
 
       lastPaperBotOpen = data.openPositions ?? [];
       lastPaperBotClosed = data.closedTrades ?? [];
@@ -3419,6 +3673,8 @@
                   ? "cfg"
                 : e.type === "CLOSE"
                   ? "end"
+                  : e.type === "DRAWDOWN_STOP"
+                    ? "bad"
                   : e.type === "SKIP"
                     ? "near"
                     : "";
@@ -3465,6 +3721,300 @@
     });
 
     document.getElementById("paperBotRefresh").addEventListener("click", loadPaperBot);
+
+    function setLiveBotMsg(text, ok) {
+      const el = document.getElementById("liveBotMsg");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "config-msg" + (ok ? " ok" : text ? " err" : "");
+    }
+
+    function liveBotConfigFromForm() {
+      return {
+        enabled: document.getElementById("liveBotEnabled").checked,
+        leverage: Number(document.getElementById("liveBotLeverage").value),
+        maxOpenPositions: Number(document.getElementById("liveBotMaxOpen").value),
+        positionSizePct: Number(document.getElementById("liveBotPositionPct").value),
+        stopLossBelowCorridorPct: Number(document.getElementById("liveBotStopPct").value),
+        takeProfitPct: Number(document.getElementById("liveBotTpPct").value),
+        tradeSpikeSignals: document.getElementById("liveBotTradeSpike").checked,
+        tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
+        tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
+        tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
+        addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
+        addOnDepositPct: Number(document.getElementById("liveBotAddOnDepositPct").value),
+        addOnMovePct: Number(document.getElementById("liveBotAddOnMovePct").value),
+        addOnMaxAdds: Number(document.getElementById("liveBotAddOnMaxAdds").value),
+        moveStopEnabled: document.getElementById("liveBotMoveStopEnabled").checked,
+        moveStopAfterMovePct: Number(document.getElementById("liveBotMoveStopAfterPct").value),
+        moveStopOffsetPct: Number(document.getElementById("liveBotMoveStopOffsetPct").value),
+        falseSpikeEnabled: document.getElementById("liveBotFalseSpikeEnabled").checked,
+        falseSpikeAfterMinutes: Number(
+          document.getElementById("liveBotFalseSpikeAfterMinutes").value
+        ),
+        falseSpikeBelowEntryPct: Number(
+          document.getElementById("liveBotFalseSpikeBelowEntryPct").value
+        ),
+        drawdownStopEnabled: document.getElementById("liveBotDrawdownStopEnabled").checked,
+        drawdownStopPct: Number(document.getElementById("liveBotDrawdownStopPct").value),
+      };
+    }
+
+    function fillLiveBotForm(cfg) {
+      if (!cfg) return;
+      document.getElementById("liveBotEnabled").checked = Boolean(cfg.enabled);
+      document.getElementById("liveBotLeverage").value = cfg.leverage ?? 2;
+      document.getElementById("liveBotMaxOpen").value = cfg.maxOpenPositions ?? 20;
+      document.getElementById("liveBotPositionPct").value = cfg.positionSizePct ?? 1;
+      document.getElementById("liveBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
+      document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 10;
+      document.getElementById("liveBotTradeSpike").checked = cfg.tradeSpikeSignals !== false;
+      document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
+      document.getElementById("liveBotTradeSfp").checked = Boolean(cfg.tradeSfpSignals);
+      document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
+      document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
+      document.getElementById("liveBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
+      document.getElementById("liveBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
+      document.getElementById("liveBotAddOnMaxAdds").value = cfg.addOnMaxAdds ?? 3;
+      document.getElementById("liveBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
+      document.getElementById("liveBotMoveStopAfterPct").value = cfg.moveStopAfterMovePct ?? 5;
+      document.getElementById("liveBotMoveStopOffsetPct").value = cfg.moveStopOffsetPct ?? 0;
+      document.getElementById("liveBotFalseSpikeEnabled").checked = Boolean(cfg.falseSpikeEnabled);
+      document.getElementById("liveBotFalseSpikeAfterMinutes").value =
+        cfg.falseSpikeAfterMinutes ?? 30;
+      document.getElementById("liveBotFalseSpikeBelowEntryPct").value =
+        cfg.falseSpikeBelowEntryPct ?? 0;
+      document.getElementById("liveBotDrawdownStopEnabled").checked = Boolean(
+        cfg.drawdownStopEnabled
+      );
+      document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 10;
+      const armedBadge = document.getElementById("liveBotArmedBadge");
+      if (armedBadge) {
+        armedBadge.textContent = cfg.armed ? "ARMED" : "disarmed";
+        armedBadge.className =
+          "paper-enabled-badge " + (cfg.armed ? "armed" : "off");
+      }
+    }
+
+    function renderLiveBot(data, syncForm = false) {
+      if (syncForm) fillLiveBotForm(data.config);
+      const sum = data.summary ?? {};
+      const apiBadge = document.getElementById("liveBotApiBadge");
+      if (apiBadge) {
+        if (!sum.apiEnabled) {
+          apiBadge.textContent = "no API";
+          apiBadge.className = "paper-enabled-badge off";
+        } else if (sum.exchangeError) {
+          apiBadge.textContent = "API err";
+          apiBadge.className = "paper-enabled-badge off";
+        } else {
+          apiBadge.textContent = "API ok";
+          apiBadge.className = "paper-enabled-badge on";
+        }
+      }
+      const pnlCls = paperBotPnlCls;
+      document.getElementById("liveStatWallet").textContent = fmtUsd(sum.walletUsdt);
+      document.getElementById("liveStatAvailable").textContent = fmtUsd(sum.availableUsdt);
+      document.getElementById("liveStatRealized").textContent = fmtUsd(sum.realizedPnl);
+      document.getElementById("liveStatRealized").className =
+        "stat-value " + pnlCls(sum.realizedPnl);
+      document.getElementById("liveStatUnrealized").textContent = fmtUsd(sum.unrealizedPnl);
+      document.getElementById("liveStatUnrealized").className =
+        "stat-value " + pnlCls(sum.unrealizedPnl);
+      document.getElementById("liveStatOpen").textContent = String(sum.openCount ?? 0);
+      document.getElementById("liveStatLeverage").textContent =
+        `${sum.leverage ?? data.config?.leverage ?? 2}× isolated`;
+      renderDrawdownStats(
+        sum.drawdown,
+        document.getElementById("liveStatDrawdown"),
+        document.getElementById("liveStatDrawdownLimit")
+      );
+
+      const openBody = document.getElementById("liveBotOpenBody");
+      if (!data.openPositions?.length) {
+        openBody.innerHTML =
+          '<tr><td colspan="9" class="empty">No open positions</td></tr>';
+      } else {
+        openBody.innerHTML = data.openPositions
+          .map((p) => {
+            const unrCls = pnlCls(p.unrealizedPnl);
+            return `<tr>
+              <td class="sym">${symLink(p.symbol)}</td>
+              <td>${botSignalKindTag(p.signalKind)}</td>
+              <td>${p.leverage ?? "—"}×</td>
+              <td>${fmt(p.entryPrice, 6)}</td>
+              <td>${fmt(p.quantity, 4)}</td>
+              <td class="bad">${fmt(p.stopLoss, 6)}</td>
+              <td class="pass">${fmt(p.takeProfit, 6)}</td>
+              <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
+              <td><button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button></td>
+            </tr>`;
+          })
+          .join("");
+        openBody.querySelectorAll(".live-close-btn").forEach((btn) => {
+          btn.addEventListener("click", () => closeLiveSymbol(btn.dataset.symbol));
+        });
+      }
+
+      const closedBody = document.getElementById("liveBotClosedBody");
+      if (!data.closedTrades?.length) {
+        closedBody.innerHTML =
+          '<tr><td colspan="7" class="empty">No closed trades</td></tr>';
+      } else {
+        closedBody.innerHTML = data.closedTrades
+          .map((t) => {
+            const pnlCls2 = pnlCls(t.pnl);
+            return `<tr>
+              <td class="sym">${symLink(t.symbol)}</td>
+              <td>${botSignalKindTag(t.signalKind)}</td>
+              <td>${fmt(t.entryPrice, 6)}</td>
+              <td>${fmt(t.exitPrice, 6)}</td>
+              <td>${paperBotExitReasonHtml(t.exitReason)}</td>
+              <td class="${pnlCls2}">${fmtUsd(t.pnl)}</td>
+              <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      const logEl = document.getElementById("liveBotLog");
+      if (!data.log?.length) {
+        logEl.innerHTML = '<li class="empty">No events yet</li>';
+      } else {
+        logEl.innerHTML = data.log
+          .map((e) => {
+            const cls =
+              e.type === "OPEN" || e.type === "ARM"
+                ? "new"
+                : e.type === "ERROR"
+                  ? "end"
+                  : e.type === "DRAWDOWN_STOP"
+                    ? "bad"
+                  : e.type === "SKIP"
+                    ? "near"
+                    : e.type === "DISARM"
+                      ? "near"
+                      : "";
+            return `<li class="${cls}">
+              <div class="time">${fmtTimeShort(e.atIso ?? e.at)} ${TZ_LABEL}</div>
+              <strong>${escapeHtml(e.type)}</strong> ${e.symbol && e.symbol !== "—" ? symLink(e.symbol) : ""}
+              <span class="time">${escapeHtml(e.detail ?? "")}</span>
+            </li>`;
+          })
+          .join("");
+      }
+      if (data.busy) {
+        setLiveBotMsg("Syncing with exchange…", true);
+      }
+    }
+
+    async function loadLiveBot(syncForm = false) {
+      try {
+        const res = await fetch("/api/live-bot", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, syncForm);
+        if (!data.busy) {
+          setLiveBotMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
+        }
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    }
+
+    async function closeLiveSymbol(symbol) {
+      if (!confirm(`Close live position ${symbol} on Binance?`)) return;
+      try {
+        const res = await fetch(`/api/live-bot/close/${encodeURIComponent(symbol)}`, {
+          method: "POST",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg(`Closed ${symbol}`, true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    }
+
+    document.getElementById("liveBotConfigForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch("/api/live-bot/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patch: liveBotConfigFromForm() }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg("Settings saved", true);
+      } catch (err) {
+        setLiveBotMsg(err.message, false);
+      }
+    });
+
+    document.getElementById("liveBotRefresh").addEventListener("click", () => loadLiveBot(true));
+
+    document.getElementById("liveBotArm").addEventListener("click", async () => {
+      if (
+        !confirm(
+          "ARM live trading? This allows REAL orders on Binance futures (isolated margin)."
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await fetch("/api/live-bot/arm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: "ARM" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg("Live trading ARMED", true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    });
+
+    document.getElementById("liveBotDisarm").addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/live-bot/disarm", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg("Disarmed — no new orders", true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    });
+
+    document.getElementById("liveBotSync").addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/live-bot/sync", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg("Synced from exchange", true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    });
+
+    document.getElementById("liveBotCloseAll").addEventListener("click", async () => {
+      if (!confirm("Close ALL live bot positions on Binance?")) return;
+      try {
+        const res = await fetch("/api/live-bot/close-all", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg("All positions closed", true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    });
 
     wireBotTableSort(
       "data-paper-open-sort",
