@@ -1415,7 +1415,12 @@
         <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
           <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
-          <div class="hint">TP at entry × (1 + %)</div>
+          <div class="hint">TP cap for all signals; SFP/pullback use smart targets up to this %</div>
+        </div>
+        <div class="field">
+          <label for="paperBotTpMinPct">Min TP % (SFP / pullback)</label>
+          <input type="number" id="paperBotTpMinPct" step="0.1" min="0" max="200" value="0" required />
+          <div class="hint">0 = auto floor at 65% of take profit % above</div>
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
@@ -1633,6 +1638,11 @@
         <div class="field">
           <label for="liveBotTpPct">Take profit %</label>
           <input type="number" id="liveBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
+        </div>
+        <div class="field">
+          <label for="liveBotTpMinPct">Min TP % (SFP / pullback)</label>
+          <input type="number" id="liveBotTpMinPct" step="0.1" min="0" max="200" value="0" required />
+          <div class="hint">0 = auto 65% of max TP</div>
         </div>
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradeSpike" checked /> Trade spike</label>
@@ -3319,6 +3329,7 @@
           document.getElementById("paperBotStopFallbackPnlPct").value
         ),
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
+        takeProfitMinPct: Number(document.getElementById("paperBotTpMinPct").value),
         tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
@@ -3350,6 +3361,7 @@
       document.getElementById("paperBotStopFallbackPnlPct").value =
         cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 10;
+      document.getElementById("paperBotTpMinPct").value = cfg.takeProfitMinPct ?? 0;
       document.getElementById("paperBotTradeSpike").checked =
         cfg.tradeSpikeSignals !== false;
       document.getElementById("paperBotTradeFc").checked = Boolean(
@@ -3755,6 +3767,7 @@
           document.getElementById("liveBotStopFallbackPnlPct").value
         ),
         takeProfitPct: Number(document.getElementById("liveBotTpPct").value),
+        takeProfitMinPct: Number(document.getElementById("liveBotTpMinPct").value),
         tradeSpikeSignals: document.getElementById("liveBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
@@ -3788,6 +3801,7 @@
       document.getElementById("liveBotStopFallbackPnlPct").value =
         cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 10;
+      document.getElementById("liveBotTpMinPct").value = cfg.takeProfitMinPct ?? 0;
       document.getElementById("liveBotTradeSpike").checked = cfg.tradeSpikeSignals !== false;
       document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
       document.getElementById("liveBotTradeSfp").checked = Boolean(cfg.tradeSfpSignals);
