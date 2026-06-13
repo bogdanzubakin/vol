@@ -1408,6 +1408,11 @@
           <div class="hint">SL at top corridor border × (1 − %)</div>
         </div>
         <div class="field">
+          <label for="paperBotStopFallbackPnlPct">SL fallback −PnL %</label>
+          <input type="number" id="paperBotStopFallbackPnlPct" step="0.1" min="0.1" max="50" value="2" required />
+          <div class="hint">If corridor SL would trigger immediately, use entry − this % instead</div>
+        </div>
+        <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
           <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
           <div class="hint">TP at entry × (1 + %)</div>
@@ -1619,6 +1624,11 @@
         <div class="field">
           <label for="liveBotStopPct">Stop below corridor high %</label>
           <input type="number" id="liveBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
+        </div>
+        <div class="field">
+          <label for="liveBotStopFallbackPnlPct">SL fallback −PnL %</label>
+          <input type="number" id="liveBotStopFallbackPnlPct" step="0.1" min="0.1" max="50" value="2" required />
+          <div class="hint">Binance rejects corridor SL → entry − this %</div>
         </div>
         <div class="field">
           <label for="liveBotTpPct">Take profit %</label>
@@ -3305,6 +3315,9 @@
         enabled: document.getElementById("paperBotEnabled").checked,
         positionSizePct: Number(document.getElementById("paperBotPositionPct").value),
         stopLossBelowCorridorPct: Number(document.getElementById("paperBotStopPct").value),
+        stopLossFallbackPnlPct: Number(
+          document.getElementById("paperBotStopFallbackPnlPct").value
+        ),
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
         tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
@@ -3334,6 +3347,8 @@
       document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
       document.getElementById("paperBotPositionPct").value = cfg.positionSizePct ?? 1;
       document.getElementById("paperBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
+      document.getElementById("paperBotStopFallbackPnlPct").value =
+        cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 10;
       document.getElementById("paperBotTradeSpike").checked =
         cfg.tradeSpikeSignals !== false;
@@ -3736,6 +3751,9 @@
         maxOpenPositions: Number(document.getElementById("liveBotMaxOpen").value),
         positionSizePct: Number(document.getElementById("liveBotPositionPct").value),
         stopLossBelowCorridorPct: Number(document.getElementById("liveBotStopPct").value),
+        stopLossFallbackPnlPct: Number(
+          document.getElementById("liveBotStopFallbackPnlPct").value
+        ),
         takeProfitPct: Number(document.getElementById("liveBotTpPct").value),
         tradeSpikeSignals: document.getElementById("liveBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
@@ -3767,6 +3785,8 @@
       document.getElementById("liveBotMaxOpen").value = cfg.maxOpenPositions ?? 20;
       document.getElementById("liveBotPositionPct").value = cfg.positionSizePct ?? 1;
       document.getElementById("liveBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
+      document.getElementById("liveBotStopFallbackPnlPct").value =
+        cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 10;
       document.getElementById("liveBotTradeSpike").checked = cfg.tradeSpikeSignals !== false;
       document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
