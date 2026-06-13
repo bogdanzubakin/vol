@@ -1295,7 +1295,15 @@
             <input type="checkbox" id="regimeFilterEnabled" />
             Regime filter on spike entries
           </label>
-          <div class="hint">Require BTC 1h close ≥ MA before spike passes / opens</div>
+          <div class="hint">Gate spike entries by BTC 1h trend vs MA</div>
+        </div>
+        <div class="field">
+          <label for="regimeMode">Regime direction</label>
+          <select id="regimeMode" name="regimeMode">
+            <option value="bullish">Bullish — allow when BTC close ≥ MA</option>
+            <option value="bearish">Bearish — allow when BTC close &lt; MA</option>
+          </select>
+          <div class="hint">Bullish = long alts only in BTC uptrend; bearish = trade spikes when BTC is below MA</div>
         </div>
         <div class="field">
           <label for="regimeMaBars">BTC MA bars (1h)</label>
@@ -1415,10 +1423,17 @@
         <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
           <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
-          <div class="hint">TP cap for all signals; SFP/pullback use smart targets up to this %</div>
+          <div class="hint">Default: entry × (1 + %). Smart mode uses this as max cap for SFP/pullback</div>
         </div>
-        <div class="field">
-          <label for="paperBotTpMinPct">Min TP % (SFP / pullback)</label>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotSmartExits" name="smartExitLevelsEnabled" />
+            Smart SL/TP (SFP &amp; pullback)
+          </label>
+          <div class="hint">Off = corridor SL + fixed TP % (same as spike). On = sweep/MA-based exits</div>
+        </div>
+        <div class="field" id="paperBotTpMinField">
+          <label for="paperBotTpMinPct">Min TP % (smart mode)</label>
           <input type="number" id="paperBotTpMinPct" step="0.1" min="0" max="200" value="0" required />
           <div class="hint">0 = auto floor at 65% of take profit % above</div>
         </div>
@@ -1620,7 +1635,7 @@
         <div class="field">
           <label for="liveBotPositionPct">Position size %</label>
           <input type="number" id="liveBotPositionPct" step="0.1" min="0.1" max="100" value="1" required />
-          <div class="hint">% of available USDT × leverage = notional</div>
+          <div class="hint">% of available USDT × leverage = notional; minimum $5 margin per trade</div>
         </div>
         <div class="field">
           <label for="liveBotMaxOpen">Max open positions</label>
@@ -1639,8 +1654,15 @@
           <label for="liveBotTpPct">Take profit %</label>
           <input type="number" id="liveBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
         </div>
-        <div class="field">
-          <label for="liveBotTpMinPct">Min TP % (SFP / pullback)</label>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotSmartExits" name="smartExitLevelsEnabled" />
+            Smart SL/TP (SFP &amp; pullback)
+          </label>
+          <div class="hint">Off = corridor SL + fixed TP %</div>
+        </div>
+        <div class="field" id="liveBotTpMinField">
+          <label for="liveBotTpMinPct">Min TP % (smart mode)</label>
           <input type="number" id="liveBotTpMinPct" step="0.1" min="0" max="200" value="0" required />
           <div class="hint">0 = auto 65% of max TP</div>
         </div>
@@ -2950,6 +2972,7 @@
     const STRATEGY_CONFIG_KEYS = [
       "regimeFilterEnabled",
       "regimeMaBars",
+      "regimeMode",
       "sfpLookbackBars",
       "sfpReclaimBars",
       "sfpMinSweepPct",
@@ -2965,6 +2988,7 @@
           ? 1
           : 0,
         regimeMaBars: Number(document.getElementById("regimeMaBars").value),
+        regimeMode: document.getElementById("regimeMode").value,
         sfpLookbackBars: Number(document.getElementById("sfpLookbackBars").value),
         sfpReclaimBars: Number(document.getElementById("sfpReclaimBars").value),
         sfpMinSweepPct: Number(document.getElementById("sfpMinSweepPct").value),
@@ -2987,6 +3011,8 @@
         state.regimeFilterEnabled
       );
       document.getElementById("regimeMaBars").value = state.regimeMaBars ?? 20;
+      document.getElementById("regimeMode").value =
+        state.regimeMode === "bearish" ? "bearish" : "bullish";
       document.getElementById("sfpLookbackBars").value = state.sfpLookbackBars ?? 30;
       document.getElementById("sfpReclaimBars").value = state.sfpReclaimBars ?? 5;
       document.getElementById("sfpMinSweepPct").value = state.sfpMinSweepPct ?? 0.02;
@@ -3330,6 +3356,7 @@
         ),
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
         takeProfitMinPct: Number(document.getElementById("paperBotTpMinPct").value),
+        smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
@@ -3362,6 +3389,13 @@
         cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 10;
       document.getElementById("paperBotTpMinPct").value = cfg.takeProfitMinPct ?? 0;
+      document.getElementById("paperBotSmartExits").checked = Boolean(
+        cfg.smartExitLevelsEnabled
+      );
+      const paperTpMinField = document.getElementById("paperBotTpMinField");
+      if (paperTpMinField) {
+        paperTpMinField.style.opacity = cfg.smartExitLevelsEnabled ? "1" : "0.45";
+      }
       document.getElementById("paperBotTradeSpike").checked =
         cfg.tradeSpikeSignals !== false;
       document.getElementById("paperBotTradeFc").checked = Boolean(
@@ -3768,6 +3802,7 @@
         ),
         takeProfitPct: Number(document.getElementById("liveBotTpPct").value),
         takeProfitMinPct: Number(document.getElementById("liveBotTpMinPct").value),
+        smartExitLevelsEnabled: document.getElementById("liveBotSmartExits").checked,
         tradeSpikeSignals: document.getElementById("liveBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
@@ -3802,6 +3837,13 @@
         cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 10;
       document.getElementById("liveBotTpMinPct").value = cfg.takeProfitMinPct ?? 0;
+      document.getElementById("liveBotSmartExits").checked = Boolean(
+        cfg.smartExitLevelsEnabled
+      );
+      const liveTpMinField = document.getElementById("liveBotTpMinField");
+      if (liveTpMinField) {
+        liveTpMinField.style.opacity = cfg.smartExitLevelsEnabled ? "1" : "0.45";
+      }
       document.getElementById("liveBotTradeSpike").checked = cfg.tradeSpikeSignals !== false;
       document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
       document.getElementById("liveBotTradeSfp").checked = Boolean(cfg.tradeSfpSignals);
@@ -4495,7 +4537,7 @@
 
       const sub = document.getElementById("subtitle");
       const regimeHint = state.regime?.enabled
-        ? ` · regime ${state.regime.pass ? "ON" : "OFF"}`
+        ? ` · regime ${state.regime.mode ?? "bullish"} ${state.regime.pass ? "open" : "blocked"}`
         : "";
       sub.textContent =
         `${state.interval} · ${state.signalCandles}+ candles above corridor · break ${state.corridorDays}d range high · ` +
@@ -4504,8 +4546,8 @@
       const regimeStatus = !state.regime?.enabled
         ? '<span class="muted">off</span>'
         : state.regime.pass
-          ? `<strong class="pass">${escapeHtml(state.regime.label || "bullish")}</strong>`
-          : `<strong class="bad">${escapeHtml(state.regime.label || "bearish")}</strong>`;
+          ? `<strong class="pass">${escapeHtml(state.regime.label || "open")}</strong>`
+          : `<strong class="bad">${escapeHtml(state.regime.label || "blocked")}</strong>`;
 
       document.getElementById("status").innerHTML = `
         <div><span>Updated</span> <strong>${fmtTimeShort(state.updatedAt) ?? "—"} ${TZ_LABEL}</strong></div>

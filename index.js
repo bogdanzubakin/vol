@@ -117,6 +117,7 @@ const cfg = {
   fastCorridorHalfWaveLookback: 180,
   regimeFilterEnabled: 0,
   regimeMaBars: 20,
+  regimeMode: "bullish",
   regimeSymbol: "BTCUSDT",
   regimeInterval: "1h",
   sfpLookbackBars: 30,
@@ -2370,6 +2371,7 @@ async function main() {
         config: {
           regimeFilterEnabled: Boolean(cfg.regimeFilterEnabled),
           regimeMaBars: cfg.regimeMaBars,
+          regimeMode: cfg.regimeMode ?? "bullish",
           sfpLookbackBars: cfg.sfpLookbackBars,
           sfpReclaimBars: cfg.sfpReclaimBars,
           sfpMinSweepPct: cfg.sfpMinSweepPct,
