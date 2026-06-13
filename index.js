@@ -2712,6 +2712,7 @@ async function main() {
         closeLiveBotSymbol: (symbol) => liveBot.closeSymbol(symbol),
         closeAllLiveBot: () => liveBot.closeAll(),
         syncLiveBot: () => liveBot.syncFromExchange(),
+        resetLiveBotHistory: () => liveBot.resetHistory(),
         generatePaperBotOpenSnapshot,
         getBacktestStatus: () => {
           reconcileBacktestJob();

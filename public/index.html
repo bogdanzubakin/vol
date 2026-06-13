@@ -1729,6 +1729,7 @@
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="liveBotApply">Save settings</button>
           <button type="button" class="btn secondary sm" id="liveBotRefresh">Refresh</button>
+          <button type="button" class="btn secondary sm" id="liveBotResetHistory">Reset history</button>
         </div>
       </form>
       <div class="paper-summary" id="liveBotSummary">
@@ -4043,6 +4044,25 @@
     });
 
     document.getElementById("liveBotRefresh").addEventListener("click", () => loadLiveBot(true));
+
+    document.getElementById("liveBotResetHistory").addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Clear live bot closed trades, event log, and PnL stats? Open positions on Binance are not closed."
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await fetch("/api/live-bot/reset-history", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, false);
+        setLiveBotMsg("History reset", true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    });
 
     document.getElementById("liveBotArm").addEventListener("click", async () => {
       if (
