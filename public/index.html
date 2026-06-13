@@ -3380,6 +3380,15 @@
       };
     }
 
+    function updatePaperBotBadges(cfg) {
+      if (!cfg) return;
+      const badge = document.getElementById("paperBotEnabledBadge");
+      if (badge) {
+        badge.textContent = cfg.enabled ? "on" : "off";
+        badge.className = "paper-enabled-badge " + (cfg.enabled ? "on" : "off");
+      }
+    }
+
     function fillPaperBotForm(cfg) {
       if (!cfg) return;
       document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
@@ -3428,11 +3437,7 @@
       );
       document.getElementById("paperBotDrawdownStopPct").value =
         cfg.drawdownStopPct ?? 10;
-      const badge = document.getElementById("paperBotEnabledBadge");
-      if (badge) {
-        badge.textContent = cfg.enabled ? "on" : "off";
-        badge.className = "paper-enabled-badge " + (cfg.enabled ? "on" : "off");
-      }
+      updatePaperBotBadges(cfg);
     }
 
     function fmtUsd(n) {
@@ -3692,6 +3697,7 @@
 
     function renderPaperBot(data, syncForm = false) {
       if (syncForm) fillPaperBotForm(data.config);
+      else updatePaperBotBadges(data.config);
       const s = data.summary ?? {};
       const pnlCls = (n) =>
         n == null ? "" : n >= 0 ? "pass" : "bad";
@@ -3774,7 +3780,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        renderPaperBot(data, true);
+        renderPaperBot(data, false);
         setPaperBotMsg("Settings saved", true);
       } catch (err) {
         setPaperBotMsg(err.message, false);
@@ -3826,6 +3832,16 @@
       };
     }
 
+    function updateLiveBotBadges(cfg) {
+      if (!cfg) return;
+      const armedBadge = document.getElementById("liveBotArmedBadge");
+      if (armedBadge) {
+        armedBadge.textContent = cfg.armed ? "ARMED" : "disarmed";
+        armedBadge.className =
+          "paper-enabled-badge " + (cfg.armed ? "armed" : "off");
+      }
+    }
+
     function fillLiveBotForm(cfg) {
       if (!cfg) return;
       document.getElementById("liveBotEnabled").checked = Boolean(cfg.enabled);
@@ -3864,16 +3880,12 @@
         cfg.drawdownStopEnabled
       );
       document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 10;
-      const armedBadge = document.getElementById("liveBotArmedBadge");
-      if (armedBadge) {
-        armedBadge.textContent = cfg.armed ? "ARMED" : "disarmed";
-        armedBadge.className =
-          "paper-enabled-badge " + (cfg.armed ? "armed" : "off");
-      }
+      updateLiveBotBadges(cfg);
     }
 
     function renderLiveBot(data, syncForm = false) {
       if (syncForm) fillLiveBotForm(data.config);
+      else updateLiveBotBadges(data.config);
       const sum = data.summary ?? {};
       const apiBadge = document.getElementById("liveBotApiBadge");
       if (apiBadge) {
@@ -4023,7 +4035,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        renderLiveBot(data, true);
+        renderLiveBot(data, false);
         setLiveBotMsg("Settings saved", true);
       } catch (err) {
         setLiveBotMsg(err.message, false);

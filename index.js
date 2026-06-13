@@ -46,7 +46,7 @@ const {
   resolveTelegramConfig,
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
-const { createPaperBot } = require("./lib/paper-bot");
+const { createPaperBot, pickSharedBotPatch } = require("./lib/paper-bot");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
@@ -2683,6 +2683,10 @@ async function main() {
         },
         patchPaperBotConfig: (patch) => {
           paperBot.patchConfig(patch);
+          const shared = pickSharedBotPatch(patch);
+          if (liveBot && Object.keys(shared).length) {
+            void liveBot.patchConfig(shared);
+          }
           refreshAllPaperBotPrices(historyBuffers);
           return paperBot.getPublicState();
         },
@@ -2694,8 +2698,14 @@ async function main() {
           refreshAllPaperBotPrices(historyBuffers);
           return liveBot.getPublicState();
         },
-        patchLiveBotConfig: (patch) => {
-          return liveBot.patchConfig(patch);
+        patchLiveBotConfig: async (patch) => {
+          const result = await liveBot.patchConfig(patch);
+          const shared = pickSharedBotPatch(patch);
+          if (paperBot && Object.keys(shared).length) {
+            paperBot.patchConfig(shared);
+          }
+          refreshAllPaperBotPrices(historyBuffers);
+          return result;
         },
         armLiveBot: () => liveBot.arm(),
         disarmLiveBot: () => liveBot.disarm(),
