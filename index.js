@@ -35,6 +35,10 @@ const {
   evaluateRegime,
   applyRegimeToSpike,
 } = require("./lib/regime-filter");
+const {
+  evaluateHtfContraindications,
+  mergeHtfConfig,
+} = require("./lib/htf-contraindication");
 const { getChartPayload } = require("./lib/chart-render");
 const { formatIsoUtcPlus3 } = require("./lib/time-format");
 const {
@@ -2601,9 +2605,49 @@ async function main() {
     return telegram.sendText(formatDrawdownTelegramMessage(label, payload));
   }
 
+  const htf15mCache = new Map();
+
+  async function fetchHtf15mBars(symbol) {
+    const botCfg = paperBot?.getPublicState()?.config ?? {};
+    const barCount = Math.max(120, (botCfg.htfMaBars ?? 20) + 100);
+    const cached = htf15mCache.get(symbol);
+    if (
+      cached &&
+      Date.now() - cached.fetchedAt < 5 * 60_000 &&
+      cached.bars?.length >= 40
+    ) {
+      return cached.bars;
+    }
+    const bars = await fetchKlinesInterval(symbol, "15m", barCount);
+    htf15mCache.set(symbol, { bars, fetchedAt: Date.now() });
+    return bars;
+  }
+
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
+    resolveHtfContraindication: async (symbol, _signalKind, atMs) => {
+      const botCfg = paperBot.getPublicState().config;
+      if (!botCfg.htfContraindicationEnabled) {
+        return { enabled: false, pass: true };
+      }
+      try {
+        const bars = await fetchHtf15mBars(symbol);
+        return evaluateHtfContraindications(
+          barsAtTime(bars, atMs),
+          mergeHtfConfig({ ...cfg, ...botCfg }),
+          atMs
+        );
+      } catch (e) {
+        return {
+          enabled: true,
+          pass: false,
+          label: "error",
+          detail: e.message || String(e),
+          blocks: [],
+        };
+      }
+    },
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -2790,6 +2834,7 @@ async function main() {
                 cfg.regimeInterval ?? "1h",
                 (cfg.regimeMaBars ?? 20) + 15
               ),
+            fetchHtfBars: (sym, limit) => fetchKlinesInterval(sym, "15m", limit),
             onProgress: (p) => {
               touchBacktestProgress(p);
             },
@@ -2870,6 +2915,17 @@ async function main() {
             pbActive,
             pbHistory
           );
+        },
+        onStorageClean: () => {
+          htf15mCache.clear();
+          for (const sym of historyBuffers.keys()) {
+            historyBuffers.set(sym, []);
+            if (klineCache) klineCache.replace(sym, []);
+          }
+          regimeBtcBars = [];
+          backtestJob.result = null;
+          backtestJob.error = null;
+          backtestJob.progress = null;
         },
       }
     );

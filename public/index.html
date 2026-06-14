@@ -913,7 +913,13 @@
         <p class="sub" id="subtitle">Loading…</p>
       </div>
       <div class="status" id="status"></div>
-      <p class="sub" id="storageInfo" style="margin:0;font-size:0.75rem" hidden></p>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px">
+        <p class="sub" id="storageInfo" style="margin:0;font-size:0.75rem;flex:1 1 280px" hidden></p>
+        <button type="button" class="btn secondary sm" id="storageCleanBtn" hidden>
+          Clean cache &amp; snapshots
+        </button>
+        <span class="config-msg" id="storageCleanMsg"></span>
+      </div>
     </div>
     <aside class="positions-panel" id="positionsPanel" aria-label="Open Binance positions">
       <div class="positions-panel-head">
@@ -1460,6 +1466,17 @@
             <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
             Trade fast-mover pullback
           </label>
+        </div>
+        <div class="field" style="min-width: 240px;">
+          <label>
+            <input type="checkbox" id="paperBotHtfGate" name="htfContraindicationEnabled" checked />
+            15m gate (SFP &amp; pullback)
+          </label>
+          <div class="hint">Skip entry if 15m is below MA, breaking down, or bearish sweep</div>
+        </div>
+        <div class="field">
+          <label for="paperBotHtfMaBars">15m MA bars</label>
+          <input type="number" id="paperBotHtfMaBars" step="1" min="5" max="200" value="20" required />
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
@@ -2075,10 +2092,43 @@
             : "") +
           (fileBits.length ? ` · ${escapeHtml(fileBits.join(", "))}` : "") +
           `<br><span style="color:var(--muted)">${escapeHtml(formatStorageUsage(info))}</span>`;
+        const cleanBtn = document.getElementById("storageCleanBtn");
+        if (cleanBtn) cleanBtn.hidden = false;
       } catch {
         /* ignore */
       }
     }
+
+    function setStorageCleanMsg(text, ok) {
+      const el = document.getElementById("storageCleanMsg");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "config-msg" + (ok ? " ok" : text ? " err" : "");
+    }
+
+    document.getElementById("storageCleanBtn")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Delete kline cache, exchange info cache, trade chart snapshots, backtest exports, and scanner results.json?\n\nKeeps: ui-settings, scanner-config, position comments, paper & live bot transaction history."
+        )
+      ) {
+        return;
+      }
+      setStorageCleanMsg("Cleaning…", true);
+      try {
+        const res = await fetch("/api/storage-clean", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const n = data.removed?.length ?? 0;
+        setStorageCleanMsg(
+          `Freed ${data.freedBytesFormatted || "0 B"} (${n} item${n === 1 ? "" : "s"})`,
+          true
+        );
+        await loadStorageInfo();
+      } catch (e) {
+        setStorageCleanMsg(e.message, false);
+      }
+    });
 
     function applyUiSettingsFromCache() {
       const fields = [
@@ -3362,6 +3412,8 @@
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
+        htfContraindicationEnabled: document.getElementById("paperBotHtfGate").checked,
+        htfMaBars: Number(document.getElementById("paperBotHtfMaBars").value),
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
         addOnDepositPct: Number(document.getElementById("paperBotAddOnDepositPct").value),
         addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
@@ -3417,6 +3469,9 @@
       document.getElementById("paperBotTradePullback").checked = Boolean(
         cfg.tradePullbackSignals
       );
+      document.getElementById("paperBotHtfGate").checked =
+        cfg.htfContraindicationEnabled !== false;
+      document.getElementById("paperBotHtfMaBars").value = cfg.htfMaBars ?? 20;
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
       document.getElementById("paperBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
       document.getElementById("paperBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
@@ -4199,8 +4254,13 @@
       const hint = document.getElementById("backtestSignalHint");
       if (data.signalConfig) {
         const s = data.signalConfig;
-        hint.textContent =
+        let text =
           `Signals: ${s.interval} · corridor ${s.corridorDays}d · ${s.signalCandles}+ above corridor · break vol ×${s.minBreakVolumeMultiplier} (from Scanner tab / saved config)`;
+        const bc = (data.result || data.last)?.botConfig;
+        if (bc?.htfContraindicationEnabled !== false && (bc?.tradeSfpSignals || bc?.tradePullbackSignals)) {
+          text += ` · 15m gate on SFP/PB (MA${bc.htfMaBars ?? 20}, Paper bot settings)`;
+        }
+        hint.textContent = text;
       }
 
       if (data.running && !data.result?.summary) {
