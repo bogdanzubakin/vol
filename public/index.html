@@ -1412,9 +1412,9 @@
           </label>
         </div>
         <div class="field">
-          <label for="paperBotPositionPct">Position size %</label>
-          <input type="number" id="paperBotPositionPct" step="0.1" min="0.1" max="100" value="1" required />
-          <div class="hint">Margin per trade = deposit × this %</div>
+          <label for="paperBotPositionUsdt">Position size (USDT)</label>
+          <input type="number" id="paperBotPositionUsdt" step="0.01" min="1" max="1000000" value="6" required />
+          <div class="hint">Fixed margin per trade (capped by free deposit)</div>
         </div>
         <div class="field">
           <label for="paperBotStopPct">Stop loss below corridor high %</label>
@@ -1428,24 +1428,24 @@
         </div>
         <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
-          <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
+          <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="3" required />
           <div class="hint">Default: entry × (1 + %). Smart mode uses this as max cap for SFP/pullback</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
-            <input type="checkbox" id="paperBotSmartExits" name="smartExitLevelsEnabled" />
+            <input type="checkbox" id="paperBotSmartExits" name="smartExitLevelsEnabled" checked />
             Smart SL/TP (SFP &amp; pullback)
           </label>
           <div class="hint">Off = corridor SL + fixed TP % (same as spike). On = sweep/MA-based exits</div>
         </div>
         <div class="field" id="paperBotTpMinField">
           <label for="paperBotTpMinPct">Min TP % (smart mode)</label>
-          <input type="number" id="paperBotTpMinPct" step="0.1" min="0" max="200" value="0" required />
+          <input type="number" id="paperBotTpMinPct" step="0.1" min="0" max="200" value="1" required />
           <div class="hint">0 = auto floor at 65% of take profit % above</div>
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
-            <input type="checkbox" id="paperBotTradeSpike" name="tradeSpikeSignals" checked />
+            <input type="checkbox" id="paperBotTradeSpike" name="tradeSpikeSignals" />
             Trade spike signals
           </label>
         </div>
@@ -1457,13 +1457,13 @@
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
-            <input type="checkbox" id="paperBotTradeSfp" name="tradeSfpSignals" />
+            <input type="checkbox" id="paperBotTradeSfp" name="tradeSfpSignals" checked />
             Trade SFP / sweep-reclaim
           </label>
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
-            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
+            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" checked />
             Trade fast-mover pullback
           </label>
         </div>
@@ -1532,14 +1532,14 @@
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
-            <input type="checkbox" id="paperBotDrawdownStopEnabled" name="drawdownStopEnabled" />
+            <input type="checkbox" id="paperBotDrawdownStopEnabled" name="drawdownStopEnabled" checked />
             Drawdown stop (auto-disable)
           </label>
           <div class="hint">Turns bot off when equity falls by % from baseline (set on enable/reset)</div>
         </div>
         <div class="field">
           <label for="paperBotDrawdownStopPct">Max deposit loss %</label>
-          <input type="number" id="paperBotDrawdownStopPct" step="0.5" min="1" max="100" value="10" required />
+          <input type="number" id="paperBotDrawdownStopPct" step="0.5" min="1" max="100" value="4" required />
           <div class="hint">e.g. 10 = disable after −10% from baseline equity</div>
         </div>
         <div class="settings-actions">
@@ -1646,17 +1646,17 @@
         </div>
         <div class="field">
           <label for="liveBotLeverage">Leverage (isolated)</label>
-          <input type="number" id="liveBotLeverage" step="1" min="1" max="125" value="2" required />
-          <div class="hint">Applied per symbol before each entry (default 2×)</div>
+          <input type="number" id="liveBotLeverage" step="1" min="1" max="125" value="1" required />
+          <div class="hint">Applied per symbol before each entry (default 1×)</div>
         </div>
         <div class="field">
-          <label for="liveBotPositionPct">Position size %</label>
-          <input type="number" id="liveBotPositionPct" step="0.1" min="0.1" max="100" value="1" required />
-          <div class="hint">% of available USDT × leverage = notional; minimum $5 margin per trade</div>
+          <label for="liveBotPositionUsdt">Position size (USDT)</label>
+          <input type="number" id="liveBotPositionUsdt" step="0.01" min="5" max="1000000" value="6" required />
+          <div class="hint">Fixed isolated margin per trade (capped by available USDT; min $5)</div>
         </div>
         <div class="field">
           <label for="liveBotMaxOpen">Max open positions</label>
-          <input type="number" id="liveBotMaxOpen" step="1" min="1" max="100" value="20" required />
+          <input type="number" id="liveBotMaxOpen" step="1" min="1" max="100" value="4" required />
         </div>
         <div class="field">
           <label for="liveBotStopPct">Stop below corridor high %</label>
@@ -1669,31 +1669,31 @@
         </div>
         <div class="field">
           <label for="liveBotTpPct">Take profit %</label>
-          <input type="number" id="liveBotTpPct" step="0.1" min="0.1" max="200" value="10" required />
+          <input type="number" id="liveBotTpPct" step="0.1" min="0.1" max="200" value="3" required />
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
-            <input type="checkbox" id="liveBotSmartExits" name="smartExitLevelsEnabled" />
+            <input type="checkbox" id="liveBotSmartExits" name="smartExitLevelsEnabled" checked />
             Smart SL/TP (SFP &amp; pullback)
           </label>
           <div class="hint">Off = corridor SL + fixed TP %</div>
         </div>
         <div class="field" id="liveBotTpMinField">
           <label for="liveBotTpMinPct">Min TP % (smart mode)</label>
-          <input type="number" id="liveBotTpMinPct" step="0.1" min="0" max="200" value="0" required />
+          <input type="number" id="liveBotTpMinPct" step="0.1" min="0" max="200" value="1" required />
           <div class="hint">0 = auto 65% of max TP</div>
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradeSpike" checked /> Trade spike</label>
+          <label><input type="checkbox" id="liveBotTradeSpike" /> Trade spike</label>
         </div>
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradeFc" /> Trade fast corridor</label>
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradeSfp" /> Trade SFP</label>
+          <label><input type="checkbox" id="liveBotTradeSfp" checked /> Trade SFP</label>
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
+          <label><input type="checkbox" id="liveBotTradePullback" checked /> Trade pullback</label>
         </div>
         <div class="field" style="min-width: 220px;">
           <label><input type="checkbox" id="liveBotAddOnEnabled" /> Pyramid add-ons</label>
@@ -1734,14 +1734,14 @@
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
-            <input type="checkbox" id="liveBotDrawdownStopEnabled" name="drawdownStopEnabled" />
+            <input type="checkbox" id="liveBotDrawdownStopEnabled" name="drawdownStopEnabled" checked />
             Drawdown stop (auto-disable)
           </label>
           <div class="hint">Disables & disarms when wallet+unrealized drops by % from baseline (set on arm/enable)</div>
         </div>
         <div class="field">
           <label for="liveBotDrawdownStopPct">Max deposit loss %</label>
-          <input type="number" id="liveBotDrawdownStopPct" step="0.5" min="1" max="100" value="10" required />
+          <input type="number" id="liveBotDrawdownStopPct" step="0.5" min="1" max="100" value="4" required />
         </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="liveBotApply">Save settings</button>
@@ -1755,7 +1755,7 @@
         <div><div class="stat-label">Realized PnL</div><div class="stat-value" id="liveStatRealized">—</div></div>
         <div><div class="stat-label">Unrealized</div><div class="stat-value" id="liveStatUnrealized">—</div></div>
         <div><div class="stat-label">Open</div><div class="stat-value" id="liveStatOpen">—</div></div>
-        <div><div class="stat-label">Leverage</div><div class="stat-value" id="liveStatLeverage">2× iso</div></div>
+        <div><div class="stat-label">Leverage</div><div class="stat-value" id="liveStatLeverage">1× iso</div></div>
         <div><div class="stat-label">Drawdown</div><div class="stat-value" id="liveStatDrawdown">—</div></div>
         <div><div class="stat-label">DD limit</div><div class="stat-value" id="liveStatDrawdownLimit">—</div></div>
       </div>
@@ -3397,10 +3397,17 @@
       return '<span class="status-tag signal">SPIKE</span>';
     }
 
+    function displayPositionSizeUsdt(cfg) {
+      if (cfg?.positionSizeUsdt != null) return cfg.positionSizeUsdt;
+      const deposit = cfg?.initialDeposit ?? 1000;
+      const pct = cfg?.positionSizePct ?? 1;
+      return (deposit * pct) / 100;
+    }
+
     function paperBotConfigFromForm() {
       return {
         enabled: document.getElementById("paperBotEnabled").checked,
-        positionSizePct: Number(document.getElementById("paperBotPositionPct").value),
+        positionSizeUsdt: Number(document.getElementById("paperBotPositionUsdt").value),
         stopLossBelowCorridorPct: Number(document.getElementById("paperBotStopPct").value),
         stopLossFallbackPnlPct: Number(
           document.getElementById("paperBotStopFallbackPnlPct").value
@@ -3445,30 +3452,27 @@
     function fillPaperBotForm(cfg) {
       if (!cfg) return;
       document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
-      document.getElementById("paperBotPositionPct").value = cfg.positionSizePct ?? 1;
+      document.getElementById("paperBotPositionUsdt").value = displayPositionSizeUsdt(cfg);
       document.getElementById("paperBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
       document.getElementById("paperBotStopFallbackPnlPct").value =
         cfg.stopLossFallbackPnlPct ?? 2;
-      document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 10;
-      document.getElementById("paperBotTpMinPct").value = cfg.takeProfitMinPct ?? 0;
-      document.getElementById("paperBotSmartExits").checked = Boolean(
-        cfg.smartExitLevelsEnabled
-      );
+      document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 3;
+      document.getElementById("paperBotTpMinPct").value = cfg.takeProfitMinPct ?? 1;
+      document.getElementById("paperBotSmartExits").checked =
+        cfg.smartExitLevelsEnabled !== false;
       const paperTpMinField = document.getElementById("paperBotTpMinField");
       if (paperTpMinField) {
-        paperTpMinField.style.opacity = cfg.smartExitLevelsEnabled ? "1" : "0.45";
+        paperTpMinField.style.opacity =
+          cfg.smartExitLevelsEnabled !== false ? "1" : "0.45";
       }
-      document.getElementById("paperBotTradeSpike").checked =
-        cfg.tradeSpikeSignals !== false;
+      document.getElementById("paperBotTradeSpike").checked = Boolean(cfg.tradeSpikeSignals);
       document.getElementById("paperBotTradeFc").checked = Boolean(
         cfg.tradeFastCorridorSignals
       );
-      document.getElementById("paperBotTradeSfp").checked = Boolean(
-        cfg.tradeSfpSignals
-      );
-      document.getElementById("paperBotTradePullback").checked = Boolean(
-        cfg.tradePullbackSignals
-      );
+      document.getElementById("paperBotTradeSfp").checked =
+        cfg.tradeSfpSignals !== false;
+      document.getElementById("paperBotTradePullback").checked =
+        cfg.tradePullbackSignals !== false;
       document.getElementById("paperBotHtfGate").checked =
         cfg.htfContraindicationEnabled !== false;
       document.getElementById("paperBotHtfMaBars").value = cfg.htfMaBars ?? 20;
@@ -3488,11 +3492,10 @@
         cfg.falseSpikeAfterMinutes ?? 30;
       document.getElementById("paperBotFalseSpikeBelowEntryPct").value =
         cfg.falseSpikeBelowEntryPct ?? 0;
-      document.getElementById("paperBotDrawdownStopEnabled").checked = Boolean(
-        cfg.drawdownStopEnabled
-      );
+      document.getElementById("paperBotDrawdownStopEnabled").checked =
+        cfg.drawdownStopEnabled !== false;
       document.getElementById("paperBotDrawdownStopPct").value =
-        cfg.drawdownStopPct ?? 10;
+        cfg.drawdownStopPct ?? 4;
       updatePaperBotBadges(cfg);
     }
 
@@ -3857,7 +3860,7 @@
         enabled: document.getElementById("liveBotEnabled").checked,
         leverage: Number(document.getElementById("liveBotLeverage").value),
         maxOpenPositions: Number(document.getElementById("liveBotMaxOpen").value),
-        positionSizePct: Number(document.getElementById("liveBotPositionPct").value),
+        positionSizeUsdt: Number(document.getElementById("liveBotPositionUsdt").value),
         stopLossBelowCorridorPct: Number(document.getElementById("liveBotStopPct").value),
         stopLossFallbackPnlPct: Number(
           document.getElementById("liveBotStopFallbackPnlPct").value
@@ -3901,25 +3904,25 @@
     function fillLiveBotForm(cfg) {
       if (!cfg) return;
       document.getElementById("liveBotEnabled").checked = Boolean(cfg.enabled);
-      document.getElementById("liveBotLeverage").value = cfg.leverage ?? 2;
-      document.getElementById("liveBotMaxOpen").value = cfg.maxOpenPositions ?? 20;
-      document.getElementById("liveBotPositionPct").value = cfg.positionSizePct ?? 1;
+      document.getElementById("liveBotLeverage").value = cfg.leverage ?? 1;
+      document.getElementById("liveBotMaxOpen").value = cfg.maxOpenPositions ?? 4;
+      document.getElementById("liveBotPositionUsdt").value = displayPositionSizeUsdt(cfg);
       document.getElementById("liveBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
       document.getElementById("liveBotStopFallbackPnlPct").value =
         cfg.stopLossFallbackPnlPct ?? 2;
-      document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 10;
-      document.getElementById("liveBotTpMinPct").value = cfg.takeProfitMinPct ?? 0;
-      document.getElementById("liveBotSmartExits").checked = Boolean(
-        cfg.smartExitLevelsEnabled
-      );
+      document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 3;
+      document.getElementById("liveBotTpMinPct").value = cfg.takeProfitMinPct ?? 1;
+      document.getElementById("liveBotSmartExits").checked =
+        cfg.smartExitLevelsEnabled !== false;
       const liveTpMinField = document.getElementById("liveBotTpMinField");
       if (liveTpMinField) {
-        liveTpMinField.style.opacity = cfg.smartExitLevelsEnabled ? "1" : "0.45";
+        liveTpMinField.style.opacity =
+          cfg.smartExitLevelsEnabled !== false ? "1" : "0.45";
       }
-      document.getElementById("liveBotTradeSpike").checked = cfg.tradeSpikeSignals !== false;
+      document.getElementById("liveBotTradeSpike").checked = Boolean(cfg.tradeSpikeSignals);
       document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
-      document.getElementById("liveBotTradeSfp").checked = Boolean(cfg.tradeSfpSignals);
-      document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
+      document.getElementById("liveBotTradeSfp").checked = cfg.tradeSfpSignals !== false;
+      document.getElementById("liveBotTradePullback").checked = cfg.tradePullbackSignals !== false;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
       document.getElementById("liveBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
       document.getElementById("liveBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
@@ -3932,10 +3935,9 @@
         cfg.falseSpikeAfterMinutes ?? 30;
       document.getElementById("liveBotFalseSpikeBelowEntryPct").value =
         cfg.falseSpikeBelowEntryPct ?? 0;
-      document.getElementById("liveBotDrawdownStopEnabled").checked = Boolean(
-        cfg.drawdownStopEnabled
-      );
-      document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 10;
+      document.getElementById("liveBotDrawdownStopEnabled").checked =
+        cfg.drawdownStopEnabled !== false;
+      document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 4;
       updateLiveBotBadges(cfg);
     }
 
@@ -3967,7 +3969,7 @@
         "stat-value " + pnlCls(sum.unrealizedPnl);
       document.getElementById("liveStatOpen").textContent = String(sum.openCount ?? 0);
       document.getElementById("liveStatLeverage").textContent =
-        `${sum.leverage ?? data.config?.leverage ?? 2}× isolated`;
+        `${sum.leverage ?? data.config?.leverage ?? 1}× isolated`;
       renderDrawdownStats(
         sum.drawdown,
         document.getElementById("liveStatDrawdown"),

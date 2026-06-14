@@ -58,6 +58,7 @@ const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
   saveTradeSnapshot,
   saveOpenPositionSnapshot,
+  cleanOldSnapshots,
 } = require("./lib/paper-bot-snapshot");
 const {
   runPaperBotBacktest,
@@ -77,7 +78,12 @@ const {
 } = require("./lib/binance-positions");
 const { createPositionsHistoryStore } = require("./lib/positions-history");
 const { createTelegramAuth } = require("./lib/telegram-auth");
-const { dataPath, migrateLegacyCache, resolveDataDir } = require("./lib/data-dir");
+const {
+  dataPath,
+  migrateLegacyCache,
+  resolveDataDir,
+  formatBytes,
+} = require("./lib/data-dir");
 const scannerConfig = require("./lib/scanner-config");
 
 const REST_BASE = "https://fapi.binance.com";
@@ -2955,6 +2961,15 @@ async function main() {
 
   await refreshRegimeBars();
   setInterval(refreshRegimeBars, 60_000).unref?.();
+
+  const snapshotClean = cleanOldSnapshots();
+  if (snapshotClean.removed > 0) {
+    console.error(
+      `Snapshots: removed ${snapshotClean.removed} file(s) older than 24h ` +
+        `(${formatBytes(snapshotClean.freedBytes)} freed)`
+    );
+  }
+  setInterval(cleanOldSnapshots, 60 * 60 * 1000).unref?.();
 
   reevaluateAll = () =>
     reevaluateAllSymbols(symbols, historyBuffers, signalMaps(), quoteVolMap);
