@@ -133,7 +133,7 @@ const cfg = {
   regimeInterval: "1h",
   sfpLookbackBars: 30,
   sfpReclaimBars: 5,
-  sfpMinSweepPct: 0.02,
+  sfpMinSweepPct: 0.05,
   pullbackMaBars: 7,
   pullbackTouchLookback: 12,
   pullbackMaxDistancePct: 0.35,
@@ -2606,6 +2606,24 @@ async function main() {
     return { snapshotId, symbol: pos.symbol };
   }
 
+  async function generateLiveBotOpenSnapshot(positionId) {
+    const state = await liveBot.getPublicState();
+    const pos = state.openPositions.find((p) => p.id === positionId);
+    if (!pos) throw new Error("Open position not found");
+    const asOf = Date.now();
+    const bars = getBarsForTradeSnapshot(pos.symbol, pos.openedAt, asOf);
+    if (bars.length < 10) throw new Error("Not enough price history for snapshot");
+    const { snapshotId } = await saveOpenPositionSnapshot({
+      position: pos,
+      bars,
+      interval: cfg.interval,
+      corridorDays: cfg.corridorDays,
+      corridorExcludeMinutes: cfg.corridorExcludeMinutes,
+      signalCandles: cfg.signalCandles,
+    });
+    return { snapshotId, symbol: pos.symbol };
+  }
+
   function handleDrawdownStop(payload) {
     if (!telegram?.enabled) return;
     const label = payload.bot === "live" ? "Live bot" : "Paper bot";
@@ -2680,6 +2698,7 @@ async function main() {
   const futuresTrader = createFuturesTrader({ kv });
   liveBot = createLiveBot({
     trader: futuresTrader,
+    onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
@@ -2782,6 +2801,7 @@ async function main() {
         syncLiveBot: () => liveBot.syncFromExchange(),
         resetLiveBotHistory: () => liveBot.resetHistory(),
         generatePaperBotOpenSnapshot,
+        generateLiveBotOpenSnapshot,
         getBacktestStatus: () => {
           reconcileBacktestJob();
           return {

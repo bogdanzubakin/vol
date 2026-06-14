@@ -713,7 +713,9 @@
       }
       .trade-snapshot-btn,
       .backtest-snapshot-btn,
-      .open-snapshot-btn {
+      .open-snapshot-btn,
+      .live-snapshot-btn,
+      .live-open-snapshot-btn {
         min-width: 7.5rem;
       }
       .modal {
@@ -1325,7 +1327,7 @@
         </div>
         <div class="field">
           <label for="sfpMinSweepPct">SFP min sweep % below low</label>
-          <input type="number" id="sfpMinSweepPct" step="0.01" min="0" max="5" value="0.02" required />
+          <input type="number" id="sfpMinSweepPct" step="0.01" min="0" max="5" value="0.05" required />
         </div>
         <div class="field">
           <label for="pullbackMaBars">Pullback MA bars (1m)</label>
@@ -1443,6 +1445,21 @@
           <input type="number" id="paperBotTpMinPct" step="0.1" min="0" max="200" value="1" required />
           <div class="hint">0 = auto floor at 65% of take profit % above</div>
         </div>
+        <div class="field">
+          <label for="paperBotMinSlDist">Min SL distance % (smart)</label>
+          <input type="number" id="paperBotMinSlDist" step="0.1" min="0" max="10" value="0.8" required />
+          <div class="hint">0 = off. Widen tight sweep/MA stops (reduces noise stop-outs)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotMaxSfpCorridor">Max SFP corridor width %</label>
+          <input type="number" id="paperBotMaxSfpCorridor" step="1" min="0" max="100" value="20" required />
+          <div class="hint">0 = off. Skip SFP when local range is too wide/choppy</div>
+        </div>
+        <div class="field">
+          <label for="paperBotSfpTp">SFP take profit cap %</label>
+          <input type="number" id="paperBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
+          <div class="hint">Lower TP for sweep-reclaim entries (uses main TP if higher)</div>
+        </div>
         <div class="field" style="min-width: 200px;">
           <label>
             <input type="checkbox" id="paperBotTradeSpike" name="tradeSpikeSignals" />
@@ -1463,7 +1480,7 @@
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
-            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" checked />
+            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
             Trade fast-mover pullback
           </label>
         </div>
@@ -1690,6 +1707,18 @@
           <input type="number" id="liveBotTpMinPct" step="0.1" min="0" max="200" value="1" required />
           <div class="hint">0 = auto 65% of max TP</div>
         </div>
+        <div class="field">
+          <label for="liveBotMinSlDist">Min SL distance % (smart)</label>
+          <input type="number" id="liveBotMinSlDist" step="0.1" min="0" max="10" value="0.8" required />
+        </div>
+        <div class="field">
+          <label for="liveBotMaxSfpCorridor">Max SFP corridor width %</label>
+          <input type="number" id="liveBotMaxSfpCorridor" step="1" min="0" max="100" value="20" required />
+        </div>
+        <div class="field">
+          <label for="liveBotSfpTp">SFP take profit cap %</label>
+          <input type="number" id="liveBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
+        </div>
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradeSpike" /> Trade spike</label>
         </div>
@@ -1700,7 +1729,7 @@
           <label><input type="checkbox" id="liveBotTradeSfp" checked /> Trade SFP</label>
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradePullback" checked /> Trade pullback</label>
+          <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
         </div>
         <div class="field" style="min-width: 260px;">
           <label>
@@ -1788,11 +1817,12 @@
               <th>Unrealized</th>
               <th>Unrealized %</th>
               <th>Duration</th>
+              <th>Chart</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="liveBotOpenBody">
-            <tr><td colspan="11" class="empty">No open positions</td></tr>
+            <tr><td colspan="12" class="empty">No open positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -1809,10 +1839,11 @@
               <th>PnL</th>
               <th>Duration</th>
               <th>Closed</th>
+              <th>Chart</th>
             </tr>
           </thead>
           <tbody id="liveBotClosedBody">
-            <tr><td colspan="8" class="empty">No closed trades</td></tr>
+            <tr><td colspan="9" class="empty">No closed trades</td></tr>
           </tbody>
         </table>
       </div>
@@ -2658,7 +2689,7 @@
       });
     }
 
-    async function generateOpenPositionSnapshot(positionId, symbol) {
+    async function generateOpenPositionSnapshot(positionId, symbol, bot = "paper") {
       const modal = document.getElementById("chartModal");
       const body = document.getElementById("chartModalBody");
       document.getElementById("chartModalTitle").textContent =
@@ -2671,7 +2702,11 @@
         diagChartInstance = null;
       }
       try {
-        const res = await fetch("/api/paper-bot/snapshot/generate", {
+        const api =
+          bot === "live"
+            ? "/api/live-bot/snapshot/generate"
+            : "/api/paper-bot/snapshot/generate";
+        const res = await fetch(api, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: positionId }),
@@ -3083,7 +3118,7 @@
         state.regimeMode === "bearish" ? "bearish" : "bullish";
       document.getElementById("sfpLookbackBars").value = state.sfpLookbackBars ?? 30;
       document.getElementById("sfpReclaimBars").value = state.sfpReclaimBars ?? 5;
-      document.getElementById("sfpMinSweepPct").value = state.sfpMinSweepPct ?? 0.02;
+      document.getElementById("sfpMinSweepPct").value = state.sfpMinSweepPct ?? 0.05;
       document.getElementById("pullbackMaBars").value = state.pullbackMaBars ?? 7;
       document.getElementById("pullbackTouchLookback").value =
         state.pullbackTouchLookback ?? 12;
@@ -3431,6 +3466,9 @@
         ),
         takeProfitPct: Number(document.getElementById("paperBotTpPct").value),
         takeProfitMinPct: Number(document.getElementById("paperBotTpMinPct").value),
+        minSmartStopDistancePct: Number(document.getElementById("paperBotMinSlDist").value),
+        maxSfpCorridorWidthPct: Number(document.getElementById("paperBotMaxSfpCorridor").value),
+        sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
@@ -3476,6 +3514,9 @@
         cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("paperBotTpPct").value = cfg.takeProfitPct ?? 3;
       document.getElementById("paperBotTpMinPct").value = cfg.takeProfitMinPct ?? 1;
+      document.getElementById("paperBotMinSlDist").value = cfg.minSmartStopDistancePct ?? 0.8;
+      document.getElementById("paperBotMaxSfpCorridor").value = cfg.maxSfpCorridorWidthPct ?? 20;
+      document.getElementById("paperBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
       document.getElementById("paperBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
       const paperTpMinField = document.getElementById("paperBotTpMinField");
@@ -3490,7 +3531,7 @@
       document.getElementById("paperBotTradeSfp").checked =
         cfg.tradeSfpSignals !== false;
       document.getElementById("paperBotTradePullback").checked =
-        cfg.tradePullbackSignals !== false;
+        Boolean(cfg.tradePullbackSignals);
       document.getElementById("paperBotHtfGate").checked =
         cfg.htfContraindicationEnabled !== false;
       document.getElementById("paperBotHtfMaBars").value = cfg.htfMaBars ?? 20;
@@ -3887,6 +3928,9 @@
         ),
         takeProfitPct: Number(document.getElementById("liveBotTpPct").value),
         takeProfitMinPct: Number(document.getElementById("liveBotTpMinPct").value),
+        minSmartStopDistancePct: Number(document.getElementById("liveBotMinSlDist").value),
+        maxSfpCorridorWidthPct: Number(document.getElementById("liveBotMaxSfpCorridor").value),
+        sfpTakeProfitPct: Number(document.getElementById("liveBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("liveBotSmartExits").checked,
         tradeSpikeSignals: document.getElementById("liveBotTradeSpike").checked,
         tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
@@ -3933,6 +3977,9 @@
         cfg.stopLossFallbackPnlPct ?? 2;
       document.getElementById("liveBotTpPct").value = cfg.takeProfitPct ?? 3;
       document.getElementById("liveBotTpMinPct").value = cfg.takeProfitMinPct ?? 1;
+      document.getElementById("liveBotMinSlDist").value = cfg.minSmartStopDistancePct ?? 0.8;
+      document.getElementById("liveBotMaxSfpCorridor").value = cfg.maxSfpCorridorWidthPct ?? 20;
+      document.getElementById("liveBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
       document.getElementById("liveBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
       const liveTpMinField = document.getElementById("liveBotTpMinField");
@@ -3943,7 +3990,7 @@
       document.getElementById("liveBotTradeSpike").checked = Boolean(cfg.tradeSpikeSignals);
       document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
       document.getElementById("liveBotTradeSfp").checked = cfg.tradeSfpSignals !== false;
-      document.getElementById("liveBotTradePullback").checked = cfg.tradePullbackSignals !== false;
+      document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
       document.getElementById("liveBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
@@ -4002,7 +4049,7 @@
       const openBody = document.getElementById("liveBotOpenBody");
       if (!data.openPositions?.length) {
         openBody.innerHTML =
-          '<tr><td colspan="11" class="empty">No open positions</td></tr>';
+          '<tr><td colspan="12" class="empty">No open positions</td></tr>';
       } else {
         openBody.innerHTML = data.openPositions
           .map((p) => {
@@ -4011,6 +4058,9 @@
             const unrPctCls = pnlCls(unrPct);
             const unrPctLabel =
               unrPct == null ? "—" : `${fmt(unrPct, 2)}%`;
+            const previewBtn = p.id
+              ? `<button type="button" class="btn secondary sm live-open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
+              : "";
             return `<tr>
               <td class="sym">${symLink(p.symbol)}</td>
               <td>${botSignalKindTag(p.signalKind)}</td>
@@ -4022,6 +4072,7 @@
               <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
               <td class="${unrPctCls}">${unrPctLabel}</td>
               <td class="history-duration">${fmtPositionDuration(p.openedAtIso ?? p.openedAt)}</td>
+              <td class="col-chart-desktop">${previewBtn || '<span class="time">—</span>'}</td>
               <td><button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button></td>
             </tr>`;
           })
@@ -4029,16 +4080,24 @@
         openBody.querySelectorAll(".live-close-btn").forEach((btn) => {
           btn.addEventListener("click", () => closeLiveSymbol(btn.dataset.symbol));
         });
+        openBody.querySelectorAll(".live-open-snapshot-btn").forEach((btn) => {
+          btn.addEventListener("click", () =>
+            generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol, "live")
+          );
+        });
       }
 
       const closedBody = document.getElementById("liveBotClosedBody");
       if (!data.closedTrades?.length) {
         closedBody.innerHTML =
-          '<tr><td colspan="8" class="empty">No closed trades</td></tr>';
+          '<tr><td colspan="9" class="empty">No closed trades</td></tr>';
       } else {
         closedBody.innerHTML = data.closedTrades
           .map((t) => {
             const pnlCls2 = pnlCls(t.pnl);
+            const previewBtn = t.snapshotId
+              ? `<button type="button" class="btn secondary sm live-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
+              : "";
             return `<tr>
               <td class="sym">${symLink(t.symbol)}</td>
               <td>${botSignalKindTag(t.signalKind)}</td>
@@ -4048,9 +4107,15 @@
               <td class="${pnlCls2}">${fmtUsd(t.pnl)}</td>
               <td class="history-duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
               <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td class="col-chart-desktop">${previewBtn || '<span class="time">—</span>'}</td>
             </tr>`;
           })
           .join("");
+        closedBody.querySelectorAll(".live-snapshot-btn").forEach((btn) => {
+          btn.addEventListener("click", () =>
+            openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol)
+          );
+        });
       }
 
       const logEl = document.getElementById("liveBotLog");
