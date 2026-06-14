@@ -1772,11 +1772,12 @@
               <th>SL</th>
               <th>TP</th>
               <th>Unrealized</th>
+              <th>Unrealized %</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="liveBotOpenBody">
-            <tr><td colspan="9" class="empty">No open positions</td></tr>
+            <tr><td colspan="10" class="empty">No open positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -3979,11 +3980,15 @@
       const openBody = document.getElementById("liveBotOpenBody");
       if (!data.openPositions?.length) {
         openBody.innerHTML =
-          '<tr><td colspan="9" class="empty">No open positions</td></tr>';
+          '<tr><td colspan="10" class="empty">No open positions</td></tr>';
       } else {
         openBody.innerHTML = data.openPositions
           .map((p) => {
             const unrCls = pnlCls(p.unrealizedPnl);
+            const unrPct = p.unrealizedPnlPct;
+            const unrPctCls = pnlCls(unrPct);
+            const unrPctLabel =
+              unrPct == null ? "—" : `${fmt(unrPct, 2)}%`;
             return `<tr>
               <td class="sym">${symLink(p.symbol)}</td>
               <td>${botSignalKindTag(p.signalKind)}</td>
@@ -3993,6 +3998,7 @@
               <td class="bad">${fmt(p.stopLoss, 6)}</td>
               <td class="pass">${fmt(p.takeProfit, 6)}</td>
               <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
+              <td class="${unrPctCls}">${unrPctLabel}</td>
               <td><button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button></td>
             </tr>`;
           })
