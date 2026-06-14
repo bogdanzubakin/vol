@@ -2655,6 +2655,22 @@ async function main() {
         };
       }
     },
+    resolveExtremalSpikeGate: async (symbol, atMs) => {
+      const botCfg = paperBot.getPublicState().config;
+      if (!botCfg.extremalSpikeGateEnabled) {
+        return { enabled: false, pass: true };
+      }
+      const bars = historyBuffers.get(symbol);
+      if (!bars?.length) {
+        return {
+          enabled: true,
+          pass: false,
+          waiting: true,
+          detail: "no kline history",
+        };
+      }
+      return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
+    },
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +

@@ -1478,6 +1478,13 @@
           <label for="paperBotHtfMaBars">15m MA bars</label>
           <input type="number" id="paperBotHtfMaBars" step="1" min="5" max="200" value="20" required />
         </div>
+        <div class="field" style="min-width: 260px;">
+          <label>
+            <input type="checkbox" id="paperBotExtremalSpikeGate" checked />
+            30m extremal spike gate
+          </label>
+          <div class="hint">Skip entry if any H-L candle in last 30m ≥ Exclude mult × average (scanner settings)</div>
+        </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotAddOnEnabled" name="addOnEnabled" />
@@ -3431,6 +3438,7 @@
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
         htfContraindicationEnabled: document.getElementById("paperBotHtfGate").checked,
         htfMaBars: Number(document.getElementById("paperBotHtfMaBars").value),
+        extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
         addOnDepositPct: Number(document.getElementById("paperBotAddOnDepositPct").value),
         addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
@@ -3486,6 +3494,8 @@
       document.getElementById("paperBotHtfGate").checked =
         cfg.htfContraindicationEnabled !== false;
       document.getElementById("paperBotHtfMaBars").value = cfg.htfMaBars ?? 20;
+      document.getElementById("paperBotExtremalSpikeGate").checked =
+        cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
       document.getElementById("paperBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
       document.getElementById("paperBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
