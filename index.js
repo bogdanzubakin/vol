@@ -2630,12 +2630,27 @@ async function main() {
     return bars;
   }
 
+  async function resolveExtremalSpikeGateForSymbol(symbol, atMs, botCfg = {}) {
+    if (!botCfg?.extremalSpikeGateEnabled) {
+      return { enabled: false, pass: true };
+    }
+    const bars = historyBuffers.get(symbol);
+    if (!bars?.length) {
+      return {
+        enabled: true,
+        pass: false,
+        waiting: true,
+        detail: "no kline history",
+      };
+    }
+    return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
+  }
+
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
-    resolveHtfContraindication: async (symbol, _signalKind, atMs) => {
-      const botCfg = paperBot.getPublicState().config;
-      if (!botCfg.htfContraindicationEnabled) {
+    resolveHtfContraindication: async (symbol, _signalKind, atMs, botCfg = {}) => {
+      if (!botCfg?.htfContraindicationEnabled) {
         return { enabled: false, pass: true };
       }
       try {
@@ -2655,22 +2670,7 @@ async function main() {
         };
       }
     },
-    resolveExtremalSpikeGate: async (symbol, atMs) => {
-      const botCfg = paperBot.getPublicState().config;
-      if (!botCfg.extremalSpikeGateEnabled) {
-        return { enabled: false, pass: true };
-      }
-      const bars = historyBuffers.get(symbol);
-      if (!bars?.length) {
-        return {
-          enabled: true,
-          pass: false,
-          waiting: true,
-          detail: "no kline history",
-        };
-      }
-      return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
-    },
+    resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -2681,22 +2681,7 @@ async function main() {
   liveBot = createLiveBot({
     trader: futuresTrader,
     onDrawdownStop: handleDrawdownStop,
-    resolveExtremalSpikeGate: async (symbol, atMs) => {
-      const botCfg = liveBot.getPublicState().config;
-      if (!botCfg.extremalSpikeGateEnabled) {
-        return { enabled: false, pass: true };
-      }
-      const bars = historyBuffers.get(symbol);
-      if (!bars?.length) {
-        return {
-          enabled: true,
-          pass: false,
-          waiting: true,
-          detail: "no kline history",
-        };
-      }
-      return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
-    },
+    resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
   void liveBot.getPublicState().then((st) => {
     console.error(
