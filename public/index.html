@@ -1695,6 +1695,13 @@
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradePullback" checked /> Trade pullback</label>
         </div>
+        <div class="field" style="min-width: 260px;">
+          <label>
+            <input type="checkbox" id="liveBotExtremalSpikeGate" checked />
+            30m extremal spike gate
+          </label>
+          <div class="hint">Skip entry if any H-L candle in last 30m ≥ Exclude mult × average (scanner settings)</div>
+        </div>
         <div class="field" style="min-width: 220px;">
           <label><input type="checkbox" id="liveBotAddOnEnabled" /> Pyramid add-ons</label>
         </div>
@@ -1773,11 +1780,12 @@
               <th>TP</th>
               <th>Unrealized</th>
               <th>Unrealized %</th>
+              <th>Duration</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="liveBotOpenBody">
-            <tr><td colspan="10" class="empty">No open positions</td></tr>
+            <tr><td colspan="11" class="empty">No open positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -1792,11 +1800,12 @@
               <th>Exit</th>
               <th>Reason</th>
               <th>PnL</th>
+              <th>Duration</th>
               <th>Closed</th>
             </tr>
           </thead>
           <tbody id="liveBotClosedBody">
-            <tr><td colspan="7" class="empty">No closed trades</td></tr>
+            <tr><td colspan="8" class="empty">No closed trades</td></tr>
           </tbody>
         </table>
       </div>
@@ -3873,6 +3882,7 @@
         tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
         tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
+        extremalSpikeGateEnabled: document.getElementById("liveBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
         addOnDepositPct: Number(document.getElementById("liveBotAddOnDepositPct").value),
         addOnMovePct: Number(document.getElementById("liveBotAddOnMovePct").value),
@@ -3924,6 +3934,8 @@
       document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
       document.getElementById("liveBotTradeSfp").checked = cfg.tradeSfpSignals !== false;
       document.getElementById("liveBotTradePullback").checked = cfg.tradePullbackSignals !== false;
+      document.getElementById("liveBotExtremalSpikeGate").checked =
+        cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
       document.getElementById("liveBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
       document.getElementById("liveBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
@@ -3980,7 +3992,7 @@
       const openBody = document.getElementById("liveBotOpenBody");
       if (!data.openPositions?.length) {
         openBody.innerHTML =
-          '<tr><td colspan="10" class="empty">No open positions</td></tr>';
+          '<tr><td colspan="11" class="empty">No open positions</td></tr>';
       } else {
         openBody.innerHTML = data.openPositions
           .map((p) => {
@@ -3999,6 +4011,7 @@
               <td class="pass">${fmt(p.takeProfit, 6)}</td>
               <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
               <td class="${unrPctCls}">${unrPctLabel}</td>
+              <td class="history-duration">${fmtPositionDuration(p.openedAtIso ?? p.openedAt)}</td>
               <td><button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button></td>
             </tr>`;
           })
@@ -4011,7 +4024,7 @@
       const closedBody = document.getElementById("liveBotClosedBody");
       if (!data.closedTrades?.length) {
         closedBody.innerHTML =
-          '<tr><td colspan="7" class="empty">No closed trades</td></tr>';
+          '<tr><td colspan="8" class="empty">No closed trades</td></tr>';
       } else {
         closedBody.innerHTML = data.closedTrades
           .map((t) => {
@@ -4023,6 +4036,7 @@
               <td>${fmt(t.exitPrice, 6)}</td>
               <td>${paperBotExitReasonHtml(t.exitReason)}</td>
               <td class="${pnlCls2}">${fmtUsd(t.pnl)}</td>
+              <td class="history-duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
               <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
             </tr>`;
           })

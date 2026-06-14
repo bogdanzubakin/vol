@@ -39,6 +39,7 @@ const {
   evaluateHtfContraindications,
   mergeHtfConfig,
 } = require("./lib/htf-contraindication");
+const { evaluateExtremalSpikeGate } = require("./lib/extremal-spike-gate");
 const { getChartPayload } = require("./lib/chart-render");
 const { formatIsoUtcPlus3 } = require("./lib/time-format");
 const {
@@ -2664,6 +2665,22 @@ async function main() {
   liveBot = createLiveBot({
     trader: futuresTrader,
     onDrawdownStop: handleDrawdownStop,
+    resolveExtremalSpikeGate: async (symbol, atMs) => {
+      const botCfg = liveBot.getPublicState().config;
+      if (!botCfg.extremalSpikeGateEnabled) {
+        return { enabled: false, pass: true };
+      }
+      const bars = historyBuffers.get(symbol);
+      if (!bars?.length) {
+        return {
+          enabled: true,
+          pass: false,
+          waiting: true,
+          detail: "no kline history",
+        };
+      }
+      return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
+    },
   });
   void liveBot.getPublicState().then((st) => {
     console.error(
