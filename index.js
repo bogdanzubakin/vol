@@ -1,5 +1,5 @@
 /**
- * vol-spike-scanner — Binance USDT-M perpetuals
+ * vol-scanner — Binance USDT-M perpetuals (SFP + pullback)
  *
  * node index.js --all
  * node index.js --all --no-prefetch
@@ -7,7 +7,7 @@
  * Dashboard: http://127.0.0.1:3877/  (--no-http to disable)
  *
  * Telegram (optional): TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in `.env`
- *   --no-telegram  disable   --telegram-near  also alert NEAR setups
+ *   --no-telegram  disable
  */
 
 const fs = require("fs");
@@ -15,26 +15,19 @@ const path = require("path");
 const WebSocket = require("ws");
 const {
   applyBarConfig,
-  volSpikeMetrics: computeVolSpikeMetrics,
   validateLiveConfigPatch,
-  analyzeVolSpike,
   fastMoverMetrics,
-  fastCorridorMetrics,
-  countHalfWaves,
   minHistoryBars,
-  failedCheckLabels,
   serializeChecks,
-  mergeCriteriaCatalog,
   pickLiveConfig,
   parseAtTime,
   barsAtTime,
   analyzeSweepReclaim,
   fastMoverPullbackMetrics,
+  analyzePullback,
+  fastMoverOptsFromCfg,
+  sfpRangeBars,
 } = require("./lib/signal-metrics");
-const {
-  evaluateRegime,
-  applyRegimeToSpike,
-} = require("./lib/regime-filter");
 const {
   evaluateHtfContraindications,
   mergeHtfConfig,
@@ -103,35 +96,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const cfg = {
   interval: "1m",
-  corridorDays: 2,
-  corridorExcludeMinutes: 40,
   prefetchDays: 3,
-  signalCandles: 3,
-  bullishLookbackCandles: 10,
-  minBullishCandles: 3,
-  nearBreakMaxGapPct: 0.1,
-  maxCorridorWidthPct: 40,
-  minRangeMultiplier: 1.8,
-  minCorridorRangePct: 0.02,
-  minBreakVolumeMultiplier: 5,
-  breakVolumeNearBars: 3,
   fastMoveLookbackCandles: 10,
   minAvgMovePct: 0.5,
   minLinearChangePct: 0.5,
   fastMoveExcludeMult: 3,
   topMoveMinPct: 5,
-  fastCorridorMinWidthPct: 1,
-  fastCorridorMaxWidthPct: 5,
-  fastCorridorWidthTolerancePct: 10,
-  fastCorridorMinHalfWaves: 3,
-  fastCorridorHalfWaveFraction: 0.5,
-  fastCorridorHalfWaveLookback: 180,
-  regimeFilterEnabled: 0,
-  regimeMaBars: 20,
-  regimeMode: "bullish",
-  regimeSymbol: "BTCUSDT",
-  regimeInterval: "1h",
   sfpLookbackBars: 30,
+  sfpRangeBars: 60,
   sfpReclaimBars: 5,
   sfpMinSweepPct: 0.05,
   pullbackMaBars: 7,
@@ -213,7 +185,6 @@ function reconcileBacktestJob() {
   console.error(backtestJob.error);
 }
 let klineCache = null;
-const lastSignalNotifyAt = new Map();
 
 function evalBars(sym, historyBuffers) {
   return klineCache.evalWindow(historyBuffers.get(sym) ?? [], memoryMaxBars());
@@ -252,34 +223,6 @@ function memoryMaxBars() {
     cfg.cacheMaxBars,
     liveNeed + 50
   );
-}
-
-function volSpikeMetrics(sym, historyBuffers) {
-  return computeVolSpikeMetrics(evalBars(sym, historyBuffers), cfg);
-}
-
-function shouldNotifySignal(sym, kind = "spike") {
-  const now = Date.now();
-  const key = kind === "spike" ? sym : `${sym}:${kind}`;
-  const last = lastSignalNotifyAt.get(key) ?? 0;
-  if (now - last < cfg.signalNotifyCooldownMs) return false;
-  lastSignalNotifyAt.set(key, now);
-  return true;
-}
-
-function fastCorridorOpts() {
-  return {
-    fastMoveLookbackCandles: cfg.fastMoveLookbackCandles,
-    minAvgMovePct: cfg.minAvgMovePct,
-    minLinearChangePct: cfg.minLinearChangePct,
-    fastMoveExcludeMult: cfg.fastMoveExcludeMult,
-    minCorridorWidthPct: cfg.fastCorridorMinWidthPct,
-    maxCorridorWidthPct: cfg.fastCorridorMaxWidthPct,
-    corridorWidthTolerancePct: cfg.fastCorridorWidthTolerancePct,
-    minHalfWaves: cfg.fastCorridorMinHalfWaves,
-    halfWaveFraction: cfg.fastCorridorHalfWaveFraction,
-    halfWaveLookbackCandles: cfg.fastCorridorHalfWaveLookback,
-  };
 }
 
 function parseArgs(argv) {
@@ -714,50 +657,6 @@ function applyRestRepairBars(historyBuffers, sym, bars) {
   return true;
 }
 
-function pruneSignalHistory(signalHistory) {
-  const cutoff = Date.now() - SIGNAL_RETENTION_MS;
-  for (const [sym, rec] of signalHistory) {
-    if ((rec.triggeredAt ?? 0) < cutoff) signalHistory.delete(sym);
-  }
-}
-
-function markSignalEnded(sym, activeHits, signalHistory, m) {
-  const live = activeHits.get(sym);
-  const rec = signalHistory.get(sym);
-  if (!live && !rec) return;
-  const triggeredAt =
-    rec?.triggeredAt ?? live?.triggeredAt ?? Date.now();
-  signalHistory.set(sym, {
-    ...(rec ?? live ?? {}),
-    ...(m ?? {}),
-    signalKind: "spike",
-    triggeredAt,
-    ended: true,
-    endedAt: Date.now(),
-    signalStatus: "ended",
-    quoteVol24h: live?.quoteVol24h ?? rec?.quoteVol24h,
-  });
-  activeHits.delete(sym);
-}
-
-function markFastCorridorEnded(sym, fcActive, fcHistory, fc) {
-  const live = fcActive.get(sym);
-  const rec = fcHistory.get(sym);
-  if (!live && !rec) return;
-  const triggeredAt = rec?.triggeredAt ?? live?.triggeredAt ?? Date.now();
-  fcHistory.set(sym, {
-    ...(rec ?? live ?? {}),
-    ...(fc ?? {}),
-    signalKind: "fast-corridor",
-    triggeredAt,
-    ended: true,
-    endedAt: Date.now(),
-    signalStatus: "ended",
-    quoteVol24h: live?.quoteVol24h ?? rec?.quoteVol24h,
-  });
-  fcActive.delete(sym);
-}
-
 function markKindSignalEnded(sym, activeMap, historyMap, kind, metrics) {
   const live = activeMap.get(sym);
   const rec = historyMap.get(sym);
@@ -776,24 +675,15 @@ function markKindSignalEnded(sym, activeMap, historyMap, kind, metrics) {
   activeMap.delete(sym);
 }
 
-let regimeBtcBars = [];
-let currentRegime = { enabled: false, pass: true, label: "off" };
-
-function spikeMetricsFromBars(bars) {
-  let m = computeVolSpikeMetrics(bars, cfg);
-  if (m && cfg.regimeFilterEnabled) {
-    m = applyRegimeToSpike(m, currentRegime);
+function pruneSignalHistory(signalHistory) {
+  const cutoff = Date.now() - SIGNAL_RETENTION_MS;
+  for (const [sym, rec] of signalHistory) {
+    if ((rec.triggeredAt ?? 0) < cutoff) signalHistory.delete(sym);
   }
-  return m;
 }
 
 function printHits(maps, force = false) {
   const {
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
     sfpActive = new Map(),
     sfpHistory = new Map(),
     pbActive = new Map(),
@@ -803,26 +693,10 @@ function printHits(maps, force = false) {
   if (!force && now - lastHitsPrintAt < cfg.printHitsMinIntervalMs) return;
   lastHitsPrintAt = now;
 
-  pruneSignalHistory(signalHistory);
-  pruneSignalHistory(fcHistory);
   pruneSignalHistory(sfpHistory);
   pruneSignalHistory(pbHistory);
 
   const rows = [
-    ...[...signalHistory.entries()].map(([symbol, m]) => ({
-      symbol,
-      status: m.ended ? "ENDED" : "SIGNAL",
-      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
-      signalKind: "spike",
-      ...m,
-    })),
-    ...[...fcHistory.entries()].map(([symbol, m]) => ({
-      symbol,
-      status: m.ended ? "ENDED" : "FAST CORRIDOR",
-      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
-      signalKind: "fast-corridor",
-      ...m,
-    })),
     ...[...sfpHistory.entries()].map(([symbol, m]) => ({
       symbol,
       status: m.ended ? "ENDED" : "SFP",
@@ -837,18 +711,8 @@ function printHits(maps, force = false) {
       signalKind: "pullback",
       ...m,
     })),
-    ...[...nearBreakHits.entries()].map(([symbol, m]) => ({
-      symbol,
-      status: "NEAR",
-      ...m,
-    })),
   ]
     .sort((a, b) => {
-      if (a.status === "NEAR" && b.status === "NEAR") {
-        return a.breakGapPct - b.breakGapPct;
-      }
-      if (a.status === "NEAR") return 1;
-      if (b.status === "NEAR") return -1;
       const at = a.triggeredAt ? Date.parse(a.triggeredAt) : 0;
       const bt = b.triggeredAt ? Date.parse(b.triggeredAt) : 0;
       return bt - at;
@@ -856,164 +720,17 @@ function printHits(maps, force = false) {
     .slice(0, cfg.maxHitsToPrint);
 
   if (dashboard) {
-    dashboard.setMeta({ prefetching, regime: currentRegime });
-    dashboard.publish(
-      activeHits,
-      nearBreakHits,
-      signalHistory,
-      fcActive,
-      fcHistory,
-      sfpActive,
-      sfpHistory,
-      pbActive,
-      pbHistory,
-      force
-    );
+    dashboard.setMeta({ prefetching });
+    dashboard.publish(sfpActive, sfpHistory, pbActive, pbHistory, force);
   }
 
   console.clear();
   console.log(
     formatIsoUtcPlus3(Date.now()),
-    `${cfg.interval}: ${cfg.signalCandles}+ candles above corridor break ${cfg.corridorDays}d range high` +
+    `${cfg.interval}: SFP + pullback scanner` +
       (prefetching ? " (prefetching…)" : "")
   );
   console.table(rows);
-}
-
-function applySymbolSignal(
-  sym,
-  m,
-  qv,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  lastPass,
-  lastNearBreak
-) {
-  const pass = Boolean(m?.passes);
-  const near = Boolean(m?.nearBreak);
-  const prevPass = lastPass.get(sym) ?? false;
-  const prevNear = lastNearBreak.get(sym) ?? false;
-  const qvRounded = Math.round(qv);
-
-  if (pass) {
-    const existing = signalHistory.get(sym);
-    const triggeredAt = !prevPass
-      ? Date.now()
-      : (existing?.triggeredAt ??
-        activeHits.get(sym)?.triggeredAt ??
-        Date.now());
-    const row = {
-      ...m,
-      signalKind: "spike",
-      signalStatus: "active",
-      quoteVol24h: qvRounded,
-      triggeredAt,
-      ended: false,
-    };
-    activeHits.set(sym, row);
-    signalHistory.set(sym, row);
-    nearBreakHits.delete(sym);
-    if (!prevPass) {
-      const detail = `close ${m.close} > ${m.corridorHigh} · ${m.aboveCorridorCount}/${m.minAboveCorridorCandles} above`;
-      dashboard?.pushEvent("NEW", sym, detail);
-      console.log(`NEW SPIKE\t${sym}\t${detail}`);
-      paperBot?.onSpikeSignal(sym, m);
-      liveBot?.onSpikeSignal(sym, m);
-      if (shouldNotifySignal(sym)) {
-        telegram?.onNewSignal(sym, m, cfg);
-      } else {
-        console.log(`SKIP NOTIFY\t${sym}\tsignal cooldown`);
-      }
-    }
-    if (prevNear) {
-      dashboard?.pushEvent("END_NEAR", sym, "broke out");
-      console.log(`NEAR END\t${sym}\tbreak`);
-    }
-  } else if (near) {
-    nearBreakHits.set(sym, {
-      ...m,
-      signalStatus: "near",
-      quoteVol24h: qvRounded,
-    });
-    if (prevPass) {
-      markSignalEnded(sym, activeHits, signalHistory, m);
-      dashboard?.pushEvent("END", sym);
-      console.log(`ENDED\t${sym}`);
-    } else {
-      activeHits.delete(sym);
-    }
-    if (!prevNear) {
-      const detail = `${m.breakGapPct}% below ${m.corridorHigh} · ${m.aboveCorridorCount}/${m.minAboveCorridorCandles} above`;
-      dashboard?.pushEvent("NEAR", sym, detail);
-      console.log(`NEAR BREAK\t${sym}\t${detail}`);
-      telegram?.onNearSignal(sym, m, cfg);
-    }
-  } else {
-    if (prevPass) {
-      markSignalEnded(sym, activeHits, signalHistory, m);
-      dashboard?.pushEvent("END", sym);
-      console.log(`ENDED\t${sym}`);
-    }
-    if (prevNear) {
-      nearBreakHits.delete(sym);
-      dashboard?.pushEvent("END_NEAR", sym);
-      console.log(`NEAR END\t${sym}`);
-    }
-  }
-
-  lastPass.set(sym, pass);
-  lastNearBreak.set(sym, near);
-}
-
-function applyFastCorridorSignal(
-  sym,
-  fc,
-  qv,
-  fcActive,
-  fcHistory,
-  lastFc
-) {
-  const pass = Boolean(fc?.fastCorridor);
-  const prev = lastFc.get(sym) ?? false;
-  const qvRounded = Math.round(qv);
-
-  if (pass) {
-    const existing = fcHistory.get(sym);
-    const triggeredAt = !prev
-      ? Date.now()
-      : (existing?.triggeredAt ??
-        fcActive.get(sym)?.triggeredAt ??
-        Date.now());
-    const row = {
-      ...fc,
-      signalKind: "fast-corridor",
-      signalStatus: "active",
-      quoteVol24h: qvRounded,
-      triggeredAt,
-      ended: false,
-    };
-    fcActive.set(sym, row);
-    fcHistory.set(sym, row);
-    if (!prev) {
-      const detail = `corridor ${fc.corridorWidthPct}% · ${fc.halfWaves} half-waves · avg move ${fc.avgMovePct}%`;
-      dashboard?.pushEvent("NEW_FC", sym, detail);
-      console.log(`NEW FAST CORRIDOR\t${sym}\t${detail}`);
-      paperBot?.onFastCorridorSignal(sym, fc);
-      liveBot?.onFastCorridorSignal(sym, fc);
-      if (shouldNotifySignal(sym, "fast-corridor")) {
-        telegram?.onFastCorridorSignal(sym, fc, cfg);
-      } else {
-        console.log(`SKIP NOTIFY\t${sym}\tfast corridor cooldown`);
-      }
-    }
-  } else if (prev) {
-    markFastCorridorEnded(sym, fcActive, fcHistory, fc);
-    dashboard?.pushEvent("END_FC", sym);
-    console.log(`FAST CORRIDOR END\t${sym}`);
-  }
-
-  lastFc.set(sym, pass);
 }
 
 function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
@@ -1097,81 +814,36 @@ function evaluateSymbolSignals(
   sym,
   historyBuffers,
   qv,
-  activeHits,
-  nearBreakHits,
-  signalHistory,
-  fcActive,
-  fcHistory,
   sfpActive,
   sfpHistory,
   pbActive,
   pbHistory,
-  lastPass,
-  lastNearBreak,
-  lastFc,
   lastSfp,
   lastPb
 ) {
   const bars = evalBars(sym, historyBuffers);
-  const m = bars ? spikeMetricsFromBars(bars) : null;
-  const fc = bars ? fastCorridorMetrics(bars, cfg, fastCorridorOpts()) : null;
+  const fmOpts = fastMoverOptsFromCfg(cfg);
   const sfp = bars ? analyzeSweepReclaim(bars, cfg) : null;
-  const pb = bars ? fastMoverPullbackMetrics(bars, cfg, fastCorridorOpts()) : null;
+  const pb = bars ? fastMoverPullbackMetrics(bars, cfg, fmOpts) : null;
 
-  applySymbolSignal(
-    sym,
-    m,
-    qv,
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    lastPass,
-    lastNearBreak
-  );
-  applyFastCorridorSignal(sym, fc, qv, fcActive, fcHistory, lastFc);
   applySfpSignal(sym, sfp, qv, sfpActive, sfpHistory, lastSfp);
   applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
 
-  return { m, fc, sfp, pb };
+  return { sfp, pb };
 }
 
 function reevaluateAllSymbols(symbols, historyBuffers, maps, quoteVolMap) {
-  const {
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    sfpActive,
-    sfpHistory,
-    pbActive,
-    pbHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
-    lastSfp,
-    lastPb,
-  } = maps;
+  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
 
   for (const sym of symbols) {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
-      if (lastPass.get(sym)) {
-        markSignalEnded(sym, activeHits, signalHistory, null);
-      }
-      if (lastFc.get(sym)) {
-        markFastCorridorEnded(sym, fcActive, fcHistory, null);
-      }
       if (lastSfp.get(sym)) {
         markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
       }
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
-      if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
-      lastPass.set(sym, false);
-      lastNearBreak.set(sym, false);
-      lastFc.set(sym, false);
       lastSfp.set(sym, false);
       lastPb.set(sym, false);
       continue;
@@ -1181,18 +853,10 @@ function reevaluateAllSymbols(symbols, historyBuffers, maps, quoteVolMap) {
       sym,
       historyBuffers,
       qv,
-      activeHits,
-      nearBreakHits,
-      signalHistory,
-      fcActive,
-      fcHistory,
       sfpActive,
       sfpHistory,
       pbActive,
       pbHistory,
-      lastPass,
-      lastNearBreak,
-      lastFc,
       lastSfp,
       lastPb
     );
@@ -1202,22 +866,7 @@ function reevaluateAllSymbols(symbols, historyBuffers, maps, quoteVolMap) {
 }
 
 function createWsShards(symbols, historyBuffers, maps, quoteVolMap) {
-  const {
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    sfpActive,
-    sfpHistory,
-    pbActive,
-    pbHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
-    lastSfp,
-    lastPb,
-  } = maps;
+  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
     symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
@@ -1231,65 +880,35 @@ function createWsShards(symbols, historyBuffers, maps, quoteVolMap) {
   const evaluate = (sym) => {
     const qv = quoteVolMap.get(sym) ?? 0;
     if (cfg.minQuoteVolume24h > 0 && qv < cfg.minQuoteVolume24h) {
-      if (lastPass.get(sym)) {
-        markSignalEnded(sym, activeHits, signalHistory, null);
-      }
-      if (lastFc.get(sym)) {
-        markFastCorridorEnded(sym, fcActive, fcHistory, null);
-      }
       if (lastSfp.get(sym)) {
         markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
       }
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
-      if (lastNearBreak.get(sym)) nearBreakHits.delete(sym);
-      lastPass.set(sym, false);
-      lastNearBreak.set(sym, false);
-      lastFc.set(sym, false);
       lastSfp.set(sym, false);
       lastPb.set(sym, false);
       return;
     }
 
-    const prevPass = lastPass.get(sym) ?? false;
-    const prevNear = lastNearBreak.get(sym) ?? false;
-    const prevFc = lastFc.get(sym) ?? false;
     const prevSfp = lastSfp.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
 
-    const { m, fc, sfp, pb } = evaluateSymbolSignals(
+    const { sfp, pb } = evaluateSymbolSignals(
       sym,
       historyBuffers,
       qv,
-      activeHits,
-      nearBreakHits,
-      signalHistory,
-      fcActive,
-      fcHistory,
       sfpActive,
       sfpHistory,
       pbActive,
       pbHistory,
-      lastPass,
-      lastNearBreak,
-      lastFc,
       lastSfp,
       lastPb
     );
 
-    const pass = Boolean(m?.passes);
-    const near = Boolean(m?.nearBreak);
-    const fcPass = Boolean(fc?.fastCorridor);
     const sfpPass = Boolean(sfp?.passes);
     const pbPass = Boolean(pb?.passes);
-    if (
-      pass !== prevPass ||
-      near !== prevNear ||
-      fcPass !== prevFc ||
-      sfpPass !== prevSfp ||
-      pbPass !== prevPb
-    ) {
+    if (sfpPass !== prevSfp || pbPass !== prevPb) {
       printHits(maps, true);
     }
     refreshAllPaperBotPrices(historyBuffers);
@@ -1409,22 +1028,7 @@ function createWsShards(symbols, historyBuffers, maps, quoteVolMap) {
 }
 
 function startStaleSymbolRefresh(symbols, historyBuffers, maps, quoteVolMap) {
-  const {
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    sfpActive,
-    sfpHistory,
-    pbActive,
-    pbHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
-    lastSfp,
-    lastPb,
-  } = maps;
+  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
   let cursor = 0;
   let running = false;
 
@@ -1468,18 +1072,10 @@ function startStaleSymbolRefresh(symbols, historyBuffers, maps, quoteVolMap) {
               sym,
               historyBuffers,
               quoteVolMap.get(sym) ?? 0,
-              activeHits,
-              nearBreakHits,
-              signalHistory,
-              fcActive,
-              fcHistory,
               sfpActive,
               sfpHistory,
               pbActive,
               pbHistory,
-              lastPass,
-              lastNearBreak,
-              lastFc,
               lastSfp,
               lastPb
             );
@@ -1505,7 +1101,6 @@ async function prefetchAllSymbols(
   quoteVolMap,
   reevaluateAllFn
 ) {
-  const { activeHits, nearBreakHits, signalHistory, fcActive, fcHistory } = maps;
   prefetching = true;
   let done = 0;
   let fromCache = 0;
@@ -1613,64 +1208,6 @@ async function prefetchAllSymbols(
   );
 }
 
-function evaluateAfterPrefetch(sym, historyBuffers, maps, quoteVolMap) {
-  const {
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    sfpActive,
-    sfpHistory,
-    pbActive,
-    pbHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
-    lastSfp,
-    lastPb,
-  } = maps;
-
-  const bars = evalBars(sym, historyBuffers);
-  if (!bars) return;
-
-  const m = spikeMetricsFromBars(bars);
-  const fc = fastCorridorMetrics(bars, cfg, fastCorridorOpts());
-  const sfp = analyzeSweepReclaim(bars, cfg);
-  const pb = fastMoverPullbackMetrics(bars, cfg, fastCorridorOpts());
-  const prevPass = lastPass.get(sym) ?? false;
-  const prevNear = lastNearBreak.get(sym) ?? false;
-  const prevFc = lastFc.get(sym) ?? false;
-  const prevSfp = lastSfp.get(sym) ?? false;
-  const prevPb = lastPb.get(sym) ?? false;
-  const spikeChanged =
-    Boolean(m?.passes) !== prevPass || Boolean(m?.nearBreak) !== prevNear;
-  const fcChanged = Boolean(fc?.fastCorridor) !== prevFc;
-  const sfpChanged = Boolean(sfp?.passes) !== prevSfp;
-  const pbChanged = Boolean(pb?.passes) !== prevPb;
-  if (!spikeChanged && !fcChanged && !sfpChanged && !pbChanged) return;
-
-  evaluateSymbolSignals(
-    sym,
-    historyBuffers,
-    quoteVolMap.get(sym) ?? 0,
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
-    sfpActive,
-    sfpHistory,
-    pbActive,
-    pbHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
-    lastSfp,
-    lastPb
-  );
-}
-
 function applyCloudDefaults(flags) {
   if (!process.env.PORT) return;
   if (!flags.has("no-prefetch")) {
@@ -1723,68 +1260,24 @@ async function main() {
 
   let quoteVolMap = new Map();
   const historyBuffers = new Map();
-  const activeHits = new Map();
-  const nearBreakHits = new Map();
-  const signalHistory = new Map();
-  const fcActive = new Map();
-  const fcHistory = new Map();
   const sfpActive = new Map();
   const sfpHistory = new Map();
   const pbActive = new Map();
   const pbHistory = new Map();
-  const lastPass = new Map();
-  const lastNearBreak = new Map();
-  const lastFc = new Map();
   const lastSfp = new Map();
   const lastPb = new Map();
 
   const signalMaps = () => ({
-    activeHits,
-    nearBreakHits,
-    signalHistory,
-    fcActive,
-    fcHistory,
     sfpActive,
     sfpHistory,
     pbActive,
     pbHistory,
-    lastPass,
-    lastNearBreak,
-    lastFc,
     lastSfp,
     lastPb,
   });
 
   let symbols = [];
   let reevaluateAll = () => {};
-
-  let lastRegimePass = currentRegime.pass;
-
-  async function refreshRegimeBars() {
-    const limit = (cfg.regimeMaBars ?? 20) + 15;
-    const prevPass = lastRegimePass;
-    try {
-      regimeBtcBars = await fetchKlinesInterval(
-        cfg.regimeSymbol ?? "BTCUSDT",
-        cfg.regimeInterval ?? "1h",
-        limit
-      );
-      currentRegime = evaluateRegime(regimeBtcBars, cfg);
-    } catch (e) {
-      currentRegime = {
-        enabled: Boolean(cfg.regimeFilterEnabled),
-        pass: false,
-        label: "error",
-        detail: e.message || String(e),
-        bullish: false,
-      };
-    }
-    lastRegimePass = currentRegime.pass;
-    dashboard?.setMeta({ regime: currentRegime });
-    if (cfg.regimeFilterEnabled && prevPass !== currentRegime.pass && symbols.length) {
-      reevaluateAll();
-    }
-  }
 
   function barsForEvaluation(sym, searchParams) {
     const atRaw = searchParams?.get("at");
@@ -1808,88 +1301,6 @@ async function main() {
   }
 
   const scannerApi = {
-    getPairs(searchParams) {
-      const q = (searchParams.get("q") || "").trim().toUpperCase();
-      const filter = searchParams.get("filter") || "all";
-      const criterion = searchParams.get("criterion") || "";
-      const criterionPass = searchParams.get("criterionPass") || "any";
-      let atMs = null;
-      let sampleBarAt = null;
-      const criteriaCatalog = new Map();
-
-      let pairs = symbols.map((sym) => {
-        const buf = historyBuffers.get(sym) ?? [];
-        let evalBars;
-        let signalBarAt = null;
-        try {
-          const ev = barsForEvaluation(sym, searchParams);
-          evalBars = ev.bars;
-          signalBarAt = ev.signalBarAt;
-          if (ev.atMs != null) {
-            atMs = ev.atMs;
-            sampleBarAt = signalBarAt;
-          }
-        } catch {
-          evalBars = [];
-        }
-
-        const analysis = analyzeVolSpike(
-          klineCache.evalWindow(evalBars, cfg.limit),
-          cfg,
-          { regime: currentRegime }
-        );
-        const m = analysis.metrics;
-        const checks = serializeChecks(analysis.checks);
-        mergeCriteriaCatalog(criteriaCatalog, checks);
-        return {
-          symbol: sym,
-          passes: analysis.passes,
-          nearBreak: Boolean(m?.nearBreak),
-          bars: buf.length,
-          signalBarAt:
-            signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
-          failReasons: failedCheckLabels(analysis.checks),
-          checks,
-          close: m?.close ?? null,
-          corridorHigh: m?.corridorHigh ?? null,
-          rangeRatio: m?.rangeRatio ?? null,
-          corridorWidthPct: m?.corridorWidthPct ?? null,
-        };
-      });
-
-      if (q) pairs = pairs.filter((p) => p.symbol.includes(q));
-      if (filter === "pass") pairs = pairs.filter((p) => p.passes);
-      if (filter === "fail") pairs = pairs.filter((p) => !p.passes);
-      if (criterion) {
-        pairs = pairs.filter((p) => {
-          const ch = p.checks?.find((c) => c.id === criterion);
-          if (!ch) return false;
-          if (criterionPass === "pass") return ch.pass;
-          if (criterionPass === "fail") return !ch.pass;
-          return true;
-        });
-      }
-
-      pairs.sort((a, b) => {
-        if (a.passes !== b.passes) return a.passes ? -1 : 1;
-        return (b.rangeRatio ?? 0) - (a.rangeRatio ?? 0);
-      });
-
-      return {
-        updatedAt: formatIsoUtcPlus3(Date.now()),
-        mode: atMs != null ? "historical" : "live",
-        evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
-        evaluateBarAt:
-          sampleBarAt != null ? formatIsoUtcPlus3(sampleBarAt) : null,
-        ...pickLiveConfig(cfg),
-        pairCount: pairs.length,
-        criteria: [...criteriaCatalog.values()].sort((a, b) =>
-          a.label.localeCompare(b.label)
-        ),
-        pairs,
-        telegramEnabled: Boolean(telegram?.enabled),
-      };
-    },
     getFastMovers(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
       const lookback = Math.max(
@@ -2015,152 +1426,6 @@ async function main() {
               ? formatIsoUtcPlus3(wsStats.lastUpdateAt)
               : null,
         },
-        telegramEnabled: Boolean(telegram?.enabled),
-      };
-    },
-    getFastCorridor(searchParams) {
-      const q = (searchParams.get("q") || "").trim().toUpperCase();
-      const lookback = Math.max(
-        2,
-        Math.min(
-          120,
-          Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
-        )
-      );
-      const minAvgMovePct = Math.max(
-        0.01,
-        Math.min(
-          20,
-          Number(searchParams.get("minAvgMovePct")) || cfg.minAvgMovePct
-        )
-      );
-      const excludeMult = Math.max(
-        1.5,
-        Math.min(
-          20,
-          Number(searchParams.get("excludeMult")) || cfg.fastMoveExcludeMult
-        )
-      );
-      const minLinearChangePct = Math.max(
-        0,
-        Math.min(
-          100,
-          Number(searchParams.get("minLinearChangePct")) || cfg.minLinearChangePct
-        )
-      );
-      const minCorridorWidthPct = Math.max(
-        0.1,
-        Math.min(
-          50,
-          Number(searchParams.get("minCorridorWidthPct")) ||
-            cfg.fastCorridorMinWidthPct
-        )
-      );
-      const maxCorridorWidthPct = Math.max(
-        minCorridorWidthPct,
-        Math.min(
-          50,
-          Number(searchParams.get("maxCorridorWidthPct")) ||
-            cfg.fastCorridorMaxWidthPct
-        )
-      );
-      const corridorWidthTolerancePct = Math.max(
-        0,
-        Math.min(
-          50,
-          Number(searchParams.get("corridorWidthTolerancePct")) ||
-            cfg.fastCorridorWidthTolerancePct
-        )
-      );
-      const minHalfWaves = Math.max(
-        1,
-        Math.min(
-          50,
-          Number(searchParams.get("minHalfWaves")) || cfg.fastCorridorMinHalfWaves
-        )
-      );
-      const halfWaveFraction = Math.max(
-        0.1,
-        Math.min(
-          1,
-          Number(searchParams.get("halfWaveFraction")) ||
-            cfg.fastCorridorHalfWaveFraction
-        )
-      );
-      const halfWaveLookbackCandles = Math.max(
-        2,
-        Math.min(
-          2000,
-          Number(searchParams.get("halfWaveLookback")) ||
-            cfg.fastCorridorHalfWaveLookback
-        )
-      );
-
-      const corridorOpts = {
-        fastMoveLookbackCandles: lookback,
-        minAvgMovePct,
-        minLinearChangePct,
-        fastMoveExcludeMult: excludeMult,
-        minCorridorWidthPct,
-        maxCorridorWidthPct,
-        corridorWidthTolerancePct,
-        minHalfWaves,
-        halfWaveFraction,
-        halfWaveLookbackCandles,
-      };
-
-      let pairs = symbols
-        .map((sym) => {
-          const buf = historyBuffers.get(sym) ?? [];
-          let evalBars;
-          try {
-            const ev = barsForEvaluation(sym, searchParams);
-            evalBars = ev.bars;
-          } catch {
-            return null;
-          }
-
-          const fc = fastCorridorMetrics(
-            klineCache.evalWindow(evalBars, cfg.limit),
-            cfg,
-            corridorOpts
-          );
-          if (!fc?.fastCorridor) return null;
-
-          return {
-            symbol: sym,
-            close: fc.close,
-            avgMovePct: fc.avgMovePct,
-            corridorWidthPct: fc.corridorWidthPct,
-            corridorHigh: fc.corridorHigh,
-            corridorLow: fc.corridorLow,
-            halfWaves: fc.halfWaves,
-            candlesUsed: fc.candlesUsed,
-            candlesExcluded: fc.candlesExcluded,
-            bars: buf.length,
-            liveUpdateAt:
-              liveUpdateAt.get(sym) != null
-                ? formatIsoUtcPlus3(liveUpdateAt.get(sym))
-                : null,
-          };
-        })
-        .filter(Boolean);
-
-      if (q) pairs = pairs.filter((p) => p.symbol.includes(q));
-      pairs.sort((a, b) => b.halfWaves - a.halfWaves || b.avgMovePct - a.avgMovePct);
-
-      return {
-        updatedAt: formatIsoUtcPlus3(Date.now()),
-        lookback,
-        minAvgMovePct,
-        excludeMult,
-        ...corridorOpts,
-        effCorridorMinPct: +(minCorridorWidthPct * (1 - corridorWidthTolerancePct / 100)).toFixed(3),
-        effCorridorMaxPct: +(maxCorridorWidthPct * (1 + corridorWidthTolerancePct / 100)).toFixed(3),
-        corridorDays: cfg.corridorDays,
-        corridorExcludeMinutes: cfg.corridorExcludeMinutes,
-        pairCount: pairs.length,
-        pairs,
         telegramEnabled: Boolean(telegram?.enabled),
       };
     },
@@ -2320,7 +1585,7 @@ async function main() {
     },
     getPullback(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
-      const fmOpts = fastCorridorOpts();
+      const fmOpts = fastMoverOptsFromCfg(cfg);
       let items = symbols
         .map((sym) => {
           let evalBars;
@@ -2371,18 +1636,11 @@ async function main() {
     getStrategies() {
       return {
         updatedAt: formatIsoUtcPlus3(Date.now()),
-        regime: currentRegime,
         counts: {
-          spikeActive: activeHits.size,
-          fcActive: fcActive.size,
           sfpActive: sfpActive.size,
           pullbackActive: pbActive.size,
-          nearBreak: nearBreakHits.size,
         },
         config: {
-          regimeFilterEnabled: Boolean(cfg.regimeFilterEnabled),
-          regimeMaBars: cfg.regimeMaBars,
-          regimeMode: cfg.regimeMode ?? "bullish",
           sfpLookbackBars: cfg.sfpLookbackBars,
           sfpReclaimBars: cfg.sfpReclaimBars,
           sfpMinSweepPct: cfg.sfpMinSweepPct,
@@ -2415,134 +1673,21 @@ async function main() {
       const { bars, atMs, signalBarAt } = barsForEvaluation(sym, searchParams);
       const indicator = (searchParams?.get("indicator") || "").toLowerCase();
       let analysis;
-      let chartWindowBars;
-      let strictWindow = false;
-      if (indicator === "fastcorridor" || indicator === "fast-corridor") {
-        const extraHourBars = Math.max(1, Math.ceil((60 * 60 * 1000) / cfg.barMs));
-        chartWindowBars = Math.max(
-          cfg.fastCorridorHalfWaveLookback + extraHourBars,
-          cfg.signalCandles + 5
-        );
-        strictWindow = true;
-        const fc = fastCorridorMetrics(bars, cfg, fastCorridorOpts());
-        const checks = [];
-        const fm = fastMoverMetrics(bars, {
-          fastMoveLookbackCandles: cfg.fastMoveLookbackCandles,
-          minAvgMovePct: cfg.minAvgMovePct,
-          minLinearChangePct: cfg.minLinearChangePct,
-          fastMoveExcludeMult: cfg.fastMoveExcludeMult,
-        });
-        checks.push({
-          id: "fastMoverAvg",
-          label: `Avg move ≥ ${cfg.minAvgMovePct}% (${cfg.fastMoveLookbackCandles} bars)`,
-          pass: Boolean(fm?.avgOk),
-          detail: fm ? `${fm.avgMovePct}%` : "n/a",
-        });
-        checks.push({
-          id: "fastMoverLinear",
-          label: `|Linear change| ≥ ${cfg.minLinearChangePct}% (${cfg.fastMoveLookbackCandles} bars)`,
-          pass: Boolean(fm?.linearOk),
-          detail: fm ? `${fm.linearChangePct}%` : "n/a",
-        });
-        const waveBars = bars.slice(-cfg.fastCorridorHalfWaveLookback);
-        const localHigh = waveBars.length
-          ? Math.max(...waveBars.map((b) => b.high))
-          : null;
-        const localLow = waveBars.length
-          ? Math.min(...waveBars.map((b) => b.low))
-          : null;
-        const localMid =
-          localHigh != null && localLow != null ? (localHigh + localLow) / 2 : null;
-        const localWidthPct =
-          localMid && localMid > 0
-            ? +(((localHigh - localLow) / localMid) * 100).toFixed(2)
-            : null;
-        const localHalfWaves =
-          localHigh != null && localLow != null
-            ? countHalfWaves(waveBars, localLow, localHigh, {
-                halfWaveFraction: cfg.fastCorridorHalfWaveFraction,
-              })
-            : 0;
-
-        if (fc) {
-          checks.push(
-            {
-              id: "fastCorridorWidth",
-              label: `Corridor width in band ${fc.effCorridorMinPct}%..${fc.effCorridorMaxPct}%`,
-              pass: true,
-              detail: `${fc.corridorWidthPct}%`,
-            },
-            {
-              id: "fastCorridorWaves",
-              label: `Half-waves ≥ ${fc.minHalfWaves} (${fc.halfWaveLookbackCandles} bars)`,
-              pass: true,
-              detail: `${fc.halfWaves}`,
-            }
-          );
-        } else {
-          checks.push(
-            {
-              id: "fastCorridorWidth",
-              label: `Corridor width in configured band`,
-              pass: false,
-              detail: "out of range",
-            },
-            {
-              id: "fastCorridorWaves",
-              label: `Half-waves ≥ ${cfg.fastCorridorMinHalfWaves}`,
-              pass: false,
-              detail: "not enough waves",
-            }
-          );
-        }
-        analysis = {
-          passes: Boolean(fc?.fastCorridor),
-          metrics:
-            fc ??
-            (localHigh != null && localLow != null
-              ? {
-                  corridorHigh: localHigh,
-                  corridorLow: localLow,
-                  corridorWidthPct: localWidthPct,
-                  halfWaves: localHalfWaves,
-                }
-              : null),
-          checks,
-        };
+      if (indicator === "sfp") {
+        analysis = analyzeSweepReclaim(bars, cfg);
+      } else if (indicator === "pullback") {
+        analysis = analyzePullback(bars, cfg, fastMoverOptsFromCfg(cfg));
       } else {
-        analysis = analyzeVolSpike(bars, cfg);
+        throw new Error(
+          `indicator must be sfp or pullback (got ${indicator || "(empty)"})`
+        );
       }
       return getChartPayload(sym, bars, cfg, analysis, {
         evaluateAt: atMs != null ? formatIsoUtcPlus3(atMs) : null,
         evaluateBarAt:
           signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
-        windowBars: chartWindowBars,
-        strictWindow,
         indicator,
       });
-    },
-    async postTelegramSignal(symbol, searchParams) {
-      if (!telegram?.enabled) {
-        throw new Error(
-          "Telegram not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
-        );
-      }
-      const sym = String(symbol).toUpperCase();
-      if (!symbols.includes(sym)) {
-        throw new Error(`Unknown symbol: ${sym}`);
-      }
-      const buf = historyBuffers.get(sym) ?? [];
-      if (!buf.length) throw new Error(`No bar data for ${sym}`);
-      const { bars } = barsForEvaluation(sym, searchParams);
-      const m = computeVolSpikeMetrics(
-        klineCache.evalWindow(bars, cfg.limit),
-        cfg
-      );
-      if (!m) {
-        throw new Error(`Insufficient history to build signal message for ${sym}`);
-      }
-      await telegram.sendNewSignal(sym, m, cfg);
-      return { ok: true, symbol: sym };
     },
   };
 
@@ -2554,8 +1699,8 @@ async function main() {
     if (bars.length < 30 && klineCache) {
       bars = klineCache.read(symbol) ?? bars;
     }
-    const corridorMs = (cfg.corridorDays ?? 2) * 24 * 60 * 60 * 1000;
-    const needStart = openedAt - corridorMs - cfg.barMs * 60;
+    const lookbackMs = (sfpRangeBars(cfg) + 60) * cfg.barMs;
+    const needStart = openedAt - lookbackMs;
     const needEnd = closedAt + cfg.barMs * 30;
     return bars.filter(
       (b) => b.closeTime >= needStart && b.openTime <= needEnd
@@ -2580,9 +1725,6 @@ async function main() {
       trade: fullTrade,
       bars,
       interval: cfg.interval,
-      corridorDays: cfg.corridorDays,
-      corridorExcludeMinutes: cfg.corridorExcludeMinutes,
-      signalCandles: cfg.signalCandles,
     });
     return { snapshotId };
   }
@@ -2599,9 +1741,6 @@ async function main() {
       position: pos,
       bars,
       interval: cfg.interval,
-      corridorDays: cfg.corridorDays,
-      corridorExcludeMinutes: cfg.corridorExcludeMinutes,
-      signalCandles: cfg.signalCandles,
     });
     return { snapshotId, symbol: pos.symbol };
   }
@@ -2617,9 +1756,6 @@ async function main() {
       position: pos,
       bars,
       interval: cfg.interval,
-      corridorDays: cfg.corridorDays,
-      corridorExcludeMinutes: cfg.corridorExcludeMinutes,
-      signalCandles: cfg.signalCandles,
     });
     return { snapshotId, symbol: pos.symbol };
   }
@@ -2664,30 +1800,32 @@ async function main() {
     return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
   }
 
+  const resolveHtfForBot = async (symbol, _signalKind, atMs, botCfg = {}) => {
+    if (!botCfg?.htfContraindicationEnabled) {
+      return { enabled: false, pass: true };
+    }
+    try {
+      const bars = await fetchHtf15mBars(symbol);
+      return evaluateHtfContraindications(
+        barsAtTime(bars, atMs),
+        mergeHtfConfig({ ...cfg, ...botCfg }),
+        atMs
+      );
+    } catch (e) {
+      return {
+        enabled: true,
+        pass: false,
+        label: "error",
+        detail: e.message || String(e),
+        blocks: [],
+      };
+    }
+  };
+
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
-    resolveHtfContraindication: async (symbol, _signalKind, atMs, botCfg = {}) => {
-      if (!botCfg?.htfContraindicationEnabled) {
-        return { enabled: false, pass: true };
-      }
-      try {
-        const bars = await fetchHtf15mBars(symbol);
-        return evaluateHtfContraindications(
-          barsAtTime(bars, atMs),
-          mergeHtfConfig({ ...cfg, ...botCfg }),
-          atMs
-        );
-      } catch (e) {
-        return {
-          enabled: true,
-          pass: false,
-          label: "error",
-          detail: e.message || String(e),
-          blocks: [],
-        };
-      }
-    },
+    resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
   console.error(
@@ -2700,6 +1838,7 @@ async function main() {
     trader: futuresTrader,
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
+    resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
   void liveBot.getPublicState().then((st) => {
@@ -2731,31 +1870,17 @@ async function main() {
     });
     startDashboard(
       () =>
-        dashboard.buildState(
-          activeHits,
-          nearBreakHits,
-          signalHistory,
-          fcActive,
-          fcHistory,
-          sfpActive,
-          sfpHistory,
-          pbActive,
-          pbHistory
-        ),
+        dashboard.buildState(sfpActive, sfpHistory, pbActive, pbHistory),
       {
         port,
         host,
-        getPairs: (searchParams) => scannerApi.getPairs(searchParams),
         getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
-        getFastCorridor: (searchParams) => scannerApi.getFastCorridor(searchParams),
         getSweepReclaim: (searchParams) => scannerApi.getSweepReclaim(searchParams),
         getPullback: (searchParams) => scannerApi.getPullback(searchParams),
         getStrategies: () => scannerApi.getStrategies(),
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
         getChartData: (symbol, searchParams) =>
           scannerApi.getChartData(symbol, searchParams),
-        postTelegramSignal: (symbol, searchParams) =>
-          scannerApi.postTelegramSignal(symbol, searchParams),
         getPositions: getOpenPositions,
         getFuturesBalance,
         getPositionsHistory: async (searchParams) =>
@@ -2872,12 +1997,6 @@ async function main() {
             days,
             fetchKlinesForSymbol: (sym, limit) =>
               fetchKlinesForBacktest(sym, limit, historyBuffers),
-            fetchRegimeBars: () =>
-              fetchKlinesInterval(
-                cfg.regimeSymbol ?? "BTCUSDT",
-                cfg.regimeInterval ?? "1h",
-                (cfg.regimeMaBars ?? 20) + 15
-              ),
             fetchHtfBars: (sym, limit) => fetchKlinesInterval(sym, "15m", limit),
             onProgress: (p) => {
               touchBacktestProgress(p);
@@ -2946,19 +2065,13 @@ async function main() {
               .map(([k, v]) => `${k}=${v}`)
               .join(", ")} | bars needed: ${cfg.limit}`
           );
-          await refreshRegimeBars();
+          if (updates.interval) {
+            console.error(
+              "Note: interval changed — restart scanner to reload kline cache for the new interval"
+            );
+          }
           reevaluateAll();
-          return dashboard.buildState(
-            activeHits,
-            nearBreakHits,
-            signalHistory,
-            fcActive,
-            fcHistory,
-            sfpActive,
-            sfpHistory,
-            pbActive,
-            pbHistory
-          );
+          return dashboard.buildState(sfpActive, sfpHistory, pbActive, pbHistory);
         },
         onStorageClean: () => {
           htf15mCache.clear();
@@ -2966,25 +2079,13 @@ async function main() {
             historyBuffers.set(sym, []);
             if (klineCache) klineCache.replace(sym, []);
           }
-          regimeBtcBars = [];
           backtestJob.result = null;
           backtestJob.error = null;
           backtestJob.progress = null;
         },
       }
     );
-    dashboard.publish(
-      activeHits,
-      nearBreakHits,
-      signalHistory,
-      fcActive,
-      fcHistory,
-      sfpActive,
-      sfpHistory,
-      pbActive,
-      pbHistory,
-      true
-    );
+    dashboard.publish(sfpActive, sfpHistory, pbActive, pbHistory, true);
   }
 
   symbols = await resolveSymbols(flags, kv);
@@ -2996,9 +2097,6 @@ async function main() {
     symbols = symbols.slice(0, maxSymbols);
   }
   dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
-
-  await refreshRegimeBars();
-  setInterval(refreshRegimeBars, 60_000).unref?.();
 
   const snapshotClean = cleanOldSnapshots();
   if (snapshotClean.removed > 0) {

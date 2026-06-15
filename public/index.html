@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vol spike scanner</title>
+  <title>SFP scanner</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <style>
     :root {
@@ -911,7 +911,7 @@
   <div class="page-top">
     <div class="page-top-main">
       <div>
-        <h1>Vol spike scanner</h1>
+        <h1>SFP scanner</h1>
         <p class="sub" id="subtitle">Loading…</p>
       </div>
       <div class="status" id="status"></div>
@@ -937,10 +937,9 @@
   <div id="error" class="err"></div>
 
   <nav class="tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="scanner" role="tab">Scanner</button>
+    <button type="button" class="tab active" data-tab="signals" role="tab">Signals</button>
     <button type="button" class="tab" data-tab="movers" role="tab">Fast movers</button>
     <button type="button" class="tab" data-tab="topmovers" role="tab">Top movers</button>
-    <button type="button" class="tab" data-tab="fastcorridor" role="tab">Fast corridor</button>
     <button type="button" class="tab" data-tab="strategies" role="tab">Strategies</button>
     <button type="button" class="tab" data-tab="paperbot" role="tab">Paper bot</button>
     <button type="button" class="tab" data-tab="livebot" role="tab">Live bot</button>
@@ -950,57 +949,21 @@
     <button type="button" class="tab" data-tab="calculations" role="tab">Calculations</button>
   </nav>
 
-  <div id="panel-scanner" class="tab-panel active" role="tabpanel">
+  <div id="panel-signals" class="tab-panel active" role="tabpanel">
   <section class="settings">
     <h2>
-      Indicator settings
+      Settings
       <span id="configBadge" class="badge off">read-only</span>
     </h2>
     <form class="settings-form" id="configForm">
       <div class="field">
-        <label for="corridorDays">Corridor days</label>
-        <input type="number" id="corridorDays" name="corridorDays" step="0.25" min="0.25" max="30" required />
-        <div class="hint">Lookback for range corridor</div>
-      </div>
-      <div class="field">
-        <label for="corridorExcludeMinutes">Corridor exclude (min)</label>
-        <input type="number" id="corridorExcludeMinutes" name="corridorExcludeMinutes" step="1" min="0" max="240" required />
-        <div class="hint">Ignore last N minutes before signal</div>
-      </div>
-      <div class="field">
-        <label for="signalCandles">Candles above corridor</label>
-        <input type="number" id="signalCandles" name="signalCandles" step="1" min="2" max="12" required />
-        <div class="hint">Min count with open &amp; close above corridor high (last N bars)</div>
-      </div>
-      <div class="field">
-        <label for="bullishLookbackCandles">Bullish lookback</label>
-        <input type="number" id="bullishLookbackCandles" name="bullishLookbackCandles" step="1" min="3" max="60" required />
-        <div class="hint">Candles checked for bullish count</div>
-      </div>
-      <div class="field">
-        <label for="minBullishCandles">Min bullish</label>
-        <input type="number" id="minBullishCandles" name="minBullishCandles" step="1" min="1" max="60" required />
-        <div class="hint">Required bullish (close &gt; open)</div>
-      </div>
-      <div class="field">
-        <label for="maxCorridorWidthPct">Max corridor width %</label>
-        <input type="number" id="maxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="40" required />
-        <div class="hint">Flat corridor threshold</div>
-      </div>
-      <div class="field">
-        <label for="minCorridorRangePct">Min corridor range %</label>
-        <input type="number" id="minCorridorRangePct" name="minCorridorRangePct" step="0.001" min="0.001" max="5" required />
-        <div class="hint">Skip dead markets</div>
-      </div>
-      <div class="field">
-        <label for="minBreakVolumeMultiplier">Break volume ×</label>
-        <input type="number" id="minBreakVolumeMultiplier" name="minBreakVolumeMultiplier" step="0.1" min="1.1" max="20" required />
-        <div class="hint">Peak vol near break vs corridor avg</div>
-      </div>
-      <div class="field">
-        <label for="breakVolumeNearBars">Break volume window</label>
-        <input type="number" id="breakVolumeNearBars" name="breakVolumeNearBars" step="1" min="1" max="30" required />
-        <div class="hint">Bars before/after break to scan</div>
+        <label for="interval">Timeframe</label>
+        <select id="interval" name="interval">
+          <option value="1m">1m</option>
+          <option value="5m">5m</option>
+          <option value="15m">15m</option>
+        </select>
+        <div class="hint">Kline interval for signal evaluation (requires prefetch restart)</div>
       </div>
       <div class="settings-actions">
         <button type="submit" class="btn" id="applyConfig">Apply</button>
@@ -1012,14 +975,11 @@
 
   <div class="grid">
     <section>
-      <h2>Signals <span id="hitCount"></span></h2>
+      <h2>Active signals <span id="hitCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        <span class="status-tag signal">SIGNAL</span> full break ·
-        <span class="status-tag fc">FAST CORRIDOR</span> fast mover in target corridor with half-waves ·
-        <span class="status-tag sfp">SFP</span> sweep below corridor low + reclaim ·
+        <span class="status-tag sfp">SFP</span> sweep below range low + reclaim ·
         <span class="status-tag pb">PULLBACK</span> fast mover touch MA bounce ·
-        <span class="status-tag near">NEAR</span> setup except close break (within gap %) ·
-        signals stay <strong>24h</strong> after trigger (newest first)
+        active hits only (24h history on server)
       </p>
       <div class="table-wrap">
         <table>
@@ -1028,15 +988,12 @@
               <th>Triggered</th>
               <th>Symbol</th>
               <th>Close</th>
-              <th>2d high</th>
-              <th>Range×</th>
-              <th>Corridor %</th>
-              <th>Above</th>
-              <th>Break / gap</th>
+              <th>Detail</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="hitsBody">
-            <tr><td colspan="8" class="empty">No signals</td></tr>
+            <tr><td colspan="5" class="empty">No active signals</td></tr>
           </tbody>
         </table>
       </div>
@@ -1215,135 +1172,68 @@
     </section>
   </div>
 
-  <div id="panel-fastcorridor" class="tab-panel" role="tabpanel">
-    <section>
-      <h2>Fast corridor <span id="fastCorridorCount"></span></h2>
-      <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Subset of <strong>Fast movers</strong> (use settings on that tab) whose <strong>corridor width</strong> sits in the target band (with tolerance) and price has completed at least N half-waves (swings of ~½ corridor range).
-      </p>
-      <form class="settings-form movers-settings" id="fastCorridorConfigForm">
-        <div class="field">
-          <label for="fcMinCorridorWidthPct">Min corridor %</label>
-          <input type="number" id="fcMinCorridorWidthPct" name="minCorridorWidthPct" step="0.1" min="0.1" max="50" value="1" required />
-          <div class="hint">Corridor width lower bound</div>
-        </div>
-        <div class="field">
-          <label for="fcMaxCorridorWidthPct">Max corridor %</label>
-          <input type="number" id="fcMaxCorridorWidthPct" name="maxCorridorWidthPct" step="0.1" min="0.1" max="50" value="5" required />
-          <div class="hint">Corridor width upper bound</div>
-        </div>
-        <div class="field">
-          <label for="fcCorridorTolerancePct">Corridor tolerance %</label>
-          <input type="number" id="fcCorridorTolerancePct" name="corridorWidthTolerancePct" step="1" min="0" max="50" value="10" required />
-          <div class="hint">±% slack on min/max corridor width</div>
-        </div>
-        <div class="field">
-          <label for="fcMinHalfWaves">Min half-waves</label>
-          <input type="number" id="fcMinHalfWaves" name="minHalfWaves" step="1" min="1" max="50" value="3" required />
-          <div class="hint">Completed swings in lookback window</div>
-        </div>
-        <div class="field">
-          <label for="fcHalfWaveFraction">Half-wave size</label>
-          <input type="number" id="fcHalfWaveFraction" name="halfWaveFraction" step="0.05" min="0.1" max="1" value="0.5" required />
-          <div class="hint">Swing leg as fraction of corridor range (0.5 = half)</div>
-        </div>
-        <div class="field">
-          <label for="fcHalfWaveLookback">Wave lookback bars</label>
-          <input type="number" id="fcHalfWaveLookback" name="halfWaveLookback" step="1" min="2" max="2000" value="180" required />
-          <div class="hint">Bars scanned for half-wave count</div>
-        </div>
-        <div class="settings-actions">
-          <button type="submit" class="btn sm" id="fastCorridorApply">Apply</button>
-          <button type="button" class="btn secondary sm" id="fastCorridorRefresh">Refresh</button>
-          <span class="config-msg" id="fastCorridorMsg"></span>
-        </div>
-      </form>
-      <div class="pairs-table-wrap table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th class="sortable sym-search-header" data-fc-sort="symbol">
-                <span class="th-search-wrap">
-                  <input type="search" id="fastCorridorSearch" class="th-search" placeholder="Search symbol…" aria-label="Search symbol" />
-                  <span class="sort-mark"></span>
-                </span>
-              </th>
-              <th class="sortable" data-fc-sort="close">Close <span class="sort-mark"></span></th>
-              <th class="sortable" data-fc-sort="avgMovePct">Avg move % <span class="sort-mark"></span></th>
-              <th class="sortable" data-fc-sort="corridorWidthPct">Corridor % <span class="sort-mark"></span></th>
-              <th class="sortable" data-fc-sort="halfWaves">Half-waves <span class="sort-mark"></span></th>
-              <th class="sortable" data-fc-sort="corridorHigh">Corridor high <span class="sort-mark"></span></th>
-              <th class="sortable" data-fc-sort="corridorLow">Corridor low <span class="sort-mark"></span></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="fastCorridorBody">
-            <tr><td colspan="8" class="empty">Open this tab to load fast corridor pairs</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </div>
-
   <div id="panel-strategies" class="tab-panel" role="tabpanel">
     <section>
       <h2>Strategy monitor <span id="strategiesLiveCount"></span></h2>
       <p class="sub" style="margin: 12px 0 8px 12px; font-size: 0.8rem">
-        Tune regime gate (spike entries), SFP sweep-reclaim, and fast-mover pullback. Settings save to live scanner config.
+        Tune fast-mover, SFP sweep-reclaim, and pullback settings. Saves to live scanner config.
       </p>
       <div class="strategy-monitor" id="strategyMonitor">
-        <div><div class="stat-label">BTC regime</div><div class="stat-value muted" id="stratRegime">—</div></div>
         <div><div class="stat-label">Active SFP</div><div class="stat-value" id="stratSfpActive">0</div></div>
         <div><div class="stat-label">Active pullback</div><div class="stat-value" id="stratPbActive">0</div></div>
-        <div><div class="stat-label">Spike (live)</div><div class="stat-value" id="stratSpikeActive">0</div></div>
       </div>
       <form class="settings-form movers-settings" id="strategiesConfigForm">
-        <div class="field" style="min-width: 220px;">
-          <label>
-            <input type="checkbox" id="regimeFilterEnabled" />
-            Regime filter on spike entries
-          </label>
-          <div class="hint">Gate spike entries by BTC 1h trend vs MA</div>
+        <div class="field">
+          <label for="stratFastMoveLookback">Fast mover lookback</label>
+          <input type="number" id="stratFastMoveLookback" step="1" min="2" max="120" value="10" required />
         </div>
         <div class="field">
-          <label for="regimeMode">Regime direction</label>
-          <select id="regimeMode" name="regimeMode">
-            <option value="bullish">Bullish — allow when BTC close ≥ MA</option>
-            <option value="bearish">Bearish — allow when BTC close &lt; MA</option>
-          </select>
-          <div class="hint">Bullish = long alts only in BTC uptrend; bearish = trade spikes when BTC is below MA</div>
+          <label for="stratMinAvgMovePct">Min avg move %</label>
+          <input type="number" id="stratMinAvgMovePct" step="0.01" min="0.01" max="20" value="0.5" required />
         </div>
         <div class="field">
-          <label for="regimeMaBars">BTC MA bars (1h)</label>
-          <input type="number" id="regimeMaBars" step="1" min="5" max="200" value="20" required />
+          <label for="stratMinLinearChangePct">Min linear change %</label>
+          <input type="number" id="stratMinLinearChangePct" step="0.01" min="0" max="100" value="0.5" required />
         </div>
         <div class="field">
-          <label for="sfpLookbackBars">SFP lookback bars</label>
-          <input type="number" id="sfpLookbackBars" step="1" min="5" max="120" value="30" required />
+          <label for="stratFastMoveExcludeMult">Exclude spike ×</label>
+          <input type="number" id="stratFastMoveExcludeMult" step="0.1" min="1.5" max="20" value="3" required />
         </div>
         <div class="field">
-          <label for="sfpReclaimBars">SFP reclaim within bars</label>
-          <input type="number" id="sfpReclaimBars" step="1" min="1" max="30" value="5" required />
+          <label for="stratTopMoveMinPct">Top movers min %</label>
+          <input type="number" id="stratTopMoveMinPct" step="0.1" min="0.1" max="1000" value="5" required />
         </div>
         <div class="field">
-          <label for="sfpMinSweepPct">SFP min sweep % below low</label>
-          <input type="number" id="sfpMinSweepPct" step="0.01" min="0" max="5" value="0.05" required />
+          <label for="stratSfpRangeBars">SFP range bars</label>
+          <input type="number" id="stratSfpRangeBars" step="1" min="10" max="500" value="30" required />
         </div>
         <div class="field">
-          <label for="pullbackMaBars">Pullback MA bars (1m)</label>
-          <input type="number" id="pullbackMaBars" step="1" min="3" max="60" value="7" required />
+          <label for="stratSfpLookbackBars">SFP lookback bars</label>
+          <input type="number" id="stratSfpLookbackBars" step="1" min="5" max="120" value="30" required />
         </div>
         <div class="field">
-          <label for="pullbackTouchLookback">Pullback touch lookback</label>
-          <input type="number" id="pullbackTouchLookback" step="1" min="3" max="60" value="12" required />
+          <label for="stratSfpReclaimBars">SFP reclaim within bars</label>
+          <input type="number" id="stratSfpReclaimBars" step="1" min="1" max="30" value="5" required />
         </div>
         <div class="field">
-          <label for="pullbackMaxDistancePct">Touch within % of MA</label>
-          <input type="number" id="pullbackMaxDistancePct" step="0.05" min="0.05" max="5" value="0.35" required />
+          <label for="stratSfpMinSweepPct">SFP min sweep % below low</label>
+          <input type="number" id="stratSfpMinSweepPct" step="0.01" min="0" max="5" value="0.05" required />
         </div>
         <div class="field">
-          <label for="pullbackMaxAboveMaPct">Max % above MA at entry</label>
-          <input type="number" id="pullbackMaxAboveMaPct" step="0.1" min="0.1" max="20" value="1.5" required />
+          <label for="stratPullbackMaBars">Pullback MA bars</label>
+          <input type="number" id="stratPullbackMaBars" step="1" min="3" max="60" value="7" required />
+        </div>
+        <div class="field">
+          <label for="stratPullbackTouchLookback">Pullback touch lookback</label>
+          <input type="number" id="stratPullbackTouchLookback" step="1" min="3" max="60" value="12" required />
+        </div>
+        <div class="field">
+          <label for="stratPullbackMaxDistancePct">Touch within % of MA</label>
+          <input type="number" id="stratPullbackMaxDistancePct" step="0.05" min="0.05" max="5" value="0.35" required />
+        </div>
+        <div class="field">
+          <label for="stratPullbackMaxAboveMaPct">Max % above MA at entry</label>
+          <input type="number" id="stratPullbackMaxAboveMaPct" step="0.1" min="0.1" max="20" value="1.5" required />
         </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="strategiesApply">Apply</button>
@@ -1402,9 +1292,8 @@
         <span id="paperBotEnabledBadge" class="paper-enabled-badge off">off</span>
       </h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Simulated Binance futures LONG on new <span class="status-tag signal">SIGNAL</span> triggers (optional
-        <span class="status-tag fc">FAST CORRIDOR</span>). No real orders — state is saved on the server volume.
-        Simulated starting capital <strong>$1,000</strong> (reset restores this). Deposit below is free cash after margin in/out.
+        Simulated Binance futures LONG on <span class="status-tag sfp">SFP</span> and
+        <span class="status-tag pb">PULLBACK</span> signals. No real orders — state is saved on the server volume.
       </p>
       <form class="settings-form movers-settings" id="paperBotConfigForm">
         <div class="field" style="min-width: 200px;">
@@ -1412,6 +1301,11 @@
             <input type="checkbox" id="paperBotEnabled" name="enabled" />
             Enable bot (open on new signals)
           </label>
+        </div>
+        <div class="field">
+          <label for="paperBotInitialDeposit">Initial balance (USDT)</label>
+          <input type="number" id="paperBotInitialDeposit" step="1" min="10" max="1000000" value="1000" required />
+          <div class="hint">Starting capital on reset; does not change live balance until reset</div>
         </div>
         <div class="field">
           <label for="paperBotPositionUsdt">Position size (USDT)</label>
@@ -1438,7 +1332,7 @@
             <input type="checkbox" id="paperBotSmartExits" name="smartExitLevelsEnabled" checked />
             Smart SL/TP (SFP &amp; pullback)
           </label>
-          <div class="hint">Off = corridor SL + fixed TP % (same as spike). On = sweep/MA-based exits</div>
+          <div class="hint">Off = range-high SL + fixed TP %. On = sweep/MA-based exits</div>
         </div>
         <div class="field" id="paperBotTpMinField">
           <label for="paperBotTpMinPct">Min TP % (smart mode)</label>
@@ -1459,18 +1353,6 @@
           <label for="paperBotSfpTp">SFP take profit cap %</label>
           <input type="number" id="paperBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
           <div class="hint">Lower TP for sweep-reclaim entries (uses main TP if higher)</div>
-        </div>
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="paperBotTradeSpike" name="tradeSpikeSignals" />
-            Trade spike signals
-          </label>
-        </div>
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="paperBotTradeFc" name="tradeFastCorridorSignals" />
-            Trade fast corridor signals
-          </label>
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
@@ -1540,22 +1422,6 @@
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
-            <input type="checkbox" id="paperBotFalseSpikeEnabled" name="falseSpikeEnabled" />
-            False spike exit
-          </label>
-          <div class="hint">Close when price drops to % below initial entry after hold time</div>
-        </div>
-        <div class="field">
-          <label for="paperBotFalseSpikeAfterMinutes">After minutes open</label>
-          <input type="number" id="paperBotFalseSpikeAfterMinutes" step="1" min="1" max="1440" value="30" required />
-        </div>
-        <div class="field">
-          <label for="paperBotFalseSpikeBelowEntryPct">Close at entry ±%</label>
-          <input type="number" id="paperBotFalseSpikeBelowEntryPct" step="0.01" min="-20" max="50" value="0" required />
-          <div class="hint">LONG: +0.5 = 0.5% below first entry, −0.5 = 0.5% above; 0 = at/below entry</div>
-        </div>
-        <div class="field" style="min-width: 220px;">
-          <label>
             <input type="checkbox" id="paperBotDrawdownStopEnabled" name="drawdownStopEnabled" checked />
             Drawdown stop (auto-disable)
           </label>
@@ -1593,22 +1459,19 @@
             <tr>
               <th class="sortable" data-paper-open-sort="symbol">Symbol <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="signalKind">Signal <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="entryPrice">Entry / avg <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="movePctFromEntry">Move % <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="addCount">Adds <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="lastPrice">Last <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="margin">Margin <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="corridorHigh">Corridor high <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="stopLoss">Stop <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="takeProfit">Take profit <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="entryPrice">Entry <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="margin">Qty/Margin <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="stopLoss">SL <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="takeProfit">TP <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="unrealizedPnl">Unrealized <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="openedAt">Opened <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="unrealizedPnlPct">Unrealized % <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="durationSec">Duration <span class="sort-mark"></span></th>
               <th>Chart</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="paperBotOpenBody">
-            <tr><td colspan="14" class="empty">No open paper positions</td></tr>
+            <tr><td colspan="11" class="empty">No open paper positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -1628,10 +1491,11 @@
               <th class="sortable" data-paper-closed-sort="durationSec">Duration <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-closed-sort="closedAt">Closed <span class="sort-mark"></span></th>
               <th>Chart</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="paperBotClosedBody">
-            <tr><td colspan="10" class="empty">No closed positions yet</td></tr>
+            <tr><td colspan="11" class="empty">No closed positions yet</td></tr>
           </tbody>
         </table>
       </div>
@@ -1720,16 +1584,21 @@
           <input type="number" id="liveBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradeSpike" /> Trade spike</label>
-        </div>
-        <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradeFc" /> Trade fast corridor</label>
-        </div>
-        <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradeSfp" checked /> Trade SFP</label>
         </div>
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
+        </div>
+        <div class="field" style="min-width: 240px;">
+          <label>
+            <input type="checkbox" id="liveBotHtfGate" name="htfContraindicationEnabled" checked />
+            15m gate (SFP &amp; pullback)
+          </label>
+          <div class="hint">Skip entry if 15m is below MA, breaking down, or bearish sweep</div>
+        </div>
+        <div class="field">
+          <label for="liveBotHtfMaBars">15m MA bars</label>
+          <input type="number" id="liveBotHtfMaBars" step="1" min="5" max="200" value="20" required />
         </div>
         <div class="field" style="min-width: 260px;">
           <label>
@@ -1765,17 +1634,6 @@
           <input type="number" id="liveBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
         </div>
         <div class="field" style="min-width: 220px;">
-          <label><input type="checkbox" id="liveBotFalseSpikeEnabled" /> False spike exit</label>
-        </div>
-        <div class="field">
-          <label for="liveBotFalseSpikeAfterMinutes">After minutes</label>
-          <input type="number" id="liveBotFalseSpikeAfterMinutes" step="1" min="1" max="1440" value="30" required />
-        </div>
-        <div class="field">
-          <label for="liveBotFalseSpikeBelowEntryPct">Close at entry ±%</label>
-          <input type="number" id="liveBotFalseSpikeBelowEntryPct" step="0.01" min="-20" max="50" value="0" required />
-        </div>
-        <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="liveBotDrawdownStopEnabled" name="drawdownStopEnabled" checked />
             Drawdown stop (auto-disable)
@@ -1807,22 +1665,21 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Signal</th>
-              <th>Lev</th>
-              <th>Entry</th>
-              <th>Qty</th>
-              <th>SL</th>
-              <th>TP</th>
-              <th>Unrealized</th>
-              <th>Unrealized %</th>
-              <th>Duration</th>
+              <th class="sortable" data-live-open-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="signalKind">Signal <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="entryPrice">Entry <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="quantity">Qty/Margin <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="stopLoss">SL <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="takeProfit">TP <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="unrealizedPnl">Unrealized <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="unrealizedPnlPct">Unrealized % <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="durationSec">Duration <span class="sort-mark"></span></th>
               <th>Chart</th>
-              <th></th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="liveBotOpenBody">
-            <tr><td colspan="12" class="empty">No open positions</td></tr>
+            <tr><td colspan="11" class="empty">No open positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -1831,19 +1688,21 @@
         <table>
           <thead>
             <tr>
-              <th>Symbol</th>
-              <th>Signal</th>
-              <th>Entry</th>
-              <th>Exit</th>
-              <th>Reason</th>
-              <th>PnL</th>
-              <th>Duration</th>
-              <th>Closed</th>
+              <th class="sortable" data-live-closed-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="signalKind">Signal <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="entryPrice">Entry <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="exitPrice">Exit <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="exitReason">Reason <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="pnl">PnL <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="pnlPct">PnL % <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="durationSec">Duration <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-closed-sort="closedAt">Closed <span class="sort-mark"></span></th>
               <th>Chart</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="liveBotClosedBody">
-            <tr><td colspan="9" class="empty">No closed trades</td></tr>
+            <tr><td colspan="11" class="empty">No closed trades</td></tr>
           </tbody>
         </table>
       </div>
@@ -1858,7 +1717,7 @@
     <section>
       <h2>Train bot <span id="backtestStatusBadge" class="paper-enabled-badge off">idle</span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Historical simulation: uses <strong>Scanner</strong> indicator settings for signals and
+        Historical simulation: uses <strong>Strategies</strong> settings for signals and
         <strong>Paper bot</strong> rules for entries/exits. Fetches <strong>4 days</strong> of klines per USDT-M pair, walks bar-by-bar, collects all trades into one shared $1,000 account.
       </p>
       <div class="settings-form movers-settings" style="margin-bottom: 12px;">
@@ -2055,28 +1914,15 @@
       const ms = parseDisplayIso(t);
       return ms != null ? formatDateTime(ms) : "—";
     }
-    const CONFIG_KEYS = [
-      "corridorDays",
-      "corridorExcludeMinutes",
-      "signalCandles",
-      "bullishLookbackCandles",
-      "minBullishCandles",
-      "maxCorridorWidthPct",
-      "minCorridorRangePct",
-      "minBreakVolumeMultiplier",
-      "breakVolumeNearBars",
-    ];
+    const CONFIG_KEYS = ["interval"];
 
     let formDirty = false;
     let lastServerConfig = null;
-    let activeTab = "scanner";
+    let activeTab = "signals";
     let lastScannerState = null;
     let pairsPollTimer = null;
     let fastMoversLoading = false;
-    let fastCorridorLoading = false;
     let strategiesPollTimer = null;
-    let lastFastCorridor = [];
-    let fastCorridorSort = { key: "halfWaves", dir: "desc" };
     let lastFastMovers = [];
     let moversSort = { key: "avgMovePct", dir: "desc" };
     let topMoversLoading = false;
@@ -2088,6 +1934,10 @@
     let lastBacktestTrades = [];
     let paperBotOpenSort = { key: "unrealizedPnl", dir: "desc" };
     let paperBotClosedSort = { key: "pnl", dir: "desc" };
+    let lastLiveBotOpen = [];
+    let lastLiveBotClosed = [];
+    let liveBotOpenSort = { key: "unrealizedPnl", dir: "desc" };
+    let liveBotClosedSort = { key: "pnl", dir: "desc" };
     let backtestTradesSort = { key: "pnl", dir: "desc" };
     let historyLoading = false;
     let lastInterval = null;
@@ -2190,7 +2040,6 @@
         ["pairsCriterionPass", "ui_pairsCriterionPass"],
         ["moversSearch", "ui_moversSearch"],
         ["topMoversSearch", "ui_topMoversSearch"],
-        ["fastCorridorSearch", "ui_fastCorridorSearch"],
         ["backtestDays", "ui_backtestDays"],
         ["backtestMaxSymbols", "ui_backtestMaxSymbols"],
         ["backtestSymbolList", "ui_backtestSymbolList"],
@@ -2229,7 +2078,6 @@
       bind("pairsCriterionPass", "ui_pairsCriterionPass", "change");
       bind("moversSearch", "ui_moversSearch", "input");
       bind("topMoversSearch", "ui_topMoversSearch", "input");
-      bind("fastCorridorSearch", "ui_fastCorridorSearch", "input");
       bind("backtestDays", "ui_backtestDays", "change");
       bind("backtestMaxSymbols", "ui_backtestMaxSymbols", "change");
       bind("backtestSymbolList", "ui_backtestSymbolList", "input");
@@ -2237,11 +2085,6 @@
       for (const k of MOVERS_CONFIG_KEYS) {
         document.getElementById(k)?.addEventListener("input", (e) => {
           setUiSetting(`movers_${k}`, e.target.value);
-        });
-      }
-      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
-        document.getElementById(elId)?.addEventListener("input", (e) => {
-          setUiSetting(`fastcorridor_${param}`, e.target.value);
         });
       }
       for (const k of TOP_MOVERS_CONFIG_KEYS) {
@@ -2263,7 +2106,7 @@
         /* offline / static mode */
       }
       const patch = {};
-      const prefixes = ["movers_", "topMovers_", "fastcorridor_", "ui_"];
+      const prefixes = ["movers_", "topMovers_", "ui_"];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (!k || !prefixes.some((p) => k.startsWith(p))) continue;
@@ -2377,10 +2220,6 @@
       if (name === "topmovers") {
         loadTopMoversConfigForm();
         loadTopMovers();
-      }
-      if (name === "fastcorridor") {
-        loadFastCorridorConfigForm();
-        loadFastCorridor();
       }
       if (name === "strategies") {
         loadStrategiesTab();
@@ -2535,9 +2374,7 @@
                   .join("")}</ul>`;
           const pill = p.passes
             ? '<span class="status-pill pass">PASS</span>'
-            : p.nearBreak
-              ? '<span class="status-pill near">NEAR</span>'
-              : '<span class="status-pill fail">no signal</span>';
+            : '<span class="status-pill fail">no signal</span>';
           const barAt = fmtBarTime(p.signalBarAt);
           const tgBtn = data.telegramEnabled
             ? `<button type="button" class="btn secondary sm telegram-btn" data-symbol="${escapeHtml(p.symbol)}" title="Send signal to Telegram">TG</button>`
@@ -2552,7 +2389,7 @@
             <td class="time">${barAt}</td>
             <td>${reasons}</td>
             <td class="criteria-col">${formatChecksList(p.checks)}</td>
-            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}" data-chart-indicator="fastcorridor">Chart</button></td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}" >Chart</button></td>
           </tr>`;
         })
         .join("");
@@ -2888,7 +2725,7 @@
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
             <td>${p.bars ?? "—"}</td>
             <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
-            <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}" data-chart-indicator="fastcorridor">Chart</button></td>
+            <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}" >Chart</button></td>
           </tr>`;
           }
         )
@@ -2901,231 +2738,69 @@
       });
     }
 
-    const FAST_CORRIDOR_CONFIG_KEYS = [
-      ["fcMinCorridorWidthPct", "minCorridorWidthPct"],
-      ["fcMaxCorridorWidthPct", "maxCorridorWidthPct"],
-      ["fcCorridorTolerancePct", "corridorWidthTolerancePct"],
-      ["fcMinHalfWaves", "minHalfWaves"],
-      ["fcHalfWaveFraction", "halfWaveFraction"],
-      ["fcHalfWaveLookback", "halfWaveLookback"],
-    ];
-
-    function loadFastCorridorConfigForm() {
-      loadMoversConfigForm();
-      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
-        const v = getUiSetting(`fastcorridor_${param}`);
-        const el = document.getElementById(elId);
-        if (el && v != null && v !== "") el.value = v;
-      }
-    }
-
-    function fastCorridorConfigParams() {
-      const params = moversConfigParams();
-      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
-        const el = document.getElementById(elId);
-        if (el) params.set(param, el.value);
-      }
-      return params;
-    }
-
-    function saveFastCorridorConfigForm() {
-      const patch = {};
-      for (const [elId, param] of FAST_CORRIDOR_CONFIG_KEYS) {
-        const el = document.getElementById(elId);
-        if (el) patch[`fastcorridor_${param}`] = el.value;
-      }
-      Object.assign(uiSettingsCache, patch);
-      queueUiSettingsSave(patch);
-    }
-
-    function setFastCorridorMsg(text, ok) {
-      const el = document.getElementById("fastCorridorMsg");
-      el.textContent = text;
-      el.className = "config-msg" + (text ? (ok ? " ok" : " err") : "");
-    }
-
-    function fcSortValue(row, key) {
-      if (key === "symbol") return row.symbol ?? "";
-      return Number(row[key] ?? 0);
-    }
-
-    function sortedFastCorridor(rows) {
-      const { key, dir } = fastCorridorSort;
-      const sign = dir === "asc" ? 1 : -1;
-      return [...(rows ?? [])].sort((a, b) => {
-        const av = fcSortValue(a, key);
-        const bv = fcSortValue(b, key);
-        if (typeof av === "string" || typeof bv === "string") {
-          return String(av).localeCompare(String(bv)) * sign;
-        }
-        if (av !== bv) return (av - bv) * sign;
-        return String(a.symbol ?? "").localeCompare(String(b.symbol ?? ""));
-      });
-    }
-
-    function updateFastCorridorSortHeaders() {
-      document.querySelectorAll("[data-fc-sort]").forEach((th) => {
-        const mark = th.querySelector(".sort-mark");
-        const active = th.dataset.fcSort === fastCorridorSort.key;
-        th.setAttribute("aria-sort", active ? (fastCorridorSort.dir === "asc" ? "ascending" : "descending") : "none");
-        if (mark) mark.textContent = active ? (fastCorridorSort.dir === "asc" ? "▲" : "▼") : "";
-      });
-    }
-
-    function renderFastCorridor(data) {
-      lastFastCorridor = data.pairs ?? [];
-      document.getElementById("fastCorridorCount").textContent =
-        data.pairCount != null ? `(${data.pairCount})` : "";
-
-      const tbody = document.getElementById("fastCorridorBody");
-      const rows = sortedFastCorridor(lastFastCorridor);
-      updateFastCorridorSortHeaders();
-
-      if (!rows.length) {
-        tbody.innerHTML =
-          '<tr><td colspan="8" class="empty">No fast corridor pairs match</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = rows
-        .map(
-          (p) => `<tr>
-            <td class="sym">${symLink(p.symbol)}</td>
-            <td>${fmt(p.close, 6)}</td>
-            <td class="pass">${fmt(p.avgMovePct, 3)}%</td>
-            <td>${fmt(p.corridorWidthPct, 2)}%</td>
-            <td><strong>${p.halfWaves ?? "—"}</strong></td>
-            <td>${fmt(p.corridorHigh, 6)}</td>
-            <td>${fmt(p.corridorLow, 6)}</td>
-            <td><button type="button" class="btn sm chart-btn" data-symbol="${p.symbol}">Chart</button></td>
-          </tr>`
-        )
-        .join("");
-
-      tbody.querySelectorAll(".chart-btn").forEach((btn) => {
-        btn.addEventListener("click", () => openChart(btn.dataset.symbol));
-      });
-    }
-
-    async function loadFastCorridor() {
-      if (fastCorridorLoading) return;
-      fastCorridorLoading = true;
-      const q = document.getElementById("fastCorridorSearch").value;
-      const params = fastCorridorConfigParams();
-      if (q.trim()) params.set("q", q.trim());
-
-      try {
-        const res = await fetch(`/api/fast-corridor?${params}`, { cache: "no-store" });
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
-        const lookback = data.lookback ?? data.fastMoveLookbackCandles;
-        const excludeMult = data.excludeMult ?? data.fastMoveExcludeMult;
-        setFastCorridorMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · fast ≥${data.minAvgMovePct}% · linear ≥${data.minLinearChangePct ?? 0}% · ${lookback} bars · excl. >${excludeMult}× avg · corridor ${data.effCorridorMinPct}–${data.effCorridorMaxPct}% · ≥${data.minHalfWaves} half-waves`,
-          true
-        );
-        renderFastCorridor(data);
-      } catch (e) {
-        setFastCorridorMsg(e.message, false);
-        document.getElementById("fastCorridorBody").innerHTML =
-          `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
-      } finally {
-        fastCorridorLoading = false;
-      }
-    }
-
-    document.getElementById("fastCorridorConfigForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      saveFastCorridorConfigForm();
-      applyLivePatch({
-        fastCorridorMinWidthPct: Number(document.getElementById("fcMinCorridorWidthPct").value),
-        fastCorridorMaxWidthPct: Number(document.getElementById("fcMaxCorridorWidthPct").value),
-        fastCorridorWidthTolerancePct: Number(document.getElementById("fcCorridorTolerancePct").value),
-        fastCorridorMinHalfWaves: Number(document.getElementById("fcMinHalfWaves").value),
-        fastCorridorHalfWaveFraction: Number(document.getElementById("fcHalfWaveFraction").value),
-        fastCorridorHalfWaveLookback: Number(document.getElementById("fcHalfWaveLookback").value),
-      })
-        .then(() => {
-          setFastCorridorMsg("Applied to live scanner", true);
-          loadFastCorridor();
-        })
-        .catch((err) => setFastCorridorMsg(err.message, false));
-    });
-    document.getElementById("fastCorridorRefresh").addEventListener("click", loadFastCorridor);
-    document.getElementById("fastCorridorSearch").addEventListener("input", () => {
-      clearTimeout(window._fastCorridorSearchTimer);
-      window._fastCorridorSearchTimer = setTimeout(loadFastCorridor, 300);
-    });
-    document.querySelectorAll("[data-fc-sort]").forEach((th) => {
-      th.addEventListener("click", (e) => {
-        if (e.target.closest(".th-search")) return;
-        const key = th.dataset.fcSort;
-        if (fastCorridorSort.key === key) {
-          fastCorridorSort = {
-            key,
-            dir: fastCorridorSort.dir === "asc" ? "desc" : "asc",
-          };
-        } else {
-          fastCorridorSort = { key, dir: key === "symbol" ? "asc" : "desc" };
-        }
-        renderFastCorridor({ pairCount: lastFastCorridor.length, pairs: lastFastCorridor });
-      });
-    });
-
     const STRATEGY_CONFIG_KEYS = [
-      "regimeFilterEnabled",
-      "regimeMaBars",
-      "regimeMode",
+      "fastMoveLookbackCandles",
+      "minAvgMovePct",
+      "minLinearChangePct",
+      "fastMoveExcludeMult",
       "sfpLookbackBars",
       "sfpReclaimBars",
       "sfpMinSweepPct",
+      "sfpRangeBars",
       "pullbackMaBars",
       "pullbackTouchLookback",
       "pullbackMaxDistancePct",
       "pullbackMaxAboveMaPct",
+      "topMoveMinPct",
     ];
 
+    const STRATEGY_FORM_MAP = {
+      fastMoveLookbackCandles: "stratFastMoveLookback",
+      minAvgMovePct: "stratMinAvgMovePct",
+      minLinearChangePct: "stratMinLinearChangePct",
+      fastMoveExcludeMult: "stratFastMoveExcludeMult",
+      sfpLookbackBars: "stratSfpLookbackBars",
+      sfpReclaimBars: "stratSfpReclaimBars",
+      sfpMinSweepPct: "stratSfpMinSweepPct",
+      sfpRangeBars: "stratSfpRangeBars",
+      pullbackMaBars: "stratPullbackMaBars",
+      pullbackTouchLookback: "stratPullbackTouchLookback",
+      pullbackMaxDistancePct: "stratPullbackMaxDistancePct",
+      pullbackMaxAboveMaPct: "stratPullbackMaxAboveMaPct",
+      topMoveMinPct: "stratTopMoveMinPct",
+    };
+
     function strategyPatchFromForm() {
-      return {
-        regimeFilterEnabled: document.getElementById("regimeFilterEnabled").checked
-          ? 1
-          : 0,
-        regimeMaBars: Number(document.getElementById("regimeMaBars").value),
-        regimeMode: document.getElementById("regimeMode").value,
-        sfpLookbackBars: Number(document.getElementById("sfpLookbackBars").value),
-        sfpReclaimBars: Number(document.getElementById("sfpReclaimBars").value),
-        sfpMinSweepPct: Number(document.getElementById("sfpMinSweepPct").value),
-        pullbackMaBars: Number(document.getElementById("pullbackMaBars").value),
-        pullbackTouchLookback: Number(
-          document.getElementById("pullbackTouchLookback").value
-        ),
-        pullbackMaxDistancePct: Number(
-          document.getElementById("pullbackMaxDistancePct").value
-        ),
-        pullbackMaxAboveMaPct: Number(
-          document.getElementById("pullbackMaxAboveMaPct").value
-        ),
-      };
+      const patch = {};
+      for (const k of STRATEGY_CONFIG_KEYS) {
+        const elId = STRATEGY_FORM_MAP[k];
+        const el = document.getElementById(elId);
+        if (!el) continue;
+        patch[k] = el.type === "checkbox" ? (el.checked ? 1 : 0) : Number(el.value);
+      }
+      return patch;
     }
 
     function fillStrategiesForm(state) {
       if (!state) return;
-      document.getElementById("regimeFilterEnabled").checked = Boolean(
-        state.regimeFilterEnabled
-      );
-      document.getElementById("regimeMaBars").value = state.regimeMaBars ?? 20;
-      document.getElementById("regimeMode").value =
-        state.regimeMode === "bearish" ? "bearish" : "bullish";
-      document.getElementById("sfpLookbackBars").value = state.sfpLookbackBars ?? 30;
-      document.getElementById("sfpReclaimBars").value = state.sfpReclaimBars ?? 5;
-      document.getElementById("sfpMinSweepPct").value = state.sfpMinSweepPct ?? 0.05;
-      document.getElementById("pullbackMaBars").value = state.pullbackMaBars ?? 7;
-      document.getElementById("pullbackTouchLookback").value =
-        state.pullbackTouchLookback ?? 12;
-      document.getElementById("pullbackMaxDistancePct").value =
-        state.pullbackMaxDistancePct ?? 0.35;
-      document.getElementById("pullbackMaxAboveMaPct").value =
-        state.pullbackMaxAboveMaPct ?? 1.5;
+      for (const k of STRATEGY_CONFIG_KEYS) {
+        const elId = STRATEGY_FORM_MAP[k];
+        const el = document.getElementById(elId);
+        if (!el || state[k] == null) continue;
+        if (el.type === "checkbox") el.checked = Boolean(state[k]);
+        else el.value = state[k];
+      }
+      const moversSync = {
+        fastMoveLookbackCandles: "fastMoveLookbackCandles",
+        minAvgMovePct: "minAvgMovePct",
+        minLinearChangePct: "minLinearChangePct",
+        fastMoveExcludeMult: "fastMoveExcludeMult",
+        topMoveMinPct: "topMoveMinPct",
+      };
+      for (const [key, elId] of Object.entries(moversSync)) {
+        const el = document.getElementById(elId);
+        if (el && state[key] != null) el.value = state[key];
+      }
     }
 
     function setStrategiesMsg(text, ok) {
@@ -3136,26 +2811,13 @@
     }
 
     function renderStrategyMonitor(data) {
-      const regime = data?.regime ?? {};
       const counts = data?.counts ?? {};
-      const regimeEl = document.getElementById("stratRegime");
-      if (regimeEl) {
-        if (!regime.enabled) {
-          regimeEl.textContent = "off (spikes ungated)";
-          regimeEl.className = "stat-value muted";
-        } else {
-          regimeEl.textContent = regime.detail || regime.label || "—";
-          regimeEl.className =
-            "stat-value " + (regime.pass ? "ok" : "bad");
-        }
-      }
       const setCount = (id, n) => {
         const el = document.getElementById(id);
         if (el) el.textContent = String(n ?? 0);
       };
       setCount("stratSfpActive", counts.sfpActive);
       setCount("stratPbActive", counts.pullbackActive);
-      setCount("stratSpikeActive", counts.spikeActive);
       const liveN = (counts.sfpActive ?? 0) + (counts.pullbackActive ?? 0);
       const countEl = document.getElementById("strategiesLiveCount");
       if (countEl) countEl.textContent = liveN ? `(${liveN} live)` : "";
@@ -3284,45 +2946,6 @@
       window._pbSearchTimer = setTimeout(loadPullbackTable, 300);
     });
 
-    document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      saveMoversConfigForm();
-      applyLivePatch({
-        fastMoveLookbackCandles: Number(document.getElementById("fastMoveLookbackCandles").value),
-        minAvgMovePct: Number(document.getElementById("minAvgMovePct").value),
-        minLinearChangePct: Number(document.getElementById("minLinearChangePct").value),
-        fastMoveExcludeMult: Number(document.getElementById("fastMoveExcludeMult").value),
-      })
-        .then(() => {
-          setMoversMsg("Applied to live scanner", true);
-          loadFastMovers();
-        })
-        .catch((err) => setMoversMsg(err.message, false));
-    });
-    document.getElementById("moversRefresh").addEventListener("click", loadFastMovers);
-    document.getElementById("moversSearch").addEventListener("input", () => {
-      clearTimeout(window._moversSearchTimer);
-      window._moversSearchTimer = setTimeout(loadFastMovers, 300);
-    });
-    document.querySelectorAll("[data-mover-sort]").forEach((th) => {
-      th.addEventListener("click", (e) => {
-        if (e.target.closest(".th-search")) return;
-        const key = th.dataset.moverSort;
-        if (moversSort.key === key) {
-          moversSort = {
-            key,
-            dir: moversSort.dir === "asc" ? "desc" : "asc",
-          };
-        } else {
-          moversSort = {
-            key,
-            dir: key === "symbol" ? "asc" : "desc",
-          };
-        }
-        renderFastMovers({ pairCount: lastFastMovers.length, movers: lastFastMovers });
-      });
-    });
-
     const TOP_MOVERS_CONFIG_KEYS = ["topMoveMinPct", "topMoversWindow"];
     const TOP_MOVERS_WINDOW_MINUTES = [15, 60, 180, 600, 1440];
 
@@ -3438,15 +3061,20 @@
     function paperBotExitReasonHtml(reason) {
       if (reason === "take_profit") return '<span class="pass">TP</span>';
       if (reason === "stop_loss") return '<span class="bad">SL</span>';
-      if (reason === "false_spike") return '<span class="near">false spike</span>';
       return escapeHtml(reason ?? "—");
     }
 
     function botSignalKindTag(kind) {
-      if (kind === "fast-corridor") return '<span class="status-tag fc">FC</span>';
       if (kind === "sfp") return '<span class="status-tag sfp">SFP</span>';
       if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
-      return '<span class="status-tag signal">SPIKE</span>';
+      return '<span class="status-tag muted">—</span>';
+    }
+
+    function botUnrealizedPct(p) {
+      if (p.unrealizedPnlPct != null) return p.unrealizedPnlPct;
+      const base = p.margin ?? p.positionSizeUsdt;
+      if (base && p.unrealizedPnl != null) return (p.unrealizedPnl / base) * 100;
+      return null;
     }
 
     function displayPositionSizeUsdt(cfg) {
@@ -3459,6 +3087,7 @@
     function paperBotConfigFromForm() {
       return {
         enabled: document.getElementById("paperBotEnabled").checked,
+        initialDeposit: Number(document.getElementById("paperBotInitialDeposit").value),
         positionSizeUsdt: Number(document.getElementById("paperBotPositionUsdt").value),
         stopLossBelowCorridorPct: Number(document.getElementById("paperBotStopPct").value),
         stopLossFallbackPnlPct: Number(
@@ -3470,8 +3099,6 @@
         maxSfpCorridorWidthPct: Number(document.getElementById("paperBotMaxSfpCorridor").value),
         sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
-        tradeSpikeSignals: document.getElementById("paperBotTradeSpike").checked,
-        tradeFastCorridorSignals: document.getElementById("paperBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
         htfContraindicationEnabled: document.getElementById("paperBotHtfGate").checked,
@@ -3484,13 +3111,6 @@
         moveStopEnabled: document.getElementById("paperBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("paperBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("paperBotMoveStopOffsetPct").value),
-        falseSpikeEnabled: document.getElementById("paperBotFalseSpikeEnabled").checked,
-        falseSpikeAfterMinutes: Number(
-          document.getElementById("paperBotFalseSpikeAfterMinutes").value
-        ),
-        falseSpikeBelowEntryPct: Number(
-          document.getElementById("paperBotFalseSpikeBelowEntryPct").value
-        ),
         drawdownStopEnabled: document.getElementById("paperBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("paperBotDrawdownStopPct").value),
       };
@@ -3508,6 +3128,7 @@
     function fillPaperBotForm(cfg) {
       if (!cfg) return;
       document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
+      document.getElementById("paperBotInitialDeposit").value = cfg.initialDeposit ?? 1000;
       document.getElementById("paperBotPositionUsdt").value = displayPositionSizeUsdt(cfg);
       document.getElementById("paperBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
       document.getElementById("paperBotStopFallbackPnlPct").value =
@@ -3524,10 +3145,6 @@
         paperTpMinField.style.opacity =
           cfg.smartExitLevelsEnabled !== false ? "1" : "0.45";
       }
-      document.getElementById("paperBotTradeSpike").checked = Boolean(cfg.tradeSpikeSignals);
-      document.getElementById("paperBotTradeFc").checked = Boolean(
-        cfg.tradeFastCorridorSignals
-      );
       document.getElementById("paperBotTradeSfp").checked =
         cfg.tradeSfpSignals !== false;
       document.getElementById("paperBotTradePullback").checked =
@@ -3546,13 +3163,6 @@
         cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("paperBotMoveStopOffsetPct").value =
         cfg.moveStopOffsetPct ?? 0;
-      document.getElementById("paperBotFalseSpikeEnabled").checked = Boolean(
-        cfg.falseSpikeEnabled
-      );
-      document.getElementById("paperBotFalseSpikeAfterMinutes").value =
-        cfg.falseSpikeAfterMinutes ?? 30;
-      document.getElementById("paperBotFalseSpikeBelowEntryPct").value =
-        cfg.falseSpikeBelowEntryPct ?? 0;
       document.getElementById("paperBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("paperBotDrawdownStopPct").value =
@@ -3570,6 +3180,9 @@
     function botTableSortValue(row, key) {
       if (key === "symbol" || key === "signalKind" || key === "exitReason") {
         return String(row[key] ?? "");
+      }
+      if (key === "unrealizedPnlPct") {
+        return botUnrealizedPct(row) ?? 0;
       }
       if (key === "durationSec") {
         const closed = row.closedAtIso ?? row.closedAt;
@@ -3646,83 +3259,83 @@
       return n == null ? "" : n >= 0 ? "pass" : "bad";
     }
 
-    function renderPaperBotOpenBody(rows) {
-      const openBody = document.getElementById("paperBotOpenBody");
-      updateBotSortHeaders("data-paper-open-sort", paperBotOpenSort);
+    function renderBotOpenBody(bodyId, rows, sort, sortAttr, options = {}) {
+      const openBody = document.getElementById(bodyId);
+      updateBotSortHeaders(sortAttr, sort);
+      const colSpan = options.live ? 11 : 11;
       if (!rows?.length) {
         openBody.innerHTML =
-          '<tr class="empty-row"><td colspan="14" class="empty">No open paper positions</td></tr>';
+          `<tr class="empty-row"><td colspan="${colSpan}" class="empty">No open positions</td></tr>`;
         return;
       }
       const pnlCls = paperBotPnlCls;
-      openBody.innerHTML = sortedBotRows(rows, paperBotOpenSort)
+      openBody.innerHTML = sortedBotRows(rows, sort)
         .map((p) => {
           const unrCls = pnlCls(p.unrealizedPnl);
+          const unrPct = botUnrealizedPct(p);
+          const unrPctCls = pnlCls(unrPct);
           const kind = botSignalKindTag(p.signalKind);
           const entryLabel =
-            p.addCount > 0
+            !options.live && p.addCount > 0
               ? `${fmt(p.initialEntryPrice, 6)} → ${fmt(p.entryPrice, 6)}`
               : fmt(p.entryPrice, 6);
-          const movePct = p.movePctFromEntry ?? 0;
-          const moveCls = movePct >= 0 ? "pass" : "bad";
+          const qtyMargin = options.live
+            ? fmt(p.quantity, 4)
+            : fmtUsd(p.margin);
           const previewBtn = p.id
-            ? `<button type="button" class="btn secondary sm open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
+            ? `<button type="button" class="btn secondary sm ${options.live ? "live-" : ""}open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
             : "";
-          const symCell = `<div class="sym-with-actions"><span>${symLink(p.symbol)}</span>${
-            previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
-          }</div>`;
+          const closeBtn =
+            options.live && p.symbol
+              ? `<button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button>`
+              : '<span class="time">—</span>';
           return `<tr class="data-row">
-              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td class="sym-cell" data-label="Symbol">${symLink(p.symbol)}</td>
               <td data-label="Signal">${kind}</td>
-              <td class="time" data-label="Entry / avg">${entryLabel}</td>
-              <td class="${moveCls}" data-label="Move %">${fmt(movePct, 2)}%</td>
-              <td data-label="Adds">${p.addCount ?? 0}</td>
-              <td data-label="Last">${fmt(p.lastPrice, 6)}</td>
-              <td data-label="Margin">${fmtUsd(p.margin)}</td>
-              <td data-label="Corridor high">${fmt(p.corridorHigh, 6)}</td>
-              <td class="bad" data-label="Stop">${fmt(p.stopLoss, 6)}${
-            p.initialStopLoss != null &&
-            Math.abs(p.stopLoss - p.initialStopLoss) > 1e-8
-              ? `<div class="time" style="font-size:0.72rem">was ${fmt(p.initialStopLoss, 6)}</div>`
-              : ""
-          }</td>
-              <td class="pass" data-label="Take profit">${fmt(p.takeProfit, 6)}</td>
+              <td class="time" data-label="Entry">${entryLabel}</td>
+              <td data-label="Qty/Margin">${qtyMargin}</td>
+              <td class="bad" data-label="SL">${fmt(p.stopLoss, 6)}</td>
+              <td class="pass" data-label="TP">${fmt(p.takeProfit, 6)}</td>
               <td class="${unrCls}" data-label="Unrealized">${fmtUsd(p.unrealizedPnl)}</td>
-              <td class="time" data-label="Opened">${fmtDisplayDateTime(p.openedAtIso ?? p.openedAt)}</td>
+              <td class="${unrPctCls}" data-label="Unrealized %">${unrPct == null ? "—" : `${fmt(unrPct, 2)}%`}</td>
               <td class="history-duration" data-label="Duration">${fmtPositionDuration(p.openedAtIso ?? p.openedAt)}</td>
               <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
+              <td data-label="Actions">${options.live ? closeBtn : '<span class="time">—</span>'}</td>
             </tr>`;
         })
         .join("");
-      openBody.querySelectorAll(".open-snapshot-btn").forEach((btn) => {
+      openBody.querySelectorAll(".open-snapshot-btn, .live-open-snapshot-btn").forEach((btn) => {
         btn.addEventListener("click", () =>
-          generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol)
+          generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol, options.live ? "live" : "paper")
         );
       });
+      if (options.live) {
+        openBody.querySelectorAll(".live-close-btn").forEach((btn) => {
+          btn.addEventListener("click", () => closeLiveSymbol(btn.dataset.symbol));
+        });
+      }
     }
 
-    function renderPaperBotClosedBody(rows) {
-      const closedBody = document.getElementById("paperBotClosedBody");
-      updateBotSortHeaders("data-paper-closed-sort", paperBotClosedSort);
+    function renderBotClosedBody(bodyId, rows, sort, sortAttr, options = {}) {
+      const closedBody = document.getElementById(bodyId);
+      updateBotSortHeaders(sortAttr, sort);
       if (!rows?.length) {
         closedBody.innerHTML =
-          '<tr class="empty-row"><td colspan="10" class="empty">No closed positions yet</td></tr>';
+          '<tr class="empty-row"><td colspan="11" class="empty">No closed positions yet</td></tr>';
         return;
       }
       const pnlCls = paperBotPnlCls;
-      closedBody.innerHTML = sortedBotRows(rows, paperBotClosedSort)
+      const snapCls = options.live ? "live-snapshot-btn" : "trade-snapshot-btn";
+      closedBody.innerHTML = sortedBotRows(rows, sort)
         .map((t) => {
           const pnlCls2 = pnlCls(t.pnl);
           const reason = paperBotExitReasonHtml(t.exitReason);
           const kind = botSignalKindTag(t.signalKind);
           const previewBtn = t.snapshotId
-            ? `<button type="button" class="btn secondary sm trade-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
+            ? `<button type="button" class="btn secondary sm ${snapCls}" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
             : "";
-          const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
-            previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
-          }</div>`;
           return `<tr class="data-row">
-              <td class="sym-cell" data-label="Symbol">${symCell}</td>
+              <td class="sym-cell" data-label="Symbol">${symLink(t.symbol)}</td>
               <td data-label="Signal">${kind}</td>
               <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
               <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
@@ -3732,14 +3345,31 @@
               <td class="history-duration" data-label="Duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
               <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
               <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
+              <td data-label="Actions"><span class="time">—</span></td>
             </tr>`;
         })
         .join("");
-      closedBody.querySelectorAll(".trade-snapshot-btn").forEach((btn) => {
+      closedBody.querySelectorAll(`.${snapCls}`).forEach((btn) => {
         btn.addEventListener("click", () =>
           openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol)
         );
       });
+    }
+
+    function renderPaperBotOpenBody(rows) {
+      renderBotOpenBody("paperBotOpenBody", rows, paperBotOpenSort, "data-paper-open-sort", {});
+    }
+
+    function renderPaperBotClosedBody(rows) {
+      renderBotClosedBody("paperBotClosedBody", rows, paperBotClosedSort, "data-paper-closed-sort", {});
+    }
+
+    function renderLiveBotOpenBody(rows) {
+      renderBotOpenBody("liveBotOpenBody", rows, liveBotOpenSort, "data-live-open-sort", { live: true });
+    }
+
+    function renderLiveBotClosedBody(rows) {
+      renderBotClosedBody("liveBotClosedBody", rows, liveBotClosedSort, "data-live-closed-sort", { live: true });
     }
 
     function renderBacktestTradesBody(rows) {
@@ -3755,10 +3385,7 @@
         .slice(0, 200)
         .map((t) => {
           const cls = pnlCls(t.pnl);
-          const kind =
-            t.signalKind === "fast-corridor"
-              ? '<span class="status-tag fc">FC</span>'
-              : '<span class="status-tag signal">SPIKE</span>';
+          const kind = botSignalKindTag(t.signalKind);
           const reason = paperBotExitReasonHtml(t.exitReason);
           const previewBtn = t.snapshotId
             ? `<button type="button" class="btn secondary sm backtest-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
@@ -3932,10 +3559,10 @@
         maxSfpCorridorWidthPct: Number(document.getElementById("liveBotMaxSfpCorridor").value),
         sfpTakeProfitPct: Number(document.getElementById("liveBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("liveBotSmartExits").checked,
-        tradeSpikeSignals: document.getElementById("liveBotTradeSpike").checked,
-        tradeFastCorridorSignals: document.getElementById("liveBotTradeFc").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
         tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
+        htfContraindicationEnabled: document.getElementById("liveBotHtfGate").checked,
+        htfMaBars: Number(document.getElementById("liveBotHtfMaBars").value),
         extremalSpikeGateEnabled: document.getElementById("liveBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
         addOnDepositPct: Number(document.getElementById("liveBotAddOnDepositPct").value),
@@ -3944,13 +3571,6 @@
         moveStopEnabled: document.getElementById("liveBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("liveBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("liveBotMoveStopOffsetPct").value),
-        falseSpikeEnabled: document.getElementById("liveBotFalseSpikeEnabled").checked,
-        falseSpikeAfterMinutes: Number(
-          document.getElementById("liveBotFalseSpikeAfterMinutes").value
-        ),
-        falseSpikeBelowEntryPct: Number(
-          document.getElementById("liveBotFalseSpikeBelowEntryPct").value
-        ),
         drawdownStopEnabled: document.getElementById("liveBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("liveBotDrawdownStopPct").value),
       };
@@ -3987,10 +3607,11 @@
         liveTpMinField.style.opacity =
           cfg.smartExitLevelsEnabled !== false ? "1" : "0.45";
       }
-      document.getElementById("liveBotTradeSpike").checked = Boolean(cfg.tradeSpikeSignals);
-      document.getElementById("liveBotTradeFc").checked = Boolean(cfg.tradeFastCorridorSignals);
       document.getElementById("liveBotTradeSfp").checked = cfg.tradeSfpSignals !== false;
       document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
+      document.getElementById("liveBotHtfGate").checked =
+        cfg.htfContraindicationEnabled !== false;
+      document.getElementById("liveBotHtfMaBars").value = cfg.htfMaBars ?? 20;
       document.getElementById("liveBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
@@ -4000,11 +3621,6 @@
       document.getElementById("liveBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
       document.getElementById("liveBotMoveStopAfterPct").value = cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("liveBotMoveStopOffsetPct").value = cfg.moveStopOffsetPct ?? 0;
-      document.getElementById("liveBotFalseSpikeEnabled").checked = Boolean(cfg.falseSpikeEnabled);
-      document.getElementById("liveBotFalseSpikeAfterMinutes").value =
-        cfg.falseSpikeAfterMinutes ?? 30;
-      document.getElementById("liveBotFalseSpikeBelowEntryPct").value =
-        cfg.falseSpikeBelowEntryPct ?? 0;
       document.getElementById("liveBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 4;
@@ -4046,77 +3662,10 @@
         document.getElementById("liveStatDrawdownLimit")
       );
 
-      const openBody = document.getElementById("liveBotOpenBody");
-      if (!data.openPositions?.length) {
-        openBody.innerHTML =
-          '<tr><td colspan="12" class="empty">No open positions</td></tr>';
-      } else {
-        openBody.innerHTML = data.openPositions
-          .map((p) => {
-            const unrCls = pnlCls(p.unrealizedPnl);
-            const unrPct = p.unrealizedPnlPct;
-            const unrPctCls = pnlCls(unrPct);
-            const unrPctLabel =
-              unrPct == null ? "—" : `${fmt(unrPct, 2)}%`;
-            const previewBtn = p.id
-              ? `<button type="button" class="btn secondary sm live-open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
-              : "";
-            return `<tr>
-              <td class="sym">${symLink(p.symbol)}</td>
-              <td>${botSignalKindTag(p.signalKind)}</td>
-              <td>${p.leverage ?? "—"}×</td>
-              <td>${fmt(p.entryPrice, 6)}</td>
-              <td>${fmt(p.quantity, 4)}</td>
-              <td class="bad">${fmt(p.stopLoss, 6)}</td>
-              <td class="pass">${fmt(p.takeProfit, 6)}</td>
-              <td class="${unrCls}">${fmtUsd(p.unrealizedPnl)}</td>
-              <td class="${unrPctCls}">${unrPctLabel}</td>
-              <td class="history-duration">${fmtPositionDuration(p.openedAtIso ?? p.openedAt)}</td>
-              <td class="col-chart-desktop">${previewBtn || '<span class="time">—</span>'}</td>
-              <td><button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button></td>
-            </tr>`;
-          })
-          .join("");
-        openBody.querySelectorAll(".live-close-btn").forEach((btn) => {
-          btn.addEventListener("click", () => closeLiveSymbol(btn.dataset.symbol));
-        });
-        openBody.querySelectorAll(".live-open-snapshot-btn").forEach((btn) => {
-          btn.addEventListener("click", () =>
-            generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol, "live")
-          );
-        });
-      }
-
-      const closedBody = document.getElementById("liveBotClosedBody");
-      if (!data.closedTrades?.length) {
-        closedBody.innerHTML =
-          '<tr><td colspan="9" class="empty">No closed trades</td></tr>';
-      } else {
-        closedBody.innerHTML = data.closedTrades
-          .map((t) => {
-            const pnlCls2 = pnlCls(t.pnl);
-            const previewBtn = t.snapshotId
-              ? `<button type="button" class="btn secondary sm live-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
-              : "";
-            return `<tr>
-              <td class="sym">${symLink(t.symbol)}</td>
-              <td>${botSignalKindTag(t.signalKind)}</td>
-              <td>${fmt(t.entryPrice, 6)}</td>
-              <td>${fmt(t.exitPrice, 6)}</td>
-              <td>${paperBotExitReasonHtml(t.exitReason)}</td>
-              <td class="${pnlCls2}">${fmtUsd(t.pnl)}</td>
-              <td class="history-duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
-              <td class="time">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
-              <td class="col-chart-desktop">${previewBtn || '<span class="time">—</span>'}</td>
-            </tr>`;
-          })
-          .join("");
-        closedBody.querySelectorAll(".live-snapshot-btn").forEach((btn) => {
-          btn.addEventListener("click", () =>
-            openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol)
-          );
-        });
-      }
+      lastLiveBotOpen = data.openPositions ?? [];
+      lastLiveBotClosed = data.closedTrades ?? [];
+      renderLiveBotOpenBody(lastLiveBotOpen);
+      renderLiveBotClosedBody(lastLiveBotClosed);
 
       const logEl = document.getElementById("liveBotLog");
       if (!data.log?.length) {
@@ -4293,6 +3842,22 @@
       () => renderPaperBotClosedBody(lastPaperBotClosed)
     );
     wireBotTableSort(
+      "data-live-open-sort",
+      () => liveBotOpenSort,
+      (s) => {
+        liveBotOpenSort = s;
+      },
+      () => renderLiveBotOpenBody(lastLiveBotOpen)
+    );
+    wireBotTableSort(
+      "data-live-closed-sort",
+      () => liveBotClosedSort,
+      (s) => {
+        liveBotClosedSort = s;
+      },
+      () => renderLiveBotClosedBody(lastLiveBotClosed)
+    );
+    wireBotTableSort(
       "data-backtest-sort",
       () => backtestTradesSort,
       (s) => {
@@ -4352,7 +3917,7 @@
       if (data.signalConfig) {
         const s = data.signalConfig;
         let text =
-          `Signals: ${s.interval} · corridor ${s.corridorDays}d · ${s.signalCandles}+ above corridor · break vol ×${s.minBreakVolumeMultiplier} (from Scanner tab / saved config)`;
+          `Signals: ${s.interval ?? "1m"} · SFP + pullback (from Strategies tab / saved config)`;
         const bc = (data.result || data.last)?.botConfig;
         if (bc?.htfContraindicationEnabled !== false && (bc?.tradeSfpSignals || bc?.tradePullbackSignals)) {
           text += ` · 15m gate on SFP/PB (MA${bc.htfMaBars ?? 20}, Paper bot settings)`;
@@ -4637,7 +4202,8 @@
       const body = {};
       for (const k of CONFIG_KEYS) {
         const el = document.getElementById(k);
-        if (el) body[k] = Number(el.value);
+        if (!el) continue;
+        body[k] = el.tagName === "SELECT" ? el.value : Number(el.value);
       }
       return body;
     }
@@ -4698,7 +4264,9 @@
     document.getElementById("configForm").addEventListener("submit", applyConfig);
     document.getElementById("resetConfig").addEventListener("click", resetConfigForm);
     for (const k of CONFIG_KEYS) {
-      document.getElementById(k)?.addEventListener("input", () => {
+      const el = document.getElementById(k);
+      if (!el) continue;
+      el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
         formDirty = true;
         setConfigMsg("");
       });
@@ -4710,14 +4278,9 @@
       fillStrategiesForm(state);
       lastInterval = state.interval;
       if (activeTab === "pairs") loadPairs();
-      if (activeTab === "fastcorridor") loadFastCorridor();
       if (activeTab === "strategies") {
         renderStrategyMonitor({
-          regime: state.regime,
           counts: {
-            spikeActive: (state.hits ?? []).filter(
-              (h) => h.signalKind === "spike" && h.signalStatus === "active"
-            ).length,
             sfpActive: state.sfpActiveCount ?? 0,
             pullbackActive: state.pullbackActiveCount ?? 0,
           },
@@ -4725,116 +4288,50 @@
       }
 
       const sub = document.getElementById("subtitle");
-      const regimeHint = state.regime?.enabled
-        ? ` · regime ${state.regime.mode ?? "bullish"} ${state.regime.pass ? "open" : "blocked"}`
-        : "";
       sub.textContent =
-        `${state.interval} · ${state.signalCandles}+ candles above corridor · break ${state.corridorDays}d range high · ` +
-        `corridor ≤${state.maxCorridorWidthPct}%${regimeHint}`;
-
-      const regimeStatus = !state.regime?.enabled
-        ? '<span class="muted">off</span>'
-        : state.regime.pass
-          ? `<strong class="pass">${escapeHtml(state.regime.label || "open")}</strong>`
-          : `<strong class="bad">${escapeHtml(state.regime.label || "blocked")}</strong>`;
+        `${state.interval ?? "1m"} · SFP sweep-reclaim + fast-mover pullback signals`;
 
       document.getElementById("status").innerHTML = `
         <div><span>Updated</span> <strong>${fmtTimeShort(state.updatedAt) ?? "—"} ${TZ_LABEL}</strong></div>
         <div><span>Symbols</span> <strong>${state.symbolCount ?? "—"}</strong></div>
-        <div><span>Signals</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
+        <div><span>Active</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
         <div><span>SFP</span> <strong>${state.sfpActiveCount ?? 0}</strong></div>
         <div><span>Pullback</span> <strong>${state.pullbackActiveCount ?? 0}</strong></div>
-        <div><span>Regime</span> ${regimeStatus}</div>
-        <div><span>Near break</span> <strong class="near">${state.nearBreakCount ?? 0}</strong></div>
         <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${prefetchLabel(state)}</strong></div>
       `;
 
-      const signalN = state.signalHistoryCount ?? state.hits?.length ?? 0;
-      const activeN = state.activeCount ?? 0;
-      const nearN = state.nearBreakCount ?? 0;
-      document.getElementById("hitCount").textContent =
-        signalN + nearN
-          ? `(${activeN} live · ${signalN} in 24h${nearN ? ` · ${nearN} near` : ""})`
-          : "";
+      const activeHits = (state.hits ?? []).filter(
+        (h) =>
+          h.signalStatus === "active" &&
+          (h.signalKind === "sfp" || h.signalKind === "pullback")
+      );
+      document.getElementById("hitCount").textContent = activeHits.length
+        ? `(${activeHits.length} active)`
+        : "";
 
       const tbody = document.getElementById("hitsBody");
-      const signalRows = [...(state.hits ?? [])].sort(
+      const rows = [...activeHits].sort(
         (a, b) => (b.triggeredAt ?? 0) - (a.triggeredAt ?? 0)
       );
-      const nearRows = [...(state.nearBreakHits ?? [])]
-        .map((h) => ({ ...h, signalStatus: "near" }))
-        .sort((a, b) => (a.breakGapPct ?? 0) - (b.breakGapPct ?? 0));
-      const rows = [...signalRows, ...nearRows];
 
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty">No signals</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No active signals</td></tr>';
       } else {
         tbody.innerHTML = rows
           .map((h) => {
-            const isNear = h.signalStatus === "near";
-            const kind = h.signalKind || "spike";
-            const isFc = kind === "fast-corridor";
-            const isSfp = kind === "sfp";
-            const isPb = kind === "pullback";
-            const isEnded = h.signalStatus === "ended";
-            const kindTag = isFc
-              ? "FAST CORRIDOR"
-              : isSfp
-                ? "SFP"
-                : isPb
-                  ? "PULLBACK"
-                  : "SIGNAL";
-            const kindCls = isFc ? "fc" : isSfp ? "sfp" : isPb ? "pb" : "signal";
-            const tag = isNear
-              ? '<span class="status-tag near">NEAR</span>'
-              : isEnded
-                ? `<span class="status-tag" style="opacity:0.7">ENDED</span><span class="status-tag ${kindCls}">${kindTag}</span>`
-                : `<span class="status-tag ${kindCls}">${kindTag}</span>`;
-            const rowCls = isNear
-              ? "hit-near"
-              : isFc
-                ? isEnded
-                  ? "hit-fc-ended"
-                  : "hit-fc"
-                : isEnded
-                  ? "hit-ended"
-                  : "hit-active";
-            const rangeCls = isNear ? "near" : isFc || isSfp || isPb ? "pass" : isEnded ? "" : "pass";
-            const rangeCell = isFc
-              ? `${fmt(h.avgMovePct, 3)}%`
-              : isPb
-                ? `${fmt(h.distFromMaPct, 3)}% MA`
-                : isSfp
-                  ? `${h.barsSinceSweep ?? "—"} bars`
-                  : fmt(h.rangeRatio, 2);
-            const volCell = isFc || isSfp || isPb
-              ? "—"
-              : `${h.aboveCorridorCount ?? 0}/${h.minAboveCorridorCandles ?? state.signalCandles ?? 3}`;
-            const breakCell = isNear
-              ? `<span class="near">${fmt(h.breakGapPct, 3)}% below</span>`
-              : isFc
-                ? `<span class="pass">${h.halfWaves ?? "—"} waves</span>`
-                : isSfp
-                  ? `<span class="pass">reclaim</span>`
-                : isPb
-                  ? `<span class="pass">bounce</span>`
-                : isEnded
-                  ? `<span class="time">ended</span>`
-                  : `<span class="pass">Y</span>`;
-            const triggeredCell = isNear
-              ? "—"
-              : `<span class="time">${fmtDisplayDateTime(h.triggeredAtIso ?? h.triggeredAt)} ${TZ_LABEL}</span>`;
-            return `<tr class="${rowCls}">
-              <td>${triggeredCell}</td>
-              <td class="sym">${tag}${symLink(h.symbol)}
-                <button type="button" class="btn sm chart-btn" data-symbol="${h.symbol}" style="margin-left:6px">Chart</button>
-              </td>
+            const isSfp = h.signalKind === "sfp";
+            const kindTag = isSfp ? "SFP" : "PULLBACK";
+            const kindCls = isSfp ? "sfp" : "pb";
+            const tag = `<span class="status-tag ${kindCls}">${kindTag}</span>`;
+            const detail = isSfp
+              ? `sweep ${fmt(h.sweepLow, 6)} · ${h.barsSinceSweep ?? "—"} bars`
+              : `MA ${fmt(h.ma, 6)} · ${fmt(h.distFromMaPct, 3)}%`;
+            return `<tr class="hit-active">
+              <td><span class="time">${fmtDisplayDateTime(h.triggeredAtIso ?? h.triggeredAt)} ${TZ_LABEL}</span></td>
+              <td class="sym">${tag} ${symLink(h.symbol)}</td>
               <td>${fmt(h.close, 6)}</td>
-              <td>${fmt(h.corridorHigh, 6)}</td>
-              <td class="${rangeCls}">${rangeCell}</td>
-              <td>${fmt(h.corridorWidthPct, 2)}%</td>
-              <td>${volCell}</td>
-              <td>${breakCell}</td>
+              <td class="pass">${detail}</td>
+              <td><button type="button" class="btn sm chart-btn" data-symbol="${h.symbol}">Chart</button></td>
             </tr>`;
           })
           .join("");
@@ -4850,15 +4347,13 @@
         ev.innerHTML = state.events
           .map((e) => {
             const cls =
-              e.type === "NEW" || e.type === "NEW_FC"
+              e.type === "NEW" || e.type === "NEW_SFP" || e.type === "NEW_PB"
                 ? "new"
-                : e.type === "END" || e.type === "END_FC"
+                : e.type === "END" || e.type === "END_SFP" || e.type === "END_PB"
                   ? "end"
-                  : e.type === "NEAR" || e.type === "END_NEAR"
-                    ? "near"
-                    : e.type === "CONFIG"
-                      ? "cfg"
-                      : "";
+                  : e.type === "CONFIG"
+                    ? "cfg"
+                    : "";
             return `<li>
               <div class="time">${fmtTimeShort(e.at)} ${TZ_LABEL}</div>
               <span class="${cls}">${e.type}</span> <strong>${e.symbol}</strong>
@@ -4869,7 +4364,7 @@
       }
     }
 
-    const PAGE_TITLE = "Vol spike scanner";
+    const PAGE_TITLE = "SFP scanner";
 
     function fmtPnl(n) {
       if (n == null || Number.isNaN(n)) return "—";

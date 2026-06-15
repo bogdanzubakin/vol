@@ -10,8 +10,8 @@
 const fs = require("fs");
 const path = require("path");
 const {
-  createConfig,
-  analyzeVolSpike,
+  applyBarConfig,
+  analyzeSweepReclaim,
   parseAtTime,
   barsAtTime,
 } = require("../lib/signal-metrics");
@@ -150,11 +150,8 @@ async function main() {
       continue;
     }
 
-    const cfg = createConfig({
-      interval: cache.interval,
-      corridorDays: Number(kv.get("corridor-days")) || 2,
-      signalCandles: Number(kv.get("signal-candles")) || 3,
-    });
+    const cfg = { interval: cache.interval };
+    applyBarConfig(cfg);
 
     let bars = cache.bars;
     const atParam = kv.get("at");
@@ -169,7 +166,7 @@ async function main() {
       evaluateBarAt = bars[bars.length - 1].closeTime;
     }
 
-    const analysis = analyzeVolSpike(bars, cfg);
+    const analysis = analyzeSweepReclaim(bars, cfg);
     if (flags.has("signals-only") && !analysis.passes) {
       skipped++;
       continue;
