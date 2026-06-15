@@ -1090,7 +1090,7 @@
           <div class="hint">Drop candles with H−L % &gt; avg × this</div>
         </div>
         <div class="settings-actions">
-          <button type="submit" class="btn sm" id="moversApply">Apply</button>
+          <button type="submit" class="btn sm" id="moversApply">Apply filters</button>
           <button type="button" class="btn secondary sm" id="moversRefresh">Refresh</button>
           <span class="config-msg" id="moversMsg"></span>
         </div>
@@ -2215,7 +2215,7 @@
       }
       if (name === "movers") {
         loadMoversConfigForm();
-        setMoversMsg("Click Refresh to update the table from collected live data", true);
+        loadFastMovers();
       }
       if (name === "topmovers") {
         loadTopMoversConfigForm();
@@ -4141,6 +4141,11 @@
         })
         .catch((err) => setTopMoversMsg(err.message, false));
     });
+    document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      loadFastMovers();
+    });
+    document.getElementById("moversRefresh").addEventListener("click", loadFastMovers);
     document.getElementById("topMoversRefresh").addEventListener("click", loadTopMovers);
     document.getElementById("topMoversWindow").addEventListener("change", () => {
       setUiSetting(
