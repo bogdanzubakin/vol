@@ -45,7 +45,7 @@ const {
   resolveTelegramConfig,
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
-const { createPaperBot, pickSharedBotPatch } = require("./lib/paper-bot");
+const { createPaperBot } = require("./lib/paper-bot");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
@@ -698,30 +698,35 @@ async function loadSymbolHistory(symbol) {
   return klineCache.capBars(bars, memoryMaxBars());
 }
 
-/** Backtest walks signal-timeframe bars; live 1m cache is not used for the sim loop. */
-async function fetchKlinesForBacktest(symbol, barCount) {
-  const cache = signalKlineCache ?? klineCache;
+/** Backtest walks signal-timeframe bars; optional interval for 1m fast-mover input. */
+async function fetchKlinesForBacktest(symbol, barCount, interval = cfg.interval) {
+  const useSignalCache =
+    interval === cfg.interval && signalKlineCache != null;
+  const cache = useSignalCache ? signalKlineCache : klineCache;
   const cached = cache?.read(symbol) ?? [];
   let bars = [...cached];
 
   const slice = () => (bars.length > barCount ? bars.slice(-barCount) : bars);
+  const barMs =
+    interval === cfg.interval
+      ? cfg.signalBarMs ?? cfg.barMs
+      : intervalBarMs(interval);
 
   if (bars.length >= barCount) {
     return slice();
   }
 
   try {
-    const fetched = await fetchKlinesInterval(symbol, cfg.interval, barCount);
+    const fetched = await fetchKlinesInterval(symbol, interval, barCount);
     bars = mergeBarsByOpenTime(bars, fetched);
 
     if (cached.length && fetched.length) {
-      const barMs = cfg.signalBarMs ?? cfg.barMs;
       const lastCached = cached[cached.length - 1];
       const firstFetched = fetched[0];
       if (lastCached.closeTime + barMs < firstFetched.openTime) {
         const gap = await fetchKlinesGapForInterval(
           symbol,
-          cfg.interval,
+          interval,
           lastCached.closeTime + 1,
           firstFetched.openTime - 1
         );
@@ -733,7 +738,7 @@ async function fetchKlinesForBacktest(symbol, barCount) {
     const need = minHistoryBars(cfg);
     if (bars.length >= need) {
       console.error(
-        `Backtest ${symbol}: REST failed (${e.message}), using ${bars.length} cached bars`
+        `Backtest ${symbol}: REST failed (${e.message}), using ${bars.length} cached ${interval} bars`
       );
       return slice();
     }
@@ -1784,14 +1789,11 @@ async function main() {
   const scannerApi = {
     getFastMovers(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
-      const lookback = fastMoverLookbackFor1m(
-        cfg,
-        Math.max(
-          2,
-          Math.min(
-            120,
-            Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
-          )
+      const lookback = Math.max(
+        2,
+        Math.min(
+          120,
+          Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
         )
       );
       const minAvgMovePct = Math.max(
@@ -1827,11 +1829,9 @@ async function main() {
           const buf = primaryBarSource(sym, historyBuffers);
           if (!buf.length) return null;
           let evalBars;
-          let signalBarAt = null;
           try {
             const ev = barsForMovers(sym, searchParams);
             evalBars = ev.bars;
-            signalBarAt = ev.signalBarAt;
           } catch {
             return null;
           }
@@ -1874,13 +1874,6 @@ async function main() {
               move24hPct == null ? null : +Math.abs(move24hPct).toFixed(3),
             candlesUsed: fm.candlesUsed,
             candlesExcluded: fm.candlesExcluded,
-            bars: buf.length,
-            signalBarAt:
-              signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
-            liveUpdateAt:
-              liveUpdateAt.get(sym) != null
-                ? formatIsoUtcPlus3(liveUpdateAt.get(sym))
-                : null,
           };
         })
         .filter(Boolean);
@@ -2385,10 +2378,6 @@ async function main() {
         },
         patchPaperBotConfig: (patch) => {
           paperBot.patchConfig(patch);
-          const shared = pickSharedBotPatch(patch);
-          if (liveBot && Object.keys(shared).length) {
-            void liveBot.patchConfig(shared);
-          }
           refreshAllPaperBotPrices(historyBuffers);
           return paperBot.getPublicState();
         },
@@ -2402,10 +2391,6 @@ async function main() {
         },
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);
-          const shared = pickSharedBotPatch(patch);
-          if (paperBot && Object.keys(shared).length) {
-            paperBot.patchConfig(shared);
-          }
           refreshAllPaperBotPrices(historyBuffers);
           return result;
         },
@@ -2498,6 +2483,8 @@ async function main() {
             days,
             fetchKlinesForSymbol: (sym, limit) =>
               fetchKlinesForBacktest(sym, limit),
+            fetchKlines1mForSymbol: (sym, limit) =>
+              fetchKlinesForBacktest(sym, limit, "1m"),
             fetchHtfBars: (sym, limit) => fetchKlinesInterval(sym, "15m", limit),
             onProgress: (p) => {
               touchBacktestProgress(p);

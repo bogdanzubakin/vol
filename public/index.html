@@ -1066,13 +1066,13 @@
     <section>
       <h2>Fast movers <span id="moversCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Lookback is in signal-timeframe candles; evaluated on 1m bars (e.g. 10 @ 5m → 50 × 1m). Spikes ≥ exclude × avg are dropped from the mean.
+        Lookback is in 1-minute candles. Spikes ≥ exclude × avg are dropped from the mean.
       </p>
       <form class="settings-form movers-settings" id="moversConfigForm">
         <div class="field">
           <label for="fastMoveLookbackCandles">Lookback candles</label>
           <input type="number" id="fastMoveLookbackCandles" name="fastMoveLookbackCandles" step="1" min="2" max="120" value="10" required />
-          <div class="hint">Bars averaged for move %</div>
+          <div class="hint">Number of 1-minute bars averaged for move %</div>
         </div>
         <div class="field">
           <label for="minAvgMovePct">Min avg move %</label>
@@ -1109,13 +1109,11 @@
               <th class="sortable" data-mover-sort="linearChangePct">Linear % <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="move24hPct">24h move <span class="sort-mark"></span></th>
               <th class="sortable" data-mover-sort="candlesUsed">Used / excl. <span class="sort-mark"></span></th>
-              <th class="sortable" data-mover-sort="bars">Bars <span class="sort-mark"></span></th>
-              <th class="sortable" data-mover-sort="liveUpdateAt">Live update <span class="sort-mark"></span></th>
               <th></th>
             </tr>
           </thead>
           <tbody id="moversBody">
-            <tr><td colspan="8" class="empty">Open this tab to load fast movers</td></tr>
+            <tr><td colspan="6" class="empty">Open this tab to load fast movers</td></tr>
           </tbody>
         </table>
       </div>
@@ -1273,7 +1271,7 @@
       </h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Simulated Binance futures LONG on <span class="status-tag sfp">SFP</span> and
-        <span class="status-tag pb">PULLBACK</span> signals. No real orders — state is saved on the server volume.
+        <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
       <form class="settings-form movers-settings" id="paperBotConfigForm">
         <div class="field" style="min-width: 200px;">
@@ -1495,7 +1493,8 @@
       </h2>
       <div class="live-warning">
         <strong>Real Binance USDT-M futures.</strong> Each trade uses <strong>isolated margin</strong> and places
-        market entries plus exchange stop/TP orders. API keys must have <strong>Futures trading</strong> enabled.
+        market entries plus exchange stop/TP orders. Bot settings are independent from the paper bot.
+        API keys must have <strong>Futures trading</strong> enabled.
         Disarm stops new orders; open positions remain on the exchange until closed.
       </div>
       <div class="live-arm-bar">
@@ -2610,10 +2609,14 @@
 
     function moverSortValue(row, key) {
       if (key === "symbol") return row.symbol ?? "";
-      if (key === "signalBarAt" || key === "liveUpdateAt") {
-        return parseDisplayIso(row[key]) ?? 0;
+      if (key === "move24hPct") {
+        return row.absMove24hPct ?? Math.abs(Number(row.move24hPct) || 0);
       }
       return Number(row[key] ?? 0);
+    }
+
+    function renderFastMoversRows() {
+      renderFastMovers({ movers: lastFastMovers, pairCount: lastFastMovers.length });
     }
 
     function sortedFastMovers(rows) {
@@ -2631,12 +2634,7 @@
     }
 
     function updateMoverSortHeaders() {
-      document.querySelectorAll("[data-mover-sort]").forEach((th) => {
-        const mark = th.querySelector(".sort-mark");
-        const active = th.dataset.moverSort === moversSort.key;
-        th.setAttribute("aria-sort", active ? (moversSort.dir === "asc" ? "ascending" : "descending") : "none");
-        if (mark) mark.textContent = active ? (moversSort.dir === "asc" ? "▲" : "▼") : "";
-      });
+      updateBotSortHeaders("data-mover-sort", moversSort);
     }
 
     async function loadFastMovers() {
@@ -2656,13 +2654,13 @@
           ? ` · data ${fmtTimeShort(ws.lastUpdateAt)} (${ws.updates ?? 0} WS, ${ws.restRepairs ?? 0} REST)`
           : ` · stream waiting (${ws.connectedShards ?? 0}/${ws.shardCount ?? 0} shards)`;
         setMoversMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · avg ≥${data.minAvgMovePct}% · linear ≥${data.minLinearChangePct}% · ${data.lookback} bars · excl. >${data.excludeMult}× avg${wsText}`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · avg ≥${data.minAvgMovePct}% · linear ≥${data.minLinearChangePct}% · ${data.lookback} × 1m · excl. >${data.excludeMult}× avg${wsText}`,
           true
         );
       } catch (e) {
         setMoversMsg(e.message, false);
         document.getElementById("moversBody").innerHTML =
-          `<tr><td colspan="8" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="6" class="empty">${escapeHtml(e.message)}</td></tr>`;
       } finally {
         fastMoversLoading = false;
       }
@@ -2677,7 +2675,7 @@
       const tbody = document.getElementById("moversBody");
       if (!lastFastMovers.length) {
         tbody.innerHTML =
-          '<tr><td colspan="8" class="empty">No fast movers match</td></tr>';
+          '<tr><td colspan="6" class="empty">No fast movers match</td></tr>';
         return;
       }
 
@@ -2703,8 +2701,6 @@
             <td class="${linearCls}">${linearMark}</td>
             <td class="${dirCls}">${dirMark}</td>
             <td class="time">${p.candlesUsed ?? "—"} / ${p.candlesExcluded ?? 0}</td>
-            <td>${p.bars ?? "—"}</td>
-            <td class="time">${fmtTimeShort(p.liveUpdateAt)}</td>
             <td><button type="button" class="btn sm chart-btn" data-symbol="${escapeHtml(p.symbol)}" >Chart</button></td>
           </tr>`;
           }
@@ -3198,7 +3194,8 @@
 
     function wireBotTableSort(attr, getSort, setSort, rerender) {
       document.querySelectorAll(`[${attr}]`).forEach((th) => {
-        th.addEventListener("click", () => {
+        th.addEventListener("click", (e) => {
+          if (e.target.closest("input, button, a, select, textarea")) return;
           const key = th.getAttribute(attr);
           const current = getSort();
           if (current.key === key) {
@@ -3823,6 +3820,14 @@
         backtestTradesSort = s;
       },
       () => renderBacktestTradesBody(lastBacktestTrades)
+    );
+    wireBotTableSort(
+      "data-mover-sort",
+      () => moversSort,
+      (s) => {
+        moversSort = s;
+      },
+      renderFastMoversRows
     );
 
     function setBacktestMsg(text, ok) {
