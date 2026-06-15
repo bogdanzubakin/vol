@@ -1066,7 +1066,7 @@
     <section>
       <h2>Fast movers <span id="moversCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Avg candle size (high−low) and net close-to-close move over the lookback window; spikes ≥ exclude × avg are dropped from the mean.
+        Lookback is in signal-timeframe candles; evaluated on 1m bars (e.g. 10 @ 5m → 50 × 1m). Spikes ≥ exclude × avg are dropped from the mean.
       </p>
       <form class="settings-form movers-settings" id="moversConfigForm">
         <div class="field">

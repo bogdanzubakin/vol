@@ -26,6 +26,7 @@ const {
   fastMoverPullbackMetrics,
   analyzePullback,
   fastMoverOptsFromCfg,
+  fastMoverLookbackFor1m,
   sfpRangeBars,
 } = require("./lib/signal-metrics");
 const {
@@ -223,12 +224,22 @@ function minSignalPrefetchBars() {
   return cfg.signalLimit ?? cfg.limit;
 }
 
+/** In-memory 1m bars, falling back to disk when WS has not warmed a symbol yet. */
+function primaryBarSource(sym, historyBuffers) {
+  const mem = historyBuffers.get(sym);
+  if (mem?.length) return mem;
+  return klineCache?.read(sym) ?? [];
+}
+
 function evalBars(sym, historyBuffers) {
-  return klineCache.evalWindow(historyBuffers.get(sym) ?? [], memoryMaxBars());
+  return klineCache.evalWindow(
+    primaryBarSource(sym, historyBuffers),
+    memoryMaxBars()
+  );
 }
 
 function getPaperBotBar(sym, historyBuffers) {
-  const bars = historyBuffers.get(sym);
+  const bars = primaryBarSource(sym, historyBuffers);
   let b = bars?.[bars.length - 1];
   if (!b && klineCache) {
     const cached = klineCache.read(sym);
@@ -1626,7 +1637,7 @@ async function main() {
 
   function barsForMovers(sym, searchParams) {
     const atRaw = searchParams?.get("at");
-    const buf = historyBuffers.get(sym) ?? [];
+    const buf = primaryBarSource(sym, historyBuffers);
     if (!atRaw) {
       const bars = klineCache.evalWindow(buf, cfg.limit);
       const signalBarAt = bars.length ? bars[bars.length - 1].closeTime : null;
@@ -1649,7 +1660,7 @@ async function main() {
 
   function priceBarsAt(sym, searchParams) {
     const atRaw = searchParams?.get("at");
-    const buf = historyBuffers.get(sym) ?? [];
+    const buf = primaryBarSource(sym, historyBuffers);
     if (!atRaw) return klineCache.evalWindow(buf, cfg.limit);
     const atMs = parseAtTime(atRaw);
     const source =
@@ -1664,11 +1675,14 @@ async function main() {
   const scannerApi = {
     getFastMovers(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
-      const lookback = Math.max(
-        2,
-        Math.min(
-          120,
-          Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
+      const lookback = fastMoverLookbackFor1m(
+        cfg,
+        Math.max(
+          2,
+          Math.min(
+            120,
+            Number(searchParams.get("lookback")) || cfg.fastMoveLookbackCandles
+          )
         )
       );
       const minAvgMovePct = Math.max(
@@ -1701,7 +1715,8 @@ async function main() {
 
       let movers = symbols
         .map((sym) => {
-          const buf = historyBuffers.get(sym) ?? [];
+          const buf = primaryBarSource(sym, historyBuffers);
+          if (!buf.length) return null;
           let evalBars;
           let signalBarAt = null;
           try {
@@ -1804,12 +1819,15 @@ async function main() {
         0.1,
         Math.min(1000, Number(searchParams.get("minMovePct")) || cfg.topMoveMinPct)
       );
-      const fastLookback = Math.max(
-        2,
-        Math.min(
-          120,
-          Number(searchParams.get("fastLookback")) ||
-            cfg.fastMoveLookbackCandles
+      const fastLookback = fastMoverLookbackFor1m(
+        cfg,
+        Math.max(
+          2,
+          Math.min(
+            120,
+            Number(searchParams.get("fastLookback")) ||
+              cfg.fastMoveLookbackCandles
+          )
         )
       );
       const fastMinAvgMovePct = Math.max(
@@ -1837,7 +1855,7 @@ async function main() {
 
       let movers = symbols
         .map((sym) => {
-          const buf = historyBuffers.get(sym) ?? [];
+          const buf = primaryBarSource(sym, historyBuffers);
           if (!buf.length) return null;
 
           const latest = buf[buf.length - 1];
