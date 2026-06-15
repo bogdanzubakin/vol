@@ -1176,33 +1176,13 @@
     <section>
       <h2>Strategy monitor <span id="strategiesLiveCount"></span></h2>
       <p class="sub" style="margin: 12px 0 8px 12px; font-size: 0.8rem">
-        Tune fast-mover, SFP sweep-reclaim, and pullback settings. Saves to live scanner config.
+        Tune SFP sweep-reclaim and pullback signal settings. Saves to live scanner config. Fast mover and top mover filters are on their own tabs.
       </p>
       <div class="strategy-monitor" id="strategyMonitor">
         <div><div class="stat-label">Active SFP</div><div class="stat-value" id="stratSfpActive">0</div></div>
         <div><div class="stat-label">Active pullback</div><div class="stat-value" id="stratPbActive">0</div></div>
       </div>
       <form class="settings-form movers-settings" id="strategiesConfigForm">
-        <div class="field">
-          <label for="stratFastMoveLookback">Fast mover lookback</label>
-          <input type="number" id="stratFastMoveLookback" step="1" min="2" max="120" value="10" required />
-        </div>
-        <div class="field">
-          <label for="stratMinAvgMovePct">Min avg move %</label>
-          <input type="number" id="stratMinAvgMovePct" step="0.01" min="0.01" max="20" value="0.5" required />
-        </div>
-        <div class="field">
-          <label for="stratMinLinearChangePct">Min linear change %</label>
-          <input type="number" id="stratMinLinearChangePct" step="0.01" min="0" max="100" value="0.5" required />
-        </div>
-        <div class="field">
-          <label for="stratFastMoveExcludeMult">Exclude spike ×</label>
-          <input type="number" id="stratFastMoveExcludeMult" step="0.1" min="1.5" max="20" value="3" required />
-        </div>
-        <div class="field">
-          <label for="stratTopMoveMinPct">Top movers min %</label>
-          <input type="number" id="stratTopMoveMinPct" step="0.1" min="0.1" max="1000" value="5" required />
-        </div>
         <div class="field">
           <label for="stratSfpRangeBars">SFP range bars</label>
           <input type="number" id="stratSfpRangeBars" step="1" min="10" max="500" value="30" required />
@@ -2739,10 +2719,6 @@
     }
 
     const STRATEGY_CONFIG_KEYS = [
-      "fastMoveLookbackCandles",
-      "minAvgMovePct",
-      "minLinearChangePct",
-      "fastMoveExcludeMult",
       "sfpLookbackBars",
       "sfpReclaimBars",
       "sfpMinSweepPct",
@@ -2751,14 +2727,9 @@
       "pullbackTouchLookback",
       "pullbackMaxDistancePct",
       "pullbackMaxAboveMaPct",
-      "topMoveMinPct",
     ];
 
     const STRATEGY_FORM_MAP = {
-      fastMoveLookbackCandles: "stratFastMoveLookback",
-      minAvgMovePct: "stratMinAvgMovePct",
-      minLinearChangePct: "stratMinLinearChangePct",
-      fastMoveExcludeMult: "stratFastMoveExcludeMult",
       sfpLookbackBars: "stratSfpLookbackBars",
       sfpReclaimBars: "stratSfpReclaimBars",
       sfpMinSweepPct: "stratSfpMinSweepPct",
@@ -2767,7 +2738,6 @@
       pullbackTouchLookback: "stratPullbackTouchLookback",
       pullbackMaxDistancePct: "stratPullbackMaxDistancePct",
       pullbackMaxAboveMaPct: "stratPullbackMaxAboveMaPct",
-      topMoveMinPct: "stratTopMoveMinPct",
     };
 
     function strategyPatchFromForm() {
@@ -2789,17 +2759,6 @@
         if (!el || state[k] == null) continue;
         if (el.type === "checkbox") el.checked = Boolean(state[k]);
         else el.value = state[k];
-      }
-      const moversSync = {
-        fastMoveLookbackCandles: "fastMoveLookbackCandles",
-        minAvgMovePct: "minAvgMovePct",
-        minLinearChangePct: "minLinearChangePct",
-        fastMoveExcludeMult: "fastMoveExcludeMult",
-        topMoveMinPct: "topMoveMinPct",
-      };
-      for (const [key, elId] of Object.entries(moversSync)) {
-        const el = document.getElementById(elId);
-        if (el && state[key] != null) el.value = state[key];
       }
     }
 
@@ -4141,8 +4100,11 @@
         })
         .catch((err) => setTopMoversMsg(err.message, false));
     });
-    document.getElementById("moversConfigForm").addEventListener("submit", (e) => {
+    document.getElementById("moversConfigForm").addEventListener("submit", async (e) => {
       e.preventDefault();
+      saveMoversConfigForm();
+      clearTimeout(uiSettingsSaveTimer);
+      await flushUiSettings();
       loadFastMovers();
     });
     document.getElementById("moversRefresh").addEventListener("click", loadFastMovers);
@@ -4890,6 +4852,8 @@
       window.__appStarted = true;
       loadUiSettings().then(() => {
         applyUiSettingsFromCache();
+        loadMoversConfigForm();
+        loadTopMoversConfigForm();
         bindUiSettingsPersistence();
         loadStorageInfo();
         initCalcStartAmount();
