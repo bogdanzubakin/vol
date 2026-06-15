@@ -3849,7 +3849,14 @@
     function renderBacktest(data) {
       const badge = document.getElementById("backtestStatusBadge");
       const prog = document.getElementById("backtestProgress");
-      const p = data.progress || {};
+      const snap = data.snapshots || {};
+      const snapRunning = Boolean(snap.running);
+      const p = data.running
+        ? data.progress || {}
+        : snapRunning
+          ? snap.progress || {}
+          : data.progress || {};
+
       if (data.running) {
         badge.textContent = "running";
         badge.className = "paper-enabled-badge on";
@@ -3865,6 +3872,12 @@
         document.getElementById("btStatPairs").textContent =
           `${p.done ?? 0}/${p.total ?? "?"}` +
           ` · ${p.ok ?? 0} ok · ${p.skip ?? 0} skip`;
+      } else if (snapRunning) {
+        badge.textContent = "previews";
+        badge.className = "paper-enabled-badge on";
+        prog.style.display = "grid";
+        document.getElementById("backtestProgressText").textContent =
+          formatBacktestProgress(p);
       } else {
         badge.textContent = data.error ? "error" : data.result || data.last ? "done" : "idle";
         badge.className =
@@ -3935,7 +3948,15 @@
           .join("");
       }
 
-      if (r.finishedAt) {
+      if (snapRunning && snap.error) {
+        setBacktestMsg(snap.error, false);
+      } else if (snapRunning) {
+        const snapP = snap.progress || {};
+        const snapMsg =
+          snapP.message ||
+          `Generating previews ${snapP.done ?? 0}/${snapP.total ?? "?"}`;
+        setBacktestMsg(snapMsg, true);
+      } else if (r.finishedAt) {
         setBacktestMsg(
           `Last run ${fmtTimeShort(r.finishedAt)} ${TZ_LABEL} · ${r.elapsedSec ?? "?"}s · ${r.symbolsTotal ?? "?"} symbols`,
           true
