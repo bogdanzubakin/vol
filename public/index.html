@@ -1407,6 +1407,30 @@
           <input type="number" id="paperBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
           <div class="hint">LONG: +0 = at entry, +0.5 = 0.5% below, −0.5 = 0.5% above</div>
         </div>
+        <div class="field" style="grid-column: 1 / -1; min-width: 280px;">
+          <label for="paperBotBlockedSymbols">Blocked symbols (disabled pairs)</label>
+          <textarea
+            id="paperBotBlockedSymbols"
+            rows="4"
+            placeholder="EPICUSDT&#10;PIPPINUSDT"
+            spellcheck="false"
+            style="width:100%;max-width:420px;font-family:ui-monospace,monospace;font-size:0.82rem;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:inherit;resize:vertical;"
+          ></textarea>
+          <div class="hint">One per line or comma-separated. Bot skips new entries on these pairs.</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAutoBlockSl">Auto-block after consecutive SL</label>
+          <input type="number" id="paperBotAutoBlockSl" step="1" min="0" max="50" value="0" required />
+          <div class="hint">0 = off. Symbol is added to blocked list after N stop-loss exits in a row.</div>
+        </div>
+        <div class="field">
+          <label for="paperBotWorstPairsCount">Worst pairs (train bot)</label>
+          <input type="number" id="paperBotWorstPairsCount" step="1" min="1" max="200" value="20" required />
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotFillWorstPairs">Fill from last train bot</button>
+        </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotDrawdownStopEnabled" name="drawdownStopEnabled" checked />
@@ -1624,6 +1648,30 @@
         <div class="field">
           <label for="liveBotMoveStopOffsetPct">Stop at entry ±%</label>
           <input type="number" id="liveBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1; min-width: 280px;">
+          <label for="liveBotBlockedSymbols">Blocked symbols (disabled pairs)</label>
+          <textarea
+            id="liveBotBlockedSymbols"
+            rows="4"
+            placeholder="EPICUSDT&#10;PIPPINUSDT"
+            spellcheck="false"
+            style="width:100%;max-width:420px;font-family:ui-monospace,monospace;font-size:0.82rem;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:inherit;resize:vertical;"
+          ></textarea>
+          <div class="hint">One per line or comma-separated. Bot skips new entries on these pairs.</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAutoBlockSl">Auto-block after consecutive SL</label>
+          <input type="number" id="liveBotAutoBlockSl" step="1" min="0" max="50" value="0" required />
+          <div class="hint">0 = off. Symbol is added to blocked list after N stop-loss exits in a row.</div>
+        </div>
+        <div class="field">
+          <label for="liveBotWorstPairsCount">Worst pairs (train bot)</label>
+          <input type="number" id="liveBotWorstPairsCount" step="1" min="1" max="200" value="20" required />
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotFillWorstPairs">Fill from last train bot</button>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
@@ -3053,6 +3101,51 @@
       return (deposit * pct) / 100;
     }
 
+    function blockedSymbolsFromText(text) {
+      if (!text) return [];
+      const out = [];
+      const seen = new Set();
+      for (const part of String(text).split(/[\s,;]+/)) {
+        let sym = part.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+        if (!sym) continue;
+        if (!sym.endsWith("USDT")) sym += "USDT";
+        if (seen.has(sym)) continue;
+        seen.add(sym);
+        out.push(sym);
+      }
+      return out;
+    }
+
+    function mergeBlockedSymbolsText(existingText, addSymbols) {
+      const merged = blockedSymbolsFromText(
+        [...blockedSymbolsFromText(existingText), ...(addSymbols || [])].join("\n")
+      );
+      return merged.join("\n");
+    }
+
+    async function fetchWorstPairsFromBacktest(count, minTrades = 3) {
+      const res = await fetch(
+        `/api/paper-bot/backtest/worst-pairs?count=${encodeURIComponent(count)}&minTrades=${encodeURIComponent(minTrades)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    async function fillBlockedSymbolsFromTrainBot(textareaId, countInputId, onMsg) {
+      const count = Number(document.getElementById(countInputId)?.value) || 20;
+      const data = await fetchWorstPairsFromBacktest(count, 3);
+      const el = document.getElementById(textareaId);
+      if (!el) return;
+      el.value = mergeBlockedSymbolsText(el.value, data.symbols || []);
+      const detail =
+        data.rows?.slice(0, 3).map((r) => `${r.symbol} ${r.pnl}`).join(", ") || "";
+      onMsg?.(
+        `Added ${data.symbols?.length ?? 0} worst pair(s)${detail ? ` · e.g. ${detail}` : ""}`,
+        true
+      );
+    }
+
     function paperBotConfigFromForm() {
       return {
         enabled: document.getElementById("paperBotEnabled").checked,
@@ -3083,6 +3176,12 @@
         moveStopEnabled: document.getElementById("paperBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("paperBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("paperBotMoveStopOffsetPct").value),
+        blockedSymbols: blockedSymbolsFromText(
+          document.getElementById("paperBotBlockedSymbols").value
+        ),
+        autoBlockAfterConsecutiveSl: Number(
+          document.getElementById("paperBotAutoBlockSl").value
+        ),
         drawdownStopEnabled: document.getElementById("paperBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("paperBotDrawdownStopPct").value),
       };
@@ -3137,6 +3236,11 @@
         cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("paperBotMoveStopOffsetPct").value =
         cfg.moveStopOffsetPct ?? 0;
+      document.getElementById("paperBotBlockedSymbols").value = (
+        cfg.blockedSymbols ?? []
+      ).join("\n");
+      document.getElementById("paperBotAutoBlockSl").value =
+        cfg.autoBlockAfterConsecutiveSl ?? 0;
       document.getElementById("paperBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("paperBotDrawdownStopPct").value =
@@ -3521,6 +3625,18 @@
 
     document.getElementById("paperBotRefresh").addEventListener("click", loadPaperBot);
 
+    document.getElementById("paperBotFillWorstPairs")?.addEventListener("click", async () => {
+      try {
+        await fillBlockedSymbolsFromTrainBot(
+          "paperBotBlockedSymbols",
+          "paperBotWorstPairsCount",
+          setPaperBotMsg
+        );
+      } catch (err) {
+        setPaperBotMsg(err.message, false);
+      }
+    });
+
     function setLiveBotMsg(text, ok) {
       const el = document.getElementById("liveBotMsg");
       if (!el) return;
@@ -3559,6 +3675,12 @@
         moveStopEnabled: document.getElementById("liveBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("liveBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("liveBotMoveStopOffsetPct").value),
+        blockedSymbols: blockedSymbolsFromText(
+          document.getElementById("liveBotBlockedSymbols").value
+        ),
+        autoBlockAfterConsecutiveSl: Number(
+          document.getElementById("liveBotAutoBlockSl").value
+        ),
         drawdownStopEnabled: document.getElementById("liveBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("liveBotDrawdownStopPct").value),
       };
@@ -3611,6 +3733,11 @@
       document.getElementById("liveBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
       document.getElementById("liveBotMoveStopAfterPct").value = cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("liveBotMoveStopOffsetPct").value = cfg.moveStopOffsetPct ?? 0;
+      document.getElementById("liveBotBlockedSymbols").value = (
+        cfg.blockedSymbols ?? []
+      ).join("\n");
+      document.getElementById("liveBotAutoBlockSl").value =
+        cfg.autoBlockAfterConsecutiveSl ?? 0;
       document.getElementById("liveBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 4;
@@ -3735,6 +3862,18 @@
     });
 
     document.getElementById("liveBotRefresh").addEventListener("click", () => loadLiveBot(true));
+
+    document.getElementById("liveBotFillWorstPairs")?.addEventListener("click", async () => {
+      try {
+        await fillBlockedSymbolsFromTrainBot(
+          "liveBotBlockedSymbols",
+          "liveBotWorstPairsCount",
+          setLiveBotMsg
+        );
+      } catch (err) {
+        setLiveBotMsg(err.message, false);
+      }
+    });
 
     document.getElementById("liveBotResetHistory").addEventListener("click", async () => {
       if (
