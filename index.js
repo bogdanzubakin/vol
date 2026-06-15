@@ -132,6 +132,31 @@ const cfg = {
   signalNotifyCooldownMs: 60 * 60 * 1000,
 };
 
+/** Fast movers & top movers always use this interval, independent of signal timeframe. */
+const MOVER_INTERVAL = "1m";
+
+function mover1mEvalLimit() {
+  const dayBars = 24 * 60;
+  const headroom =
+    Math.max(cfg.fastMoveLookbackCandles ?? 10, 120) + 20;
+  return Math.min(cfg.cacheMaxBars, dayBars + headroom);
+}
+
+function mover1mMemoryMax() {
+  if (cfg.memoryMaxBars > 0) {
+    return Math.min(cfg.memoryMaxBars, mover1mEvalLimit());
+  }
+  return mover1mEvalLimit();
+}
+
+function intervalBarMs(interval) {
+  const m = /^(\d+)([mhd])$/.exec(interval);
+  if (!m) return 60_000;
+  const n = Number(m[1]);
+  const minutes = m[2] === "m" ? n : m[2] === "h" ? n * 60 : n * 24 * 60;
+  return minutes * 60 * 1000;
+}
+
 applyBarConfig(cfg);
 scannerConfig.loadInto(cfg);
 applyBarConfig(cfg);
@@ -185,6 +210,7 @@ function reconcileBacktestJob() {
   console.error(backtestJob.error);
 }
 let klineCache = null;
+let moverKlineCache = null;
 
 function evalBars(sym, historyBuffers) {
   return klineCache.evalWindow(historyBuffers.get(sym) ?? [], memoryMaxBars());
@@ -460,6 +486,37 @@ async function fetchKlinesGap(symbol, startTime, endTime) {
   return merged;
 }
 
+async function fetchKlinesGapForInterval(
+  symbol,
+  interval,
+  startTime,
+  endTime
+) {
+  if (startTime >= endTime) return [];
+  const barMs = intervalBarMs(interval);
+  let cursor = startTime;
+  let merged = [];
+
+  while (cursor < endTime) {
+    const params = {
+      symbol,
+      interval,
+      limit: String(KLINE_MAX),
+      startTime: String(cursor),
+      endTime: String(endTime),
+    };
+    const rows = await getJson("/fapi/v1/klines", params);
+    if (!rows.length) break;
+
+    merged = mergeBarsByOpenTime(merged, parseKlines(rows));
+    const lastOpen = rows[rows.length - 1][0];
+    cursor = lastOpen + barMs;
+    if (rows.length < KLINE_MAX) break;
+  }
+
+  return merged;
+}
+
 function minPrefetchBars() {
   return cfg.limit;
 }
@@ -611,25 +668,31 @@ function wsDiagnostics() {
 }
 
 function upsertHistoryCandle(historyBuffers, sym, candle, options = {}) {
+  const cache = options.klineCache ?? klineCache;
+  const maxBars = options.maxBars ?? memoryMaxBars();
   const buf = historyBuffers.get(sym) ?? [];
-  const result = klineCache.upsertBar(buf, candle, memoryMaxBars());
+  const result = cache.upsertBar(buf, candle, maxBars);
   historyBuffers.set(sym, buf);
   if (result.updated) {
     const now = Date.now();
-    liveUpdateAt.set(sym, now);
-    wsStats.updates++;
-    wsStats.lastUpdateAt = now;
-    if (options.persist) klineCache.schedulePersist(sym, buf);
+    if (options.trackLive !== false) {
+      liveUpdateAt.set(sym, now);
+      wsStats.updates++;
+      wsStats.lastUpdateAt = now;
+    }
+    if (options.persist) cache.schedulePersist(sym, buf);
   }
   return result;
 }
 
-function applyRestRepairBars(historyBuffers, sym, bars) {
+function applyRestRepairBars(historyBuffers, sym, bars, options = {}) {
   if (!bars?.length) return false;
+  const cache = options.klineCache ?? klineCache;
+  const maxBars = options.maxBars ?? memoryMaxBars();
   const existing = historyBuffers.get(sym) ?? [];
-  const merged = klineCache.capBars(
+  const merged = cache.capBars(
     mergeBarsByOpenTime(existing, bars),
-    memoryMaxBars()
+    maxBars
   );
   const beforeLast = existing[existing.length - 1];
   const afterLast = merged[merged.length - 1];
@@ -649,11 +712,13 @@ function applyRestRepairBars(historyBuffers, sym, bars) {
 
   const now = Date.now();
   historyBuffers.set(sym, merged);
-  liveUpdateAt.set(sym, now);
-  wsStats.restRepairs++;
-  wsStats.lastRestRepairAt = now;
-  wsStats.lastUpdateAt = now;
-  klineCache.schedulePersist(sym, merged);
+  if (options.trackLive !== false) {
+    liveUpdateAt.set(sym, now);
+    wsStats.restRepairs++;
+    wsStats.lastRestRepairAt = now;
+    wsStats.lastUpdateAt = now;
+  }
+  cache.schedulePersist(sym, merged);
   return true;
 }
 
@@ -1027,6 +1092,89 @@ function createWsShards(symbols, historyBuffers, maps, quoteVolMap) {
   return sockets;
 }
 
+/** Live 1m klines for fast/top movers when signal timeframe is not 1m. */
+function createMover1mWsShards(symbols, mover1mBuffers, cache, maxBars) {
+  const streamSuffix = `@kline_${MOVER_INTERVAL}`;
+  const batches = chunk(
+    symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
+    cfg.streamsPerSocket
+  );
+  const sockets = [];
+
+  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+    const url = `${WS_STREAM_BASE}?streams=${batches[batchIdx].join("/")}`;
+    let ws;
+    let closed = false;
+    let reconnectMs = 1000;
+
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(url);
+
+      ws.on("open", () => {
+        reconnectMs = 1000;
+        console.error(
+          `WS 1m movers shard ${batchIdx} connected (${batches[batchIdx].length} streams)`
+        );
+      });
+
+      ws.on("message", (raw) => {
+        let msg;
+        try {
+          msg = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
+        const data = msg.data ?? msg;
+        if (data?.e !== "kline") return;
+
+        const sym = (data.s || data.k?.s || "").toUpperCase();
+        if (!sym) return;
+        const candle = closedCandleFromKline(data.k);
+        const isClosed = Boolean(data.k?.x);
+        upsertHistoryCandle(mover1mBuffers, sym, candle, {
+          persist: isClosed,
+          klineCache: cache,
+          maxBars,
+          trackLive: false,
+        });
+      });
+
+      ws.on("close", async () => {
+        if (closed) return;
+        await sleep(reconnectMs);
+        reconnectMs = Math.min(reconnectMs * 2, 60_000);
+        connect();
+      });
+
+      ws.on("error", (err) => {
+        console.error(
+          `WS 1m movers shard ${batchIdx} error: ${err?.message || err}`
+        );
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      });
+    };
+
+    connect();
+    sockets.push({
+      close: () => {
+        closed = true;
+        try {
+          ws?.close();
+        } catch {
+          /* ignore */
+        }
+      },
+    });
+  }
+
+  return sockets;
+}
+
 function startStaleSymbolRefresh(symbols, historyBuffers, maps, quoteVolMap) {
   const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
   let cursor = 0;
@@ -1099,7 +1247,8 @@ async function prefetchAllSymbols(
   historyBuffers,
   maps,
   quoteVolMap,
-  reevaluateAllFn
+  reevaluateAllFn,
+  afterPrefetch
 ) {
   prefetching = true;
   let done = 0;
@@ -1187,6 +1336,8 @@ async function prefetchAllSymbols(
     if (cfg.prefetchPauseMs > 0) await sleep(cfg.prefetchPauseMs);
   }
 
+  if (afterPrefetch) await afterPrefetch(symbols);
+
   if (reevaluateAllFn) reevaluateAllFn();
 
   prefetching = false;
@@ -1253,6 +1404,20 @@ async function main() {
     debounceMs: cfg.klineCacheWriteDebounceMs,
   });
 
+  const separateMover1m = cfg.interval !== MOVER_INTERVAL;
+  if (separateMover1m) {
+    moverKlineCache = createKlineCacheStore({
+      dir: KLINES_CACHE_DIR,
+      interval: MOVER_INTERVAL,
+      maxBars: cfg.cacheMaxBars,
+      evalLimit: mover1mEvalLimit(),
+      flushMs: cfg.klineCacheFlushMs,
+      debounceMs: cfg.klineCacheWriteDebounceMs,
+    });
+  } else {
+    moverKlineCache = klineCache;
+  }
+
   const gapArg = kv.get("prefetch-gap-ms");
   if (gapArg) cfg.restMinGapMs = Math.max(200, Number(gapArg) || cfg.restMinGapMs);
 
@@ -1260,6 +1425,107 @@ async function main() {
 
   let quoteVolMap = new Map();
   const historyBuffers = new Map();
+  const mover1mBuffers = separateMover1m ? new Map() : historyBuffers;
+
+  function moverStores() {
+    return {
+      buffers: mover1mBuffers,
+      cache: moverKlineCache,
+      limit: separateMover1m ? mover1mEvalLimit() : cfg.limit,
+      memoryMax: separateMover1m ? mover1mMemoryMax() : memoryMaxBars(),
+    };
+  }
+
+  async function loadMover1mHistory(symbol) {
+    const limit = mover1mEvalLimit();
+    const cached = moverKlineCache.read(symbol) ?? [];
+    const fetched = await fetchKlinesInterval(symbol, MOVER_INTERVAL, limit);
+    let bars = mergeBarsByOpenTime(cached, fetched);
+
+    if (cached.length && fetched.length) {
+      const barMs = intervalBarMs(MOVER_INTERVAL);
+      const lastCached = cached[cached.length - 1];
+      const firstFetched = fetched[0];
+      if (lastCached.closeTime + barMs < firstFetched.openTime) {
+        const gap = await fetchKlinesGapForInterval(
+          symbol,
+          MOVER_INTERVAL,
+          lastCached.closeTime + 1,
+          firstFetched.openTime - 1
+        );
+        bars = mergeBarsByOpenTime(cached, gap, fetched);
+      }
+    }
+
+    bars = moverKlineCache.capBars(bars, cfg.cacheMaxBars);
+    moverKlineCache.replace(symbol, bars);
+    return moverKlineCache.capBars(bars, mover1mMemoryMax());
+  }
+
+  async function prefetchMover1mSymbols(symbols) {
+    if (!separateMover1m) return;
+    const minBars = Math.min(mover1mEvalLimit(), 500);
+    const t0 = Date.now();
+    let fromCache = 0;
+    let fetched = 0;
+    let failed = 0;
+
+    console.error(
+      `Prefetch 1m for fast/top movers (${symbols.length} symbols, ≥${minBars} bars)…`
+    );
+
+    await runConcurrent(symbols, cfg.prefetchCacheConcurrency, async (sym) => {
+      try {
+        const meta = moverKlineCache.readMeta(sym);
+        if (meta?.barCount >= minBars) {
+          const bars = moverKlineCache.capBars(
+            moverKlineCache.read(sym) ?? [],
+            mover1mMemoryMax()
+          );
+          mover1mBuffers.set(sym, bars);
+          fromCache++;
+        } else {
+          const bars = await loadMover1mHistory(sym);
+          mover1mBuffers.set(sym, bars);
+          fetched++;
+        }
+      } catch (e) {
+        failed++;
+        console.error(`1m mover prefetch failed ${sym}: ${e.message}`);
+        mover1mBuffers.set(sym, []);
+      }
+    });
+
+    console.error(
+      `1m mover prefetch done | cache ${fromCache} | rest ${fetched} | fail ${failed} | ` +
+        `${((Date.now() - t0) / 1000).toFixed(0)}s`
+    );
+  }
+
+  function barsForMovers(sym, searchParams) {
+    const { buffers, cache, limit } = moverStores();
+    const atRaw = searchParams?.get("at");
+    const buf = buffers.get(sym) ?? [];
+    if (!atRaw) {
+      const bars = cache.evalWindow(buf, limit);
+      const signalBarAt = bars.length ? bars[bars.length - 1].closeTime : null;
+      return { bars, atMs: null, signalBarAt };
+    }
+    const atMs = parseAtTime(atRaw);
+    const needsDisk =
+      !buf.length ||
+      buf[0].openTime > atMs ||
+      buf[buf.length - 1].closeTime < atMs;
+    const source = needsDisk ? cache.read(sym) ?? buf : buf;
+    const bars = cache.evalWindow(barsAtTime(source, atMs), limit);
+    if (!bars.length) {
+      throw new Error(
+        `No ${MOVER_INTERVAL} candle data at or before ${formatIsoUtcPlus3(atMs)}`
+      );
+    }
+    return { bars, atMs, signalBarAt: bars[bars.length - 1].closeTime };
+  }
+
   const sfpActive = new Map();
   const sfpHistory = new Map();
   const pbActive = new Map();
@@ -1340,11 +1606,12 @@ async function main() {
 
       let movers = symbols
         .map((sym) => {
-          const buf = historyBuffers.get(sym) ?? [];
+          const { buffers, cache } = moverStores();
+          const buf = buffers.get(sym) ?? [];
           let evalBars;
           let signalBarAt = null;
           try {
-            const ev = barsForEvaluation(sym, searchParams);
+            const ev = barsForMovers(sym, searchParams);
             evalBars = ev.bars;
             signalBarAt = ev.signalBarAt;
           } catch {
@@ -1357,7 +1624,7 @@ async function main() {
           const cutoff = latest ? latest.closeTime - 24 * 60 * 60 * 1000 : null;
           const source =
             cutoff != null && buf[0]?.openTime > cutoff
-              ? klineCache.read(sym) ?? buf
+              ? cache.read(sym) ?? buf
               : buf;
           let dayBase = null;
           if (cutoff != null) {
@@ -1405,6 +1672,7 @@ async function main() {
 
       return {
         updatedAt: formatIsoUtcPlus3(Date.now()),
+        moverInterval: MOVER_INTERVAL,
         lookback,
         minAvgMovePct,
         minLinearChangePct,
@@ -1475,13 +1743,14 @@ async function main() {
 
       let movers = symbols
         .map((sym) => {
-          const buf = historyBuffers.get(sym) ?? [];
+          const { buffers, cache, limit } = moverStores();
+          const buf = buffers.get(sym) ?? [];
           if (!buf.length) return null;
 
           const latest = buf[buf.length - 1];
           const cutoff = latest.closeTime - windowMs;
           const needsDisk = buf[0].openTime > cutoff;
-          const source = needsDisk ? klineCache.read(sym) ?? buf : buf;
+          const source = needsDisk ? cache.read(sym) ?? buf : buf;
           if (!source.length) return null;
 
           let base = null;
@@ -1495,7 +1764,7 @@ async function main() {
           const movePct = ((latest.close - base.close) / base.close) * 100;
           if (Math.abs(movePct) < minMovePct) return null;
           const fm = fastMoverMetrics(
-            klineCache.evalWindow(source, Math.max(cfg.limit, fastLookback)),
+            cache.evalWindow(source, Math.max(limit, fastLookback)),
             fastMoverOpts
           );
 
@@ -1526,6 +1795,7 @@ async function main() {
 
       return {
         updatedAt: formatIsoUtcPlus3(now),
+        moverInterval: MOVER_INTERVAL,
         windowMinutes,
         windowLabel,
         minMovePct,
@@ -2075,9 +2345,15 @@ async function main() {
         },
         onStorageClean: () => {
           htf15mCache.clear();
-          for (const sym of historyBuffers.keys()) {
+          const allSyms = new Set([
+            ...historyBuffers.keys(),
+            ...mover1mBuffers.keys(),
+          ]);
+          for (const sym of allSyms) {
             historyBuffers.set(sym, []);
-            if (klineCache) klineCache.replace(sym, []);
+            if (separateMover1m) mover1mBuffers.set(sym, []);
+            klineCache.replace(sym, []);
+            if (separateMover1m) moverKlineCache.replace(sym, []);
           }
           backtestJob.result = null;
           backtestJob.error = null;
@@ -2111,20 +2387,35 @@ async function main() {
     reevaluateAllSymbols(symbols, historyBuffers, signalMaps(), quoteVolMap);
 
   console.error(
-    `Symbols: ${symbols.length} | interval: ${cfg.interval} | ` +
+    `Symbols: ${symbols.length} | signals: ${cfg.interval} | movers: ${MOVER_INTERVAL} | ` +
       `eval window: ${cfg.limit} bars | cache max: ${cfg.cacheMaxBars} | ` +
       `live prefetch: ${wantPrefetch ? "yes (per-symbol if cache insufficient)" : "no"}`
   );
 
   klineCache.startPeriodicFlush(historyBuffers);
+  if (separateMover1m) {
+    moverKlineCache.startPeriodicFlush(mover1mBuffers);
+  }
 
-  console.error(`WebSocket live on fstream (${cfg.interval})…`);
+  console.error(
+    `WebSocket live on fstream (${cfg.interval}` +
+      (separateMover1m ? ` + ${MOVER_INTERVAL} movers` : "") +
+      ")…"
+  );
   const sockets = createWsShards(
     symbols,
     historyBuffers,
     signalMaps(),
     quoteVolMap
   );
+  const moverSockets = separateMover1m
+    ? createMover1mWsShards(
+        symbols,
+        mover1mBuffers,
+        moverKlineCache,
+        mover1mMemoryMax()
+      )
+    : [];
   const stopStaleRefresh = startStaleSymbolRefresh(
     symbols,
     historyBuffers,
@@ -2138,7 +2429,8 @@ async function main() {
       historyBuffers,
       signalMaps(),
       quoteVolMap,
-      reevaluateAll
+      reevaluateAll,
+      prefetchMover1mSymbols
     );
   } else {
     console.error(
@@ -2175,9 +2467,14 @@ async function main() {
     stopStaleRefresh();
     klineCache.flushAll(historyBuffers);
     klineCache.stop();
+    if (separateMover1m) {
+      moverKlineCache.flushAll(mover1mBuffers);
+      moverKlineCache.stop();
+    }
     paperBot?.flush();
     liveBot?.flush();
     sockets.forEach((s) => s.close());
+    moverSockets.forEach((s) => s.close());
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
