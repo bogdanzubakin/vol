@@ -1328,6 +1328,11 @@
           <div class="hint">0 = off. Skip SFP when local range is too wide/choppy</div>
         </div>
         <div class="field">
+          <label for="paperBotMaxPullbackCorridor">Max pullback corridor width %</label>
+          <input type="number" id="paperBotMaxPullbackCorridor" step="1" min="0" max="100" value="20" required />
+          <div class="hint">0 = off. Skip fast-mover pullback when local range is too wide</div>
+        </div>
+        <div class="field">
           <label for="paperBotSfpTp">SFP take profit cap %</label>
           <input type="number" id="paperBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
           <div class="hint">Lower TP for sweep-reclaim entries (uses main TP if higher)</div>
@@ -1557,6 +1562,10 @@
         <div class="field">
           <label for="liveBotMaxSfpCorridor">Max SFP corridor width %</label>
           <input type="number" id="liveBotMaxSfpCorridor" step="1" min="0" max="100" value="20" required />
+        </div>
+        <div class="field">
+          <label for="liveBotMaxPullbackCorridor">Max pullback corridor width %</label>
+          <input type="number" id="liveBotMaxPullbackCorridor" step="1" min="0" max="100" value="20" required />
         </div>
         <div class="field">
           <label for="liveBotSfpTp">SFP take profit cap %</label>
@@ -3052,6 +3061,9 @@
         takeProfitMinPct: Number(document.getElementById("paperBotTpMinPct").value),
         minSmartStopDistancePct: Number(document.getElementById("paperBotMinSlDist").value),
         maxSfpCorridorWidthPct: Number(document.getElementById("paperBotMaxSfpCorridor").value),
+        maxPullbackCorridorWidthPct: Number(
+          document.getElementById("paperBotMaxPullbackCorridor").value
+        ),
         sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
@@ -3092,6 +3104,8 @@
       document.getElementById("paperBotTpMinPct").value = cfg.takeProfitMinPct ?? 1;
       document.getElementById("paperBotMinSlDist").value = cfg.minSmartStopDistancePct ?? 0.8;
       document.getElementById("paperBotMaxSfpCorridor").value = cfg.maxSfpCorridorWidthPct ?? 20;
+      document.getElementById("paperBotMaxPullbackCorridor").value =
+        cfg.maxPullbackCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("paperBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
       document.getElementById("paperBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
@@ -3513,6 +3527,9 @@
         takeProfitMinPct: Number(document.getElementById("liveBotTpMinPct").value),
         minSmartStopDistancePct: Number(document.getElementById("liveBotMinSlDist").value),
         maxSfpCorridorWidthPct: Number(document.getElementById("liveBotMaxSfpCorridor").value),
+        maxPullbackCorridorWidthPct: Number(
+          document.getElementById("liveBotMaxPullbackCorridor").value
+        ),
         sfpTakeProfitPct: Number(document.getElementById("liveBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("liveBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
@@ -3555,6 +3572,8 @@
       document.getElementById("liveBotTpMinPct").value = cfg.takeProfitMinPct ?? 1;
       document.getElementById("liveBotMinSlDist").value = cfg.minSmartStopDistancePct ?? 0.8;
       document.getElementById("liveBotMaxSfpCorridor").value = cfg.maxSfpCorridorWidthPct ?? 20;
+      document.getElementById("liveBotMaxPullbackCorridor").value =
+        cfg.maxPullbackCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("liveBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
       document.getElementById("liveBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
