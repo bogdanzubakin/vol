@@ -88,6 +88,32 @@
       color: var(--muted);
       font-weight: 500;
     }
+    .positions-table .positions-close-btn {
+      padding: 2px 8px;
+      font-size: 0.72rem;
+      line-height: 1.2;
+    }
+    .positions-exits {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .positions-exits .exit-flag {
+      font-size: 0.68rem;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .positions-exits .exit-flag.on {
+      color: var(--green);
+      background: rgba(34, 197, 94, 0.12);
+    }
+    .positions-exits .exit-flag.off {
+      color: var(--muted);
+      background: rgba(148, 163, 184, 0.12);
+    }
     .positions-table tr:last-child td { border-bottom: none; }
     .positions-empty {
       padding: 14px 12px;
@@ -4522,6 +4548,18 @@
       return `${sign}${Number(n).toFixed(d)}%`;
     }
 
+    function positionExitFlag(label, has, price) {
+      if (has == null) {
+        return `<span class="exit-flag off" title="${escapeHtml(label)} status unknown">${label}?</span>`;
+      }
+      const title = has
+        ? price != null
+          ? `${label} set @ ${price}`
+          : `${label} set`
+        : `No ${label}`;
+      return `<span class="exit-flag ${has ? "on" : "off"}" title="${escapeHtml(title)}">${label}</span>`;
+    }
+
     function renderPositions(data) {
       const meta = document.getElementById("positionsMeta");
       const body = document.getElementById("positionsBody");
@@ -4563,7 +4601,7 @@
       }
 
       body.innerHTML = `<div class="table-wrap"><table class="positions-table">
-        <thead><tr><th>Pair</th><th>PNL</th><th>ROI</th></tr></thead>
+        <thead><tr><th>Pair</th><th>SL/TP</th><th>PNL</th><th>ROI</th><th></th></tr></thead>
         <tbody>${data.positions
           .map((p) => {
             const dirCls =
@@ -4573,13 +4611,54 @@
             const roiCls =
               p.roiPct == null ? "" : p.roiPct >= 0 ? "pnl-pos" : "pnl-neg";
             const dirTri = p.direction === "LONG" ? "▲" : "▼";
+            const closeBtn = data.enabled
+              ? `<button type="button" class="btn secondary sm positions-close-btn" data-symbol="${escapeHtml(p.symbol)}" title="Close position on Binance">Close</button>`
+              : "";
+            const exits = `<span class="positions-exits">${positionExitFlag("SL", p.hasStopLoss, p.stopLoss)}${positionExitFlag("TP", p.hasTakeProfit, p.takeProfit)}</span>`;
             return `<tr>
               <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(p.symbol)}</td>
+              <td>${exits}</td>
               <td class="${pnlCls}">${fmtPnl(p.pnl)}</td>
               <td class="${roiCls}">${fmtPct(p.roiPct, 3)}</td>
+              <td>${closeBtn}</td>
             </tr>`;
           })
           .join("")}</tbody></table></div>`;
+      body.querySelectorAll(".positions-close-btn").forEach((btn) => {
+        btn.addEventListener("click", () => closeFuturesPosition(btn.dataset.symbol));
+      });
+    }
+
+    async function closeFuturesPosition(symbol) {
+      if (!symbol) return;
+      if (!confirm(`Close ${symbol} on Binance?`)) return;
+      const btn = document.querySelector(
+        `.positions-close-btn[data-symbol="${CSS.escape(symbol)}"]`
+      );
+      const prev = btn?.textContent;
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "…";
+      }
+      try {
+        const res = await fetch(
+          `/api/positions/close/${encodeURIComponent(symbol)}`,
+          { method: "POST" }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        await pollPositions();
+        if (document.getElementById("panel-livebot")?.classList.contains("active")) {
+          loadLiveBot(true);
+        }
+      } catch (e) {
+        alert(`Close ${symbol}: ${e.message}`);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = prev;
+        }
+      }
     }
 
     async function pollPositions() {

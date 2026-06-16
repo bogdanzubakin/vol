@@ -2332,6 +2332,8 @@ async function main() {
     trader: futuresTrader,
     onTradeClosed: createTradeClosedHandler("Live bot"),
     onDrawdownStop: handleDrawdownStop,
+    onExitOrdersFailed: (pos, detail) =>
+      telegram?.onExitOrdersFailed?.(pos, detail),
     resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
@@ -2375,7 +2377,51 @@ async function main() {
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
         getChartData: (symbol, searchParams) =>
           scannerApi.getChartData(symbol, searchParams),
-        getPositions: getOpenPositions,
+        getPositions: async () => {
+          const data = await getOpenPositions();
+          if (!data.enabled || !data.positions?.length || !futuresTrader.enabled) {
+            return data;
+          }
+          try {
+            const flags = await futuresTrader.getExitOrderFlagsBySymbol();
+            return {
+              ...data,
+              positions: data.positions.map((p) => {
+                const ex = flags.get(p.symbol) ?? {};
+                return {
+                  ...p,
+                  hasStopLoss: Boolean(ex.hasStopLoss),
+                  hasTakeProfit: Boolean(ex.hasTakeProfit),
+                  stopLoss: ex.stopLoss ?? null,
+                  takeProfit: ex.takeProfit ?? null,
+                };
+              }),
+            };
+          } catch (e) {
+            return {
+              ...data,
+              positions: data.positions.map((p) => ({
+                ...p,
+                hasStopLoss: null,
+                hasTakeProfit: null,
+              })),
+              exitOrdersError: e.message || String(e),
+            };
+          }
+        },
+        closeFuturesPosition: async (symbol) => {
+          const sym = String(symbol || "").toUpperCase();
+          if (!sym) throw new Error("Symbol required");
+          if (!futuresTrader.enabled) {
+            throw new Error("Binance API not configured");
+          }
+          const liveState = await liveBot.getPublicState();
+          if (liveState.openPositions?.some((p) => p.symbol === sym)) {
+            return liveBot.closeSymbol(sym, "manual");
+          }
+          await futuresTrader.closePosition(sym);
+          return { ok: true, symbol: sym, via: "exchange" };
+        },
         getFuturesBalance,
         getPositionsHistory: async (searchParams) =>
           positionsHistory.list(searchParams),
