@@ -30,10 +30,6 @@ const {
   fastMoverLookbackFor1m,
   sfpRangeBars,
 } = require("./lib/signal-metrics");
-const {
-  evaluateHtfContraindications,
-  mergeHtfConfig,
-} = require("./lib/htf-contraindication");
 const { evaluateExtremalSpikeGate } = require("./lib/extremal-spike-gate");
 const { getChartPayload } = require("./lib/chart-render");
 const { formatIsoUtcPlus3 } = require("./lib/time-format");
@@ -2259,24 +2255,6 @@ async function main() {
     return telegram.sendText(formatDrawdownTelegramMessage("Live bot", payload));
   }
 
-  const htf15mCache = new Map();
-
-  async function fetchHtf15mBars(symbol) {
-    const botCfg = paperBot?.getPublicState()?.config ?? {};
-    const barCount = Math.max(120, (botCfg.htfMaBars ?? 20) + 100);
-    const cached = htf15mCache.get(symbol);
-    if (
-      cached &&
-      Date.now() - cached.fetchedAt < 5 * 60_000 &&
-      cached.bars?.length >= 40
-    ) {
-      return cached.bars;
-    }
-    const bars = await fetchKlinesInterval(symbol, "15m", barCount);
-    htf15mCache.set(symbol, { bars, fetchedAt: Date.now() });
-    return bars;
-  }
-
   async function resolveExtremalSpikeGateForSymbol(symbol, atMs, botCfg = {}) {
     if (!botCfg?.extremalSpikeGateEnabled) {
       return { enabled: false, pass: true };
@@ -2290,35 +2268,17 @@ async function main() {
         detail: "no kline history",
       };
     }
-    return evaluateExtremalSpikeGate(bars, { ...cfg, ...botCfg }, atMs);
+    return evaluateExtremalSpikeGate(
+      bars,
+      { ...cfg, ...botCfg },
+      atMs,
+      { positionSide: "LONG" }
+    );
   }
-
-  const resolveHtfForBot = async (symbol, _signalKind, atMs, botCfg = {}) => {
-    if (!botCfg?.htfContraindicationEnabled) {
-      return { enabled: false, pass: true };
-    }
-    try {
-      const bars = await fetchHtf15mBars(symbol);
-      return evaluateHtfContraindications(
-        barsAtTime(bars, atMs),
-        mergeHtfConfig({ ...cfg, ...botCfg }),
-        atMs
-      );
-    } catch (e) {
-      return {
-        enabled: true,
-        pass: false,
-        label: "error",
-        detail: e.message || String(e),
-        blocks: [],
-      };
-    }
-  };
 
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
-    resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
   console.error(
@@ -2333,14 +2293,12 @@ async function main() {
     onDrawdownStop: handleDrawdownStop,
     onExitOrdersFailed: (pos, detail) =>
       telegram?.onExitOrdersFailed?.(pos, detail),
-    resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
   });
   void liveBot.getPublicState().then((st) => {
     console.error(
       `Live bot: ${futuresTrader.enabled ? "API keys ok" : "no API keys"} · ` +
         `${st.config.armed ? "ARMED" : "disarmed"} · ` +
-        `${st.config.enabled ? "enabled" : "disabled"} · ` +
         `${st.config.leverage}x isolated`
     );
   });
@@ -2541,7 +2499,6 @@ async function main() {
               fetchKlinesForBacktest(sym, limit),
             fetchKlines1mForSymbol: (sym, limit) =>
               fetchKlinesForBacktest(sym, limit, "1m"),
-            fetchHtfBars: (sym, limit) => fetchKlinesInterval(sym, "15m", limit),
             onProgress: (p) => {
               touchBacktestProgress(p);
             },
@@ -2621,7 +2578,6 @@ async function main() {
           return dashboard.buildState(sfpActive, sfpHistory, pbActive, pbHistory);
         },
         onStorageClean: () => {
-          htf15mCache.clear();
           const allSyms = new Set([
             ...historyBuffers.keys(),
             ...signalBuffers.keys(),

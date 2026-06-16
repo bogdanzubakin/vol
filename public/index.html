@@ -1316,6 +1316,11 @@
           <div class="hint">Fixed margin per trade (capped by free deposit)</div>
         </div>
         <div class="field">
+          <label for="paperBotLeverage">Leverage (simulated)</label>
+          <input type="number" id="paperBotLeverage" step="1" min="1" max="125" value="1" required />
+          <div class="hint">Isolated margin simulation — notional = margin × leverage</div>
+        </div>
+        <div class="field">
           <label for="paperBotStopPct">Stop loss below corridor high %</label>
           <input type="number" id="paperBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
           <div class="hint">SL at top corridor border × (1 − %)</div>
@@ -1374,50 +1379,39 @@
             Trade fast-mover pullback
           </label>
         </div>
-        <div class="field" style="min-width: 240px;">
-          <label>
-            <input type="checkbox" id="paperBotHtfGate" name="htfContraindicationEnabled" checked />
-            15m gate (SFP &amp; pullback)
-          </label>
-          <div class="hint">Skip entry if 15m is below MA, breaking down, or bearish sweep</div>
-        </div>
-        <div class="field">
-          <label for="paperBotHtfMaBars">15m MA bars</label>
-          <input type="number" id="paperBotHtfMaBars" step="1" min="5" max="200" value="20" required />
-        </div>
         <div class="field" style="min-width: 260px;">
           <label>
             <input type="checkbox" id="paperBotExtremalSpikeGate" checked />
             30m extremal spike gate
           </label>
-          <div class="hint">Skip entry if any H-L candle in last 30m ≥ Exclude mult × average (scanner settings)</div>
+          <div class="hint">Skip LONG if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotAddOnEnabled" name="addOnEnabled" />
-            Add to position on move (pyramid)
+            Single add-on on move
           </label>
-          <div class="hint">Extra margin when price rises from initial entry; SL moves to avg entry ±% after each add</div>
+          <div class="hint">Once per position: add fixed margin and boost leverage after +% from entry</div>
         </div>
         <div class="field">
-          <label for="paperBotAddOnDepositPct">Add-on size % of deposit</label>
-          <input type="number" id="paperBotAddOnDepositPct" step="0.1" min="0.1" max="100" value="1" required />
+          <label for="paperBotAddOnMarginUsdt">Add-on margin (USDT)</label>
+          <input type="number" id="paperBotAddOnMarginUsdt" step="0.01" min="1" max="1000000" value="6" required />
         </div>
         <div class="field">
-          <label for="paperBotAddOnMovePct">Add every +% from entry</label>
+          <label for="paperBotAddOnMovePct">Add after +% from entry</label>
           <input type="number" id="paperBotAddOnMovePct" step="0.1" min="0.1" max="100" value="5" required />
-          <div class="hint">e.g. 5 → add at +5%, +10%, +15%… from first entry</div>
         </div>
         <div class="field">
-          <label for="paperBotAddOnMaxAdds">Max add-ons</label>
-          <input type="number" id="paperBotAddOnMaxAdds" step="1" min="0" max="50" value="10" required />
+          <label for="paperBotAddOnLeverageBoost">Leverage boost on add</label>
+          <input type="number" id="paperBotAddOnLeverageBoost" step="1" min="0" max="124" value="1" required />
+          <div class="hint">e.g. 1x entry + boost 2 → 3x on the add-on chunk</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotMoveStopEnabled" name="moveStopEnabled" />
             Move stop to entry after move
           </label>
-          <div class="hint">Uses first entry; add-ons move SL to avg entry ±% above</div>
+          <div class="hint">Uses first entry; add-on moves SL to avg entry ±% above</div>
         </div>
         <div class="field">
           <label for="paperBotMoveStopAfterPct">After +% from entry</label>
@@ -1559,12 +1553,6 @@
         <span class="config-msg" id="liveBotMsg"></span>
       </div>
       <form class="settings-form movers-settings" id="liveBotConfigForm">
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="liveBotEnabled" name="enabled" />
-            Enable bot (listen for signals)
-          </label>
-        </div>
         <div class="field">
           <label for="liveBotLeverage">Leverage (isolated)</label>
           <input type="number" id="liveBotLeverage" step="1" min="1" max="125" value="1" required />
@@ -1626,38 +1614,28 @@
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
         </div>
-        <div class="field" style="min-width: 240px;">
-          <label>
-            <input type="checkbox" id="liveBotHtfGate" name="htfContraindicationEnabled" checked />
-            15m gate (SFP &amp; pullback)
-          </label>
-          <div class="hint">Skip entry if 15m is below MA, breaking down, or bearish sweep</div>
-        </div>
-        <div class="field">
-          <label for="liveBotHtfMaBars">15m MA bars</label>
-          <input type="number" id="liveBotHtfMaBars" step="1" min="5" max="200" value="20" required />
-        </div>
         <div class="field" style="min-width: 260px;">
           <label>
             <input type="checkbox" id="liveBotExtremalSpikeGate" checked />
             30m extremal spike gate
           </label>
-          <div class="hint">Skip entry if any H-L candle in last 30m ≥ Exclude mult × average (scanner settings)</div>
+          <div class="hint">Skip LONG if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average</div>
         </div>
         <div class="field" style="min-width: 220px;">
-          <label><input type="checkbox" id="liveBotAddOnEnabled" /> Pyramid add-ons</label>
+          <label><input type="checkbox" id="liveBotAddOnEnabled" /> Single add-on on move</label>
+          <div class="hint">Once per position: fixed margin + leverage boost after +% from entry</div>
         </div>
         <div class="field">
-          <label for="liveBotAddOnDepositPct">Add-on % of available</label>
-          <input type="number" id="liveBotAddOnDepositPct" step="0.1" min="0.1" max="100" value="1" required />
+          <label for="liveBotAddOnMarginUsdt">Add-on margin (USDT)</label>
+          <input type="number" id="liveBotAddOnMarginUsdt" step="0.01" min="5" max="1000000" value="6" required />
         </div>
         <div class="field">
-          <label for="liveBotAddOnMovePct">Add every +%</label>
+          <label for="liveBotAddOnMovePct">Add after +% from entry</label>
           <input type="number" id="liveBotAddOnMovePct" step="0.1" min="0.1" max="100" value="5" required />
         </div>
         <div class="field">
-          <label for="liveBotAddOnMaxAdds">Max add-ons</label>
-          <input type="number" id="liveBotAddOnMaxAdds" step="1" min="0" max="50" value="3" required />
+          <label for="liveBotAddOnLeverageBoost">Leverage boost on add</label>
+          <input type="number" id="liveBotAddOnLeverageBoost" step="1" min="0" max="124" value="1" required />
         </div>
         <div class="field" style="min-width: 220px;">
           <label><input type="checkbox" id="liveBotMoveStopEnabled" /> Move stop to entry</label>
@@ -1697,9 +1675,9 @@
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="liveBotDrawdownStopEnabled" name="drawdownStopEnabled" checked />
-            Drawdown stop (auto-disable)
+            Drawdown stop (auto-disarm)
           </label>
-          <div class="hint">Disables & disarms when wallet+unrealized drops by % from baseline (set on arm/enable)</div>
+          <div class="hint">Disarms when wallet+unrealized drops by % from baseline (set on arm)</div>
         </div>
         <div class="field">
           <label for="liveBotDrawdownStopPct">Max deposit loss %</label>
@@ -3141,6 +3119,7 @@
       return {
         enabled: document.getElementById("paperBotEnabled").checked,
         initialDeposit: Number(document.getElementById("paperBotInitialDeposit").value),
+        leverage: Number(document.getElementById("paperBotLeverage").value),
         positionSizeUsdt: Number(document.getElementById("paperBotPositionUsdt").value),
         stopLossBelowCorridorPct: Number(document.getElementById("paperBotStopPct").value),
         stopLossFallbackPnlPct: Number(
@@ -3157,13 +3136,11 @@
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
-        htfContraindicationEnabled: document.getElementById("paperBotHtfGate").checked,
-        htfMaBars: Number(document.getElementById("paperBotHtfMaBars").value),
         extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
-        addOnDepositPct: Number(document.getElementById("paperBotAddOnDepositPct").value),
+        addOnMarginUsdt: Number(document.getElementById("paperBotAddOnMarginUsdt").value),
         addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
-        addOnMaxAdds: Number(document.getElementById("paperBotAddOnMaxAdds").value),
+        addOnLeverageBoost: Number(document.getElementById("paperBotAddOnLeverageBoost").value),
         moveStopEnabled: document.getElementById("paperBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("paperBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("paperBotMoveStopOffsetPct").value),
@@ -3191,6 +3168,7 @@
       if (!cfg) return;
       document.getElementById("paperBotEnabled").checked = Boolean(cfg.enabled);
       document.getElementById("paperBotInitialDeposit").value = cfg.initialDeposit ?? 1000;
+      document.getElementById("paperBotLeverage").value = cfg.leverage ?? 1;
       document.getElementById("paperBotPositionUsdt").value = displayPositionSizeUsdt(cfg);
       document.getElementById("paperBotStopPct").value = cfg.stopLossBelowCorridorPct ?? 2;
       document.getElementById("paperBotStopFallbackPnlPct").value =
@@ -3213,15 +3191,12 @@
         cfg.tradeSfpSignals !== false;
       document.getElementById("paperBotTradePullback").checked =
         Boolean(cfg.tradePullbackSignals);
-      document.getElementById("paperBotHtfGate").checked =
-        cfg.htfContraindicationEnabled !== false;
-      document.getElementById("paperBotHtfMaBars").value = cfg.htfMaBars ?? 20;
       document.getElementById("paperBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
-      document.getElementById("paperBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
+      document.getElementById("paperBotAddOnMarginUsdt").value = cfg.addOnMarginUsdt ?? 6;
       document.getElementById("paperBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
-      document.getElementById("paperBotAddOnMaxAdds").value = cfg.addOnMaxAdds ?? 10;
+      document.getElementById("paperBotAddOnLeverageBoost").value = cfg.addOnLeverageBoost ?? 1;
       document.getElementById("paperBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
       document.getElementById("paperBotMoveStopAfterPct").value =
         cfg.moveStopAfterMovePct ?? 5;
@@ -3353,7 +3328,7 @@
               : fmt(p.entryPrice, 6);
           const qtyMargin = options.live
             ? fmt(p.quantity, 4)
-            : fmtUsd(p.margin);
+            : `${fmtUsd(p.margin)}${p.leverage > 1 ? ` · ${p.leverage}x` : ""}`;
           const previewBtn = p.id
             ? `<button type="button" class="btn secondary sm ${options.live ? "live-" : ""}open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
             : "";
@@ -3639,7 +3614,6 @@
 
     function liveBotConfigFromForm() {
       return {
-        enabled: document.getElementById("liveBotEnabled").checked,
         leverage: Number(document.getElementById("liveBotLeverage").value),
         maxOpenPositions: Number(document.getElementById("liveBotMaxOpen").value),
         positionSizeUsdt: Number(document.getElementById("liveBotPositionUsdt").value),
@@ -3658,13 +3632,11 @@
         smartExitLevelsEnabled: document.getElementById("liveBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
         tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
-        htfContraindicationEnabled: document.getElementById("liveBotHtfGate").checked,
-        htfMaBars: Number(document.getElementById("liveBotHtfMaBars").value),
         extremalSpikeGateEnabled: document.getElementById("liveBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
-        addOnDepositPct: Number(document.getElementById("liveBotAddOnDepositPct").value),
+        addOnMarginUsdt: Number(document.getElementById("liveBotAddOnMarginUsdt").value),
         addOnMovePct: Number(document.getElementById("liveBotAddOnMovePct").value),
-        addOnMaxAdds: Number(document.getElementById("liveBotAddOnMaxAdds").value),
+        addOnLeverageBoost: Number(document.getElementById("liveBotAddOnLeverageBoost").value),
         moveStopEnabled: document.getElementById("liveBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("liveBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("liveBotMoveStopOffsetPct").value),
@@ -3691,7 +3663,6 @@
 
     function fillLiveBotForm(cfg) {
       if (!cfg) return;
-      document.getElementById("liveBotEnabled").checked = Boolean(cfg.enabled);
       document.getElementById("liveBotLeverage").value = cfg.leverage ?? 1;
       document.getElementById("liveBotMaxOpen").value = cfg.maxOpenPositions ?? 4;
       document.getElementById("liveBotPositionUsdt").value = displayPositionSizeUsdt(cfg);
@@ -3714,15 +3685,12 @@
       }
       document.getElementById("liveBotTradeSfp").checked = cfg.tradeSfpSignals !== false;
       document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
-      document.getElementById("liveBotHtfGate").checked =
-        cfg.htfContraindicationEnabled !== false;
-      document.getElementById("liveBotHtfMaBars").value = cfg.htfMaBars ?? 20;
       document.getElementById("liveBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
-      document.getElementById("liveBotAddOnDepositPct").value = cfg.addOnDepositPct ?? 1;
+      document.getElementById("liveBotAddOnMarginUsdt").value = cfg.addOnMarginUsdt ?? 6;
       document.getElementById("liveBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
-      document.getElementById("liveBotAddOnMaxAdds").value = cfg.addOnMaxAdds ?? 3;
+      document.getElementById("liveBotAddOnLeverageBoost").value = cfg.addOnLeverageBoost ?? 1;
       document.getElementById("liveBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
       document.getElementById("liveBotMoveStopAfterPct").value = cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("liveBotMoveStopOffsetPct").value = cfg.moveStopOffsetPct ?? 0;
@@ -4062,8 +4030,8 @@
         let text =
           `Signals: ${s.interval ?? "1m"} · SFP + pullback (from Strategies tab / saved config)`;
         const bc = (data.result || data.last)?.botConfig;
-        if (bc?.htfContraindicationEnabled !== false && (bc?.tradeSfpSignals || bc?.tradePullbackSignals)) {
-          text += ` · 15m gate on SFP/PB (MA${bc.htfMaBars ?? 20}, Paper bot settings)`;
+        if (bc?.extremalSpikeGateEnabled !== false) {
+          text += " · 30m extremal body gate (opposing direction)";
         }
         hint.textContent = text;
       }
