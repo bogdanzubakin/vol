@@ -8,6 +8,7 @@
  *
  * Telegram (optional): TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in `.env`
  *   --no-telegram  disable
+ *   Notifies on non-SL trade closes (TP, manual) — not on scanner signals
  */
 
 const fs = require("fs");
@@ -133,7 +134,6 @@ const cfg = {
   quoteVolRefreshMs: 15 * 60 * 1000,
   minQuoteVolume24h: 0,
   printHitsMinIntervalMs: 2000,
-  signalNotifyCooldownMs: 60 * 60 * 1000,
 };
 
 /** Primary live pipeline (bots, movers, snapshots) always uses 1m. */
@@ -362,10 +362,14 @@ function getPaperBotBar(sym, historyBuffers) {
   };
 }
 
-function refreshAllPaperBotPrices(historyBuffers) {
+function refreshAllPaperBotPrices(historyBuffers, klineSymbol = null) {
   const getBar = (s) => getPaperBotBar(s, historyBuffers);
   paperBot?.updatePrices(getBar);
-  void liveBot?.updatePrices(getBar);
+  if (liveBot?.hasOpenPositions?.()) {
+    if (!klineSymbol || liveBot.hasOpenSymbol?.(klineSymbol)) {
+      void liveBot.updatePrices(getBar, klineSymbol || null);
+    }
+  }
 }
 
 function memoryMaxBars() {
@@ -1133,7 +1137,7 @@ function createWsShards(
     if (sfpPass !== prevSfp || pbPass !== prevPb) {
       printHits(maps, true);
     }
-    refreshAllPaperBotPrices(historyBuffers);
+    refreshAllPaperBotPrices(historyBuffers, sym);
   };
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
@@ -1205,7 +1209,7 @@ function createWsShards(
           shard.lastUpdateAt = wsStats.lastUpdateAt;
         }
 
-        refreshAllPaperBotPrices(historyBuffers);
+        refreshAllPaperBotPrices(historyBuffers, sym);
         if (!separateSignal && isClosed && change.updated) evaluate(sym);
       });
 
@@ -2212,6 +2216,13 @@ async function main() {
     return { snapshotId };
   }
 
+  function createTradeClosedHandler(botLabel) {
+    return async (trade, posSnap) => {
+      telegram?.onNonSlTradeClose?.(botLabel, trade);
+      return captureTradeSnapshot(trade, posSnap);
+    };
+  }
+
   async function generatePaperBotOpenSnapshot(positionId) {
     refreshAllPaperBotPrices(historyBuffers);
     const state = paperBot.getPublicState();
@@ -2306,7 +2317,7 @@ async function main() {
   };
 
   paperBot = createPaperBot({
-    onTradeClosed: captureTradeSnapshot,
+    onTradeClosed: createTradeClosedHandler("Paper bot"),
     onDrawdownStop: handleDrawdownStop,
     resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
@@ -2319,7 +2330,7 @@ async function main() {
   const futuresTrader = createFuturesTrader({ kv });
   liveBot = createLiveBot({
     trader: futuresTrader,
-    onTradeClosed: captureTradeSnapshot,
+    onTradeClosed: createTradeClosedHandler("Live bot"),
     onDrawdownStop: handleDrawdownStop,
     resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,

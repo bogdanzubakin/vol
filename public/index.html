@@ -235,11 +235,6 @@
       gap: 6px;
       flex-wrap: wrap;
     }
-    .telegram-btn {
-      padding: 2px 7px;
-      font-size: 0.72rem;
-      line-height: 1.2;
-    }
     .pass { color: var(--green); }
     .bad { color: #fca5a5; }
     .near { color: #fbbf24; }
@@ -2417,11 +2412,8 @@
             ? '<span class="status-pill pass">PASS</span>'
             : '<span class="status-pill fail">no signal</span>';
           const barAt = fmtBarTime(p.signalBarAt);
-          const tgBtn = data.telegramEnabled
-            ? `<button type="button" class="btn secondary sm telegram-btn" data-symbol="${escapeHtml(p.symbol)}" title="Send signal to Telegram">TG</button>`
-            : "";
           return `<tr>
-            <td class="sym-cell">${symLink(p.symbol)}${tgBtn}</td>
+            <td class="sym-cell">${symLink(p.symbol)}</td>
             <td>${pill}</td>
             <td>${fmt(p.close, 6)}</td>
             <td>${fmt(p.rangeRatio, 2)}</td>
@@ -2440,33 +2432,6 @@
           openChart(btn.dataset.symbol, btn.dataset.chartIndicator || "")
         );
       });
-      tbody.querySelectorAll(".telegram-btn").forEach((btn) => {
-        btn.addEventListener("click", () => sendTelegramSignal(btn));
-      });
-    }
-
-    async function sendTelegramSignal(btn) {
-      const symbol = btn.dataset.symbol;
-      if (!symbol) return;
-      const prev = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "…";
-      const params = new URLSearchParams();
-      appendEvaluateAt(params);
-      try {
-        const res = await fetch(
-          `/api/telegram-signal/${encodeURIComponent(symbol)}?${params}`,
-          { method: "POST" }
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || res.statusText);
-        setPairsMsg(`Telegram sent: ${symbol}`, true);
-      } catch (e) {
-        setPairsMsg(`Telegram ${symbol}: ${e.message}`, false);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = prev;
-      }
     }
 
     async function openChart(symbol, indicator = "") {
