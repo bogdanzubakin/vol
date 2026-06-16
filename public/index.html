@@ -1435,7 +1435,7 @@
         </div>
         <div class="field">
           <label for="paperBotAutoBlockSl">Auto-block after consecutive SL</label>
-          <input type="number" id="paperBotAutoBlockSl" step="1" min="0" max="50" value="0" required />
+          <input type="number" id="paperBotAutoBlockSl" step="1" min="0" max="50" value="2" required />
           <div class="hint">0 = off. Symbol is added to blocked list after N stop-loss exits in a row.</div>
         </div>
         <div class="field">
@@ -3206,7 +3206,7 @@
         cfg.blockedSymbols ?? []
       ).join("\n");
       document.getElementById("paperBotAutoBlockSl").value =
-        cfg.autoBlockAfterConsecutiveSl ?? 0;
+        cfg.autoBlockAfterConsecutiveSl ?? 2;
       document.getElementById("paperBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("paperBotDrawdownStopPct").value =
