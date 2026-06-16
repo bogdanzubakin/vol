@@ -1406,6 +1406,18 @@
           <input type="number" id="paperBotAddOnLeverageBoost" step="1" min="0" max="124" value="1" required />
           <div class="hint">e.g. 1x entry + boost 2 → 3x on the add-on chunk</div>
         </div>
+        <div class="field">
+          <label for="paperBotAddOnMinPeakPct">Min peak % for add (0 = off)</label>
+          <input type="number" id="paperBotAddOnMinPeakPct" step="0.1" min="0" max="100" value="0" required />
+          <div class="hint">Require session high ≥ this % from initial entry (e.g. 3.5)</div>
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAddOnOnlyAfterMoveStop" />
+            Add only after move-stop raised
+          </label>
+          <div class="hint">Requires move-stop enabled; add-on waits until SL moved toward entry</div>
+        </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotMoveStopEnabled" name="moveStopEnabled" />
@@ -1636,6 +1648,16 @@
         <div class="field">
           <label for="liveBotAddOnLeverageBoost">Leverage boost on add</label>
           <input type="number" id="liveBotAddOnLeverageBoost" step="1" min="0" max="124" value="1" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAddOnMinPeakPct">Min peak % for add (0 = off)</label>
+          <input type="number" id="liveBotAddOnMinPeakPct" step="0.1" min="0" max="100" value="0" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAddOnOnlyAfterMoveStop" />
+            Add only after move-stop raised
+          </label>
         </div>
         <div class="field" style="min-width: 220px;">
           <label><input type="checkbox" id="liveBotMoveStopEnabled" /> Move stop to entry</label>
@@ -3141,6 +3163,8 @@
         addOnMarginUsdt: Number(document.getElementById("paperBotAddOnMarginUsdt").value),
         addOnMovePct: Number(document.getElementById("paperBotAddOnMovePct").value),
         addOnLeverageBoost: Number(document.getElementById("paperBotAddOnLeverageBoost").value),
+        addOnMinPeakPct: Number(document.getElementById("paperBotAddOnMinPeakPct").value),
+        addOnOnlyAfterMoveStop: document.getElementById("paperBotAddOnOnlyAfterMoveStop").checked,
         moveStopEnabled: document.getElementById("paperBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("paperBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("paperBotMoveStopOffsetPct").value),
@@ -3197,6 +3221,9 @@
       document.getElementById("paperBotAddOnMarginUsdt").value = cfg.addOnMarginUsdt ?? 6;
       document.getElementById("paperBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
       document.getElementById("paperBotAddOnLeverageBoost").value = cfg.addOnLeverageBoost ?? 1;
+      document.getElementById("paperBotAddOnMinPeakPct").value = cfg.addOnMinPeakPct ?? 0;
+      document.getElementById("paperBotAddOnOnlyAfterMoveStop").checked =
+        Boolean(cfg.addOnOnlyAfterMoveStop);
       document.getElementById("paperBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
       document.getElementById("paperBotMoveStopAfterPct").value =
         cfg.moveStopAfterMovePct ?? 5;
@@ -3637,6 +3664,8 @@
         addOnMarginUsdt: Number(document.getElementById("liveBotAddOnMarginUsdt").value),
         addOnMovePct: Number(document.getElementById("liveBotAddOnMovePct").value),
         addOnLeverageBoost: Number(document.getElementById("liveBotAddOnLeverageBoost").value),
+        addOnMinPeakPct: Number(document.getElementById("liveBotAddOnMinPeakPct").value),
+        addOnOnlyAfterMoveStop: document.getElementById("liveBotAddOnOnlyAfterMoveStop").checked,
         moveStopEnabled: document.getElementById("liveBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("liveBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("liveBotMoveStopOffsetPct").value),
@@ -3691,6 +3720,9 @@
       document.getElementById("liveBotAddOnMarginUsdt").value = cfg.addOnMarginUsdt ?? 6;
       document.getElementById("liveBotAddOnMovePct").value = cfg.addOnMovePct ?? 5;
       document.getElementById("liveBotAddOnLeverageBoost").value = cfg.addOnLeverageBoost ?? 1;
+      document.getElementById("liveBotAddOnMinPeakPct").value = cfg.addOnMinPeakPct ?? 0;
+      document.getElementById("liveBotAddOnOnlyAfterMoveStop").checked =
+        Boolean(cfg.addOnOnlyAfterMoveStop);
       document.getElementById("liveBotMoveStopEnabled").checked = Boolean(cfg.moveStopEnabled);
       document.getElementById("liveBotMoveStopAfterPct").value = cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("liveBotMoveStopOffsetPct").value = cfg.moveStopOffsetPct ?? 0;
