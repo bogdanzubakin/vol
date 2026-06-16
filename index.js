@@ -2255,9 +2255,8 @@ async function main() {
   }
 
   function handleDrawdownStop(payload) {
-    if (!telegram?.enabled) return;
-    const label = payload.bot === "live" ? "Live bot" : "Paper bot";
-    return telegram.sendText(formatDrawdownTelegramMessage(label, payload));
+    if (!telegram?.enabled || payload.bot !== "live") return;
+    return telegram.sendText(formatDrawdownTelegramMessage("Live bot", payload));
   }
 
   const htf15mCache = new Map();
@@ -2317,7 +2316,7 @@ async function main() {
   };
 
   paperBot = createPaperBot({
-    onTradeClosed: createTradeClosedHandler("Paper bot"),
+    onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
     resolveHtfContraindication: resolveHtfForBot,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
@@ -2736,7 +2735,7 @@ async function main() {
     }
   }, 15_000);
 
-  if (telegram.enabled && tgConfig.paperBotReport !== false) {
+  if (telegram.enabled && tgConfig.paperBotReport) {
     stopPaperBotReport = startPaperBotMorningReports({
       enabled: true,
       hour: tgConfig.paperBotReportHour,

@@ -1994,13 +1994,13 @@
     let lastPaperBotClosed = [];
     let lastBacktestTrades = [];
     let lastBacktestTradesTotal = 0;
-    let paperBotOpenSort = { key: "unrealizedPnl", dir: "desc" };
-    let paperBotClosedSort = { key: "pnl", dir: "desc" };
+    let paperBotOpenSort = { key: "durationSec", dir: "asc" };
+    let paperBotClosedSort = { key: "closedAt", dir: "desc" };
     let lastLiveBotOpen = [];
     let lastLiveBotClosed = [];
-    let liveBotOpenSort = { key: "unrealizedPnl", dir: "desc" };
-    let liveBotClosedSort = { key: "pnl", dir: "desc" };
-    let backtestTradesSort = { key: "pnl", dir: "desc" };
+    let liveBotOpenSort = { key: "durationSec", dir: "asc" };
+    let liveBotClosedSort = { key: "closedAt", dir: "desc" };
+    let backtestTradesSort = { key: "closedAt", dir: "desc" };
     let historyLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
@@ -3301,6 +3301,8 @@
     }
 
     function defaultBotSortDir(key) {
+      if (key === "durationSec") return "asc";
+      if (key === "closedAt" || key === "openedAt") return "desc";
       return key === "symbol" || key === "signalKind" || key === "exitReason"
         ? "asc"
         : "desc";
