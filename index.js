@@ -2710,7 +2710,7 @@ async function main() {
               symbolsUnknown: unknown,
             },
           })
-            .then(({ result }) => {
+            .then(({ result, snapshotWork }) => {
               if (backtestJob.cancelled) return;
               backtestJob.running = false;
               backtestJob.result = result;
@@ -2720,11 +2720,14 @@ async function main() {
                 total: symList.length,
                 ok: result.symbolsProcessed ?? symList.length,
                 skip: result.symbolsSkipped ?? 0,
-                message: "Complete",
+                message: snapshotWork
+                  ? "Simulation complete — generating previews in background"
+                  : "Complete",
               });
               console.error(
                 `Paper bot backtest done: ${result.summary.closedCount} trades · PnL ${result.summary.totalPnl}`
               );
+              if (snapshotWork) startBacktestSnapshotJob(snapshotWork);
             })
             .catch((e) => {
               if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {

@@ -1912,6 +1912,7 @@
       <p class="sub" id="backtestSignalHint" style="margin: 8px 12px; font-size: 0.75rem"></p>
       <h3 id="backtestTradesHeading" style="margin: 16px 12px 8px; font-size: 0.95rem">Positions history</h3>
       <div class="table-wrap table-wrap--cards table-wrap--scroll">
+        <p class="scroll-hint">Chart preview on each trade card</p>
         <table>
           <thead>
             <tr>
@@ -1925,10 +1926,11 @@
               <th class="sortable" data-backtest-sort="durationSec">Duration <span class="sort-mark"></span></th>
               <th class="sortable" data-backtest-sort="openedAt">Opened <span class="sort-mark"></span></th>
               <th class="sortable" data-backtest-sort="closedAt">Closed <span class="sort-mark"></span></th>
+              <th>Chart</th>
             </tr>
           </thead>
           <tbody id="backtestTradesBody">
-            <tr><td colspan="10" class="empty">Run a backtest to see results</td></tr>
+            <tr><td colspan="11" class="empty">Run a backtest to see results</td></tr>
           </tbody>
         </table>
       </div>
@@ -3639,7 +3641,7 @@
       updateBotSortHeaders("data-backtest-sort", backtestTradesSort);
       if (!rows?.length) {
         tradesBody.innerHTML =
-          '<tr class="empty-row"><td colspan="10" class="empty">No closed trades</td></tr>';
+          '<tr class="empty-row"><td colspan="11" class="empty">No closed trades</td></tr>';
         return;
       }
       const pnlCls = paperBotPnlCls;
@@ -3648,8 +3650,14 @@
           const cls = pnlCls(t.pnl);
           const kind = botSignalKindTag(t.signalKind);
           const reason = paperBotExitReasonHtml(t.exitReason);
+          const previewBtn = t.snapshotId
+            ? `<button type="button" class="btn secondary sm backtest-snapshot-btn" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
+            : "";
+          const symCell = `<div class="sym-with-actions"><span>${symLink(t.symbol)}</span>${
+            previewBtn ? `<span class="snap-in-symbol">${previewBtn}</span>` : ""
+          }</div>`;
           return `<tr class="data-row">
-              <td class="sym-cell" data-label="Symbol">${symLink(t.symbol)}</td>
+              <td class="sym-cell" data-label="Symbol">${symCell}</td>
               <td data-label="Signal">${kind}</td>
               <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
               <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
@@ -3659,9 +3667,15 @@
               <td class="history-duration" data-label="Duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
               <td class="time" data-label="Opened">${fmtDisplayDateTime(t.openedAtIso ?? t.openedAt)}</td>
               <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
+              <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
             </tr>`;
         })
         .join("");
+      tradesBody.querySelectorAll(".backtest-snapshot-btn").forEach((btn) => {
+        btn.addEventListener("click", () =>
+          openTradeSnapshot(btn.dataset.snapshotId, btn.dataset.symbol, "backtest")
+        );
+      });
     }
 
     function renderDrawdownStats(dd, lossEl, limitEl) {
@@ -4189,7 +4203,13 @@
     function renderBacktest(data) {
       const badge = document.getElementById("backtestStatusBadge");
       const prog = document.getElementById("backtestProgress");
-      const p = data.running ? data.progress || {} : data.progress || {};
+      const snap = data.snapshots || {};
+      const snapRunning = Boolean(snap.running);
+      const p = data.running
+        ? data.progress || {}
+        : snapRunning
+          ? snap.progress || {}
+          : data.progress || {};
 
       if (data.running) {
         badge.textContent = "running";
@@ -4206,15 +4226,17 @@
         document.getElementById("btStatPairs").textContent =
           `${p.done ?? 0}/${p.total ?? "?"}` +
           ` · ${p.ok ?? 0} ok · ${p.skip ?? 0} skip`;
+      } else if (snapRunning) {
+        badge.textContent = "previews";
+        badge.className = "paper-enabled-badge on";
+        prog.style.display = "grid";
+        document.getElementById("backtestProgressText").textContent =
+          formatBacktestProgress(p);
       } else {
         badge.textContent = data.error ? "error" : data.result || data.last ? "done" : "idle";
         badge.className =
           "paper-enabled-badge " + (data.error ? "off" : data.result || data.last ? "on" : "off");
-        prog.style.display = data.running ? "grid" : "none";
-        if (data.running) {
-          document.getElementById("backtestProgressText").textContent =
-            formatBacktestProgress(p);
-        }
+        prog.style.display = "none";
       }
 
       const hint = document.getElementById("backtestSignalHint");
@@ -4293,7 +4315,15 @@
           .join("");
       }
 
-      if (r.finishedAt) {
+      if (snapRunning && snap.error) {
+        setBacktestMsg(snap.error, false);
+      } else if (snapRunning) {
+        const snapP = snap.progress || {};
+        const snapMsg =
+          snapP.message ||
+          `Generating previews ${snapP.done ?? 0}/${snapP.total ?? "?"}`;
+        setBacktestMsg(snapMsg, true);
+      } else if (r.finishedAt) {
         setBacktestMsg(
           `Last run ${fmtTimeShort(r.finishedAt)} ${TZ_LABEL} · ${r.elapsedSec ?? "?"}s · ${r.symbolsTotal ?? "?"} symbols`,
           true
@@ -4323,7 +4353,7 @@
       const tradesBody = document.getElementById("backtestTradesBody");
       if (tradesBody) {
         tradesBody.innerHTML =
-          '<tr class="empty-row"><td colspan="10" class="empty">Run a backtest to see results</td></tr>';
+          '<tr class="empty-row"><td colspan="11" class="empty">Run a backtest to see results</td></tr>';
       }
       updateBotSortHeaders("data-backtest-sort", backtestTradesSort);
       const symBody = document.getElementById("backtestSymbolsBody");
