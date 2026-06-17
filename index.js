@@ -24,6 +24,7 @@ const {
   parseAtTime,
   barsAtTime,
   analyzeSweepReclaim,
+  analyzeSweepReject,
   fastMoverPullbackMetrics,
   analyzePullback,
   fastMoverOptsFromCfg,
@@ -61,6 +62,7 @@ const {
   DEFAULT_DAYS,
   RESULT_FILE,
 } = require("./lib/paper-bot-backtest");
+const { getBacktestKlineCacheInfo } = require("./lib/backtest-kline-cache");
 const {
   mergeBarsByOpenTime,
   createKlineCacheStore,
@@ -889,6 +891,8 @@ function printHits(maps, force = false) {
   const {
     sfpActive = new Map(),
     sfpHistory = new Map(),
+    sfpBearActive = new Map(),
+    sfpBearHistory = new Map(),
     pbActive = new Map(),
     pbHistory = new Map(),
   } = maps;
@@ -897,6 +901,7 @@ function printHits(maps, force = false) {
   lastHitsPrintAt = now;
 
   pruneSignalHistory(sfpHistory);
+  pruneSignalHistory(sfpBearHistory);
   pruneSignalHistory(pbHistory);
 
   const rows = [
@@ -905,6 +910,13 @@ function printHits(maps, force = false) {
       status: m.ended ? "ENDED" : "SFP",
       triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
       signalKind: "sfp",
+      ...m,
+    })),
+    ...[...sfpBearHistory.entries()].map(([symbol, m]) => ({
+      symbol,
+      status: m.ended ? "ENDED" : "SFP BEAR",
+      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
+      signalKind: "sfp_bear",
       ...m,
     })),
     ...[...pbHistory.entries()].map(([symbol, m]) => ({
@@ -924,13 +936,21 @@ function printHits(maps, force = false) {
 
   if (dashboard) {
     dashboard.setMeta({ prefetching });
-    dashboard.publish(sfpActive, sfpHistory, pbActive, pbHistory, force);
+    dashboard.publish(
+      sfpActive,
+      sfpHistory,
+      pbActive,
+      pbHistory,
+      sfpBearActive,
+      sfpBearHistory,
+      force
+    );
   }
 
   console.clear();
   console.log(
     formatIsoUtcPlus3(Date.now()),
-    `${cfg.interval}: SFP + pullback scanner` +
+    `${cfg.interval}: SFP + bearish SFP + pullback scanner` +
       (prefetching ? " (prefetching…)" : "")
   );
   console.table(rows);
@@ -973,6 +993,45 @@ function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
   }
 
   lastSfp.set(sym, pass);
+}
+
+function applySfpBearSignal(sym, analysis, qv, sfpBearActive, sfpBearHistory, lastSfpBear) {
+  const pass = Boolean(analysis?.passes);
+  const metrics = analysis?.metrics;
+  const prev = lastSfpBear.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass && metrics) {
+    const existing = sfpBearHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        sfpBearActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...metrics,
+      signalKind: "sfp_bear",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    sfpBearActive.set(sym, row);
+    sfpBearHistory.set(sym, row);
+    if (!prev) {
+      const detail = `sweep ${metrics.sweepHigh?.toFixed(6)} · reject ${metrics.close} · ${metrics.barsSinceSweep} bars`;
+      dashboard?.pushEvent("NEW_SFP_BEAR", sym, detail);
+      console.log(`NEW SFP BEAR\t${sym}\t${detail}`);
+      paperBot?.onSfpBearSignal(sym, metrics);
+      liveBot?.onSfpBearSignal(sym, metrics);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, sfpBearActive, sfpBearHistory, "sfp_bear", metrics);
+    dashboard?.pushEvent("END_SFP_BEAR", sym);
+    console.log(`SFP BEAR END\t${sym}`);
+  }
+
+  lastSfpBear.set(sym, pass);
 }
 
 function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
@@ -1020,23 +1079,28 @@ function evaluateSymbolSignals(
   qv,
   sfpActive,
   sfpHistory,
+  sfpBearActive,
+  sfpBearHistory,
   pbActive,
   pbHistory,
   lastSfp,
+  lastSfpBear,
   lastPb
 ) {
   const signalBars = evalSignalBars(sym, signalBuffers);
   const priceBars = evalBars(sym, priceBuffers);
   const fmOpts = fastMoverOptsFromCfg(cfg);
   const sfp = signalBars ? analyzeSweepReclaim(signalBars, cfg) : null;
+  const sfpBear = signalBars ? analyzeSweepReject(signalBars, cfg) : null;
   const pb = signalBars
     ? fastMoverPullbackMetrics(signalBars, cfg, fmOpts, priceBars)
     : null;
 
   applySfpSignal(sym, sfp, qv, sfpActive, sfpHistory, lastSfp);
+  applySfpBearSignal(sym, sfpBear, qv, sfpBearActive, sfpBearHistory, lastSfpBear);
   applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
 
-  return { sfp, pb };
+  return { sfp, sfpBear, pb };
 }
 
 function reevaluateAllSymbols(
@@ -1046,7 +1110,17 @@ function reevaluateAllSymbols(
   maps,
   quoteVolMap
 ) {
-  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
+  const {
+    sfpActive,
+    sfpHistory,
+    sfpBearActive,
+    sfpBearHistory,
+    pbActive,
+    pbHistory,
+    lastSfp,
+    lastSfpBear,
+    lastPb,
+  } = maps;
 
   for (const sym of symbols) {
     const qv = quoteVolMap.get(sym) ?? 0;
@@ -1054,10 +1128,14 @@ function reevaluateAllSymbols(
       if (lastSfp.get(sym)) {
         markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
       }
+      if (lastSfpBear.get(sym)) {
+        markKindSignalEnded(sym, sfpBearActive, sfpBearHistory, "sfp_bear", null);
+      }
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
       lastSfp.set(sym, false);
+      lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
       continue;
     }
@@ -1069,9 +1147,12 @@ function reevaluateAllSymbols(
       qv,
       sfpActive,
       sfpHistory,
+      sfpBearActive,
+      sfpBearHistory,
       pbActive,
       pbHistory,
       lastSfp,
+      lastSfpBear,
       lastPb
     );
   }
@@ -1087,7 +1168,17 @@ function createWsShards(
   quoteVolMap,
   separateSignal
 ) {
-  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
+  const {
+    sfpActive,
+    sfpHistory,
+    sfpBearActive,
+    sfpBearHistory,
+    pbActive,
+    pbHistory,
+    lastSfp,
+    lastSfpBear,
+    lastPb,
+  } = maps;
   const streamSuffix = `@kline_${PRIMARY_INTERVAL}`;
   const batches = chunk(
     symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
@@ -1104,33 +1195,42 @@ function createWsShards(
       if (lastSfp.get(sym)) {
         markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
       }
+      if (lastSfpBear.get(sym)) {
+        markKindSignalEnded(sym, sfpBearActive, sfpBearHistory, "sfp_bear", null);
+      }
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
       lastSfp.set(sym, false);
+      lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
       return;
     }
 
     const prevSfp = lastSfp.get(sym) ?? false;
+    const prevSfpBear = lastSfpBear.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
 
-    const { sfp, pb } = evaluateSymbolSignals(
+    const { sfp, sfpBear, pb } = evaluateSymbolSignals(
       sym,
       signalBuffers,
       historyBuffers,
       qv,
       sfpActive,
       sfpHistory,
+      sfpBearActive,
+      sfpBearHistory,
       pbActive,
       pbHistory,
       lastSfp,
+      lastSfpBear,
       lastPb
     );
 
     const sfpPass = Boolean(sfp?.passes);
+    const sfpBearPass = Boolean(sfpBear?.passes);
     const pbPass = Boolean(pb?.passes);
-    if (sfpPass !== prevSfp || pbPass !== prevPb) {
+    if (sfpPass !== prevSfp || sfpBearPass !== prevSfpBear || pbPass !== prevPb) {
       printHits(maps, true);
     }
     refreshAllPaperBotPrices(historyBuffers, sym);
@@ -1258,7 +1358,17 @@ function createSignalWsShards(
   maps,
   quoteVolMap
 ) {
-  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
+  const {
+    sfpActive,
+    sfpHistory,
+    sfpBearActive,
+    sfpBearHistory,
+    pbActive,
+    pbHistory,
+    lastSfp,
+    lastSfpBear,
+    lastPb,
+  } = maps;
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
     symbols.map((s) => `${s.toLowerCase()}${streamSuffix}`),
@@ -1272,33 +1382,42 @@ function createSignalWsShards(
       if (lastSfp.get(sym)) {
         markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", null);
       }
+      if (lastSfpBear.get(sym)) {
+        markKindSignalEnded(sym, sfpBearActive, sfpBearHistory, "sfp_bear", null);
+      }
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
       lastSfp.set(sym, false);
+      lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
       return;
     }
 
     const prevSfp = lastSfp.get(sym) ?? false;
+    const prevSfpBear = lastSfpBear.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
 
-    const { sfp, pb } = evaluateSymbolSignals(
+    const { sfp, sfpBear, pb } = evaluateSymbolSignals(
       sym,
       signalBuffers,
       historyBuffers,
       qv,
       sfpActive,
       sfpHistory,
+      sfpBearActive,
+      sfpBearHistory,
       pbActive,
       pbHistory,
       lastSfp,
+      lastSfpBear,
       lastPb
     );
 
     const sfpPass = Boolean(sfp?.passes);
+    const sfpBearPass = Boolean(sfpBear?.passes);
     const pbPass = Boolean(pb?.passes);
-    if (sfpPass !== prevSfp || pbPass !== prevPb) {
+    if (sfpPass !== prevSfp || sfpBearPass !== prevSfpBear || pbPass !== prevPb) {
       printHits(maps, true);
     }
   };
@@ -1385,7 +1504,17 @@ function startStaleSymbolRefresh(
   maps,
   quoteVolMap
 ) {
-  const { sfpActive, sfpHistory, pbActive, pbHistory, lastSfp, lastPb } = maps;
+  const {
+    sfpActive,
+    sfpHistory,
+    sfpBearActive,
+    sfpBearHistory,
+    pbActive,
+    pbHistory,
+    lastSfp,
+    lastSfpBear,
+    lastPb,
+  } = maps;
   let cursor = 0;
   let running = false;
 
@@ -1432,9 +1561,12 @@ function startStaleSymbolRefresh(
               quoteVolMap.get(sym) ?? 0,
               sfpActive,
               sfpHistory,
+              sfpBearActive,
+              sfpBearHistory,
               pbActive,
               pbHistory,
               lastSfp,
+              lastSfpBear,
               lastPb
             );
           }
@@ -1708,17 +1840,23 @@ async function main() {
 
   const sfpActive = new Map();
   const sfpHistory = new Map();
+  const sfpBearActive = new Map();
+  const sfpBearHistory = new Map();
   const pbActive = new Map();
   const pbHistory = new Map();
   const lastSfp = new Map();
+  const lastSfpBear = new Map();
   const lastPb = new Map();
 
   const signalMaps = () => ({
     sfpActive,
     sfpHistory,
+    sfpBearActive,
+    sfpBearHistory,
     pbActive,
     pbHistory,
     lastSfp,
+    lastSfpBear,
     lastPb,
   });
 
@@ -2063,6 +2201,50 @@ async function main() {
         items,
       };
     },
+    getSweepReject(searchParams) {
+      const q = (searchParams.get("q") || "").trim().toUpperCase();
+      let items = symbols
+        .map((sym) => {
+          let evalBars;
+          let signalBarAt = null;
+          try {
+            const ev = barsForEvaluation(sym, searchParams);
+            evalBars = ev.bars;
+            signalBarAt = ev.signalBarAt;
+          } catch {
+            return null;
+          }
+          const analysis = analyzeSweepReject(evalBars, cfg);
+          if (!analysis.passes && analysis.metrics?.sweepHigh == null) return null;
+          const m = analysis.metrics;
+          return {
+            symbol: sym,
+            passes: analysis.passes,
+            close: m?.close ?? null,
+            corridorLow: m?.corridorLow ?? null,
+            corridorHigh: m?.corridorHigh ?? null,
+            sweepHigh: m?.sweepHigh ?? null,
+            barsSinceSweep: m?.barsSinceSweep ?? null,
+            checks: serializeChecks(analysis.checks),
+            signalBarAt:
+              signalBarAt != null ? formatIsoUtcPlus3(signalBarAt) : null,
+            live: Boolean(sfpBearActive.get(sym)),
+          };
+        })
+        .filter(Boolean);
+      if (q) items = items.filter((p) => p.symbol.includes(q));
+      items.sort((a, b) => {
+        if (a.passes !== b.passes) return a.passes ? -1 : 1;
+        return (b.barsSinceSweep ?? 0) - (a.barsSinceSweep ?? 0);
+      });
+      return {
+        updatedAt: formatIsoUtcPlus3(Date.now()),
+        ...pickLiveConfig(cfg),
+        activeCount: sfpBearActive.size,
+        pairCount: items.length,
+        items,
+      };
+    },
     getPullback(searchParams) {
       const q = (searchParams.get("q") || "").trim().toUpperCase();
       const fmOpts = fastMoverOptsFromCfg(cfg);
@@ -2115,6 +2297,7 @@ async function main() {
         updatedAt: formatIsoUtcPlus3(Date.now()),
         counts: {
           sfpActive: sfpActive.size,
+          sfpBearActive: sfpBearActive.size,
           pullbackActive: pbActive.size,
         },
         config: {
@@ -2128,6 +2311,11 @@ async function main() {
         },
         live: {
           sfp: [...sfpActive.entries()].map(([symbol, row]) => ({
+            symbol,
+            ...row,
+            triggeredAtIso: formatIsoUtcPlus3(row.triggeredAt),
+          })),
+          sfpBear: [...sfpBearActive.entries()].map(([symbol, row]) => ({
             symbol,
             ...row,
             triggeredAtIso: formatIsoUtcPlus3(row.triggeredAt),
@@ -2255,7 +2443,7 @@ async function main() {
     return telegram.sendText(formatDrawdownTelegramMessage("Live bot", payload));
   }
 
-  async function resolveExtremalSpikeGateForSymbol(symbol, atMs, botCfg = {}) {
+  async function resolveExtremalSpikeGateForSymbol(symbol, atMs, botCfg = {}, opts = {}) {
     if (!botCfg?.extremalSpikeGateEnabled) {
       return { enabled: false, pass: true };
     }
@@ -2272,7 +2460,7 @@ async function main() {
       bars,
       { ...cfg, ...botCfg },
       atMs,
-      { positionSide: "LONG" }
+      { positionSide: opts.positionSide ?? "LONG" }
     );
   }
 
@@ -2323,12 +2511,20 @@ async function main() {
     });
     startDashboard(
       () =>
-        dashboard.buildState(sfpActive, sfpHistory, pbActive, pbHistory),
+        dashboard.buildState(
+          sfpActive,
+          sfpHistory,
+          pbActive,
+          pbHistory,
+          sfpBearActive,
+          sfpBearHistory
+        ),
       {
         port,
         host,
         getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
         getSweepReclaim: (searchParams) => scannerApi.getSweepReclaim(searchParams),
+        getSweepReject: (searchParams) => scannerApi.getSweepReject(searchParams),
         getPullback: (searchParams) => scannerApi.getPullback(searchParams),
         getStrategies: () => scannerApi.getStrategies(),
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
@@ -2424,6 +2620,7 @@ async function main() {
             result: backtestJob.result,
             error: backtestJob.error,
             last: loadLastBacktestResult(),
+            klineCache: getBacktestKlineCacheInfo(),
             snapshots: {
               running: backtestSnapshotJob.running,
               progress: backtestSnapshotJob.progress,
@@ -2454,6 +2651,7 @@ async function main() {
             result: null,
             error: null,
             last: null,
+            klineCache: getBacktestKlineCacheInfo(),
             snapshots: freshBacktestSnapshotJobState(),
             defaultDays: DEFAULT_DAYS,
             signalConfig: pickLiveConfig(cfg),
@@ -2575,7 +2773,14 @@ async function main() {
             );
           }
           reevaluateAll();
-          return dashboard.buildState(sfpActive, sfpHistory, pbActive, pbHistory);
+          return dashboard.buildState(
+            sfpActive,
+            sfpHistory,
+            pbActive,
+            pbHistory,
+            sfpBearActive,
+            sfpBearHistory
+          );
         },
         onStorageClean: () => {
           const allSyms = new Set([
@@ -2594,7 +2799,15 @@ async function main() {
         },
       }
     );
-    dashboard.publish(sfpActive, sfpHistory, pbActive, pbHistory, true);
+    dashboard.publish(
+      sfpActive,
+      sfpHistory,
+      pbActive,
+      pbHistory,
+      sfpBearActive,
+      sfpBearHistory,
+      true
+    );
   }
 
   symbols = await resolveSymbols(flags, kv);

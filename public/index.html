@@ -299,6 +299,10 @@
       background: rgba(167, 139, 250, 0.22);
       color: #c4b5fd;
     }
+    .status-tag.sfp-bear {
+      background: rgba(248, 113, 113, 0.2);
+      color: #fca5a5;
+    }
     .status-tag.pb {
       background: rgba(244, 114, 182, 0.2);
       color: #f472b6;
@@ -1008,6 +1012,7 @@
       <h2>Active signals <span id="hitCount"></span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         <span class="status-tag sfp">SFP</span> sweep below range low + reclaim ·
+        <span class="status-tag sfp-bear">SFP↓</span> sweep above high + reject (SHORT) ·
         <span class="status-tag pb">PULLBACK</span> fast mover touch MA bounce ·
         active hits only (24h history on server)
       </p>
@@ -1204,10 +1209,11 @@
     <section>
       <h2>Strategy monitor <span id="strategiesLiveCount"></span></h2>
       <p class="sub" style="margin: 12px 0 8px 12px; font-size: 0.8rem">
-        Tune SFP sweep-reclaim and pullback signal settings. Saves to live scanner config. Fast mover and top mover filters are on their own tabs.
+        Tune SFP sweep-reclaim, bearish SFP sweep-reject, and pullback signal settings. Saves to live scanner config. Fast mover and top mover filters are on their own tabs.
       </p>
       <div class="strategy-monitor" id="strategyMonitor">
-        <div><div class="stat-label">Active SFP</div><div class="stat-value" id="stratSfpActive">0</div></div>
+        <div><div class="stat-label">Active SFP (long)</div><div class="stat-value" id="stratSfpActive">0</div></div>
+        <div><div class="stat-label">Active SFP↓ (short)</div><div class="stat-value" id="stratSfpBearActive">0</div></div>
         <div><div class="stat-label">Active pullback</div><div class="stat-value" id="stratPbActive">0</div></div>
       </div>
       <form class="settings-form movers-settings" id="strategiesConfigForm">
@@ -1291,6 +1297,25 @@
         </div>
       </section>
     </div>
+    <section style="margin-top: 12px">
+      <h2>Bearish SFP / sweep-reject <span id="sfpBearTableCount"></span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sym-search-header">
+                <div class="th-search-wrap">Symbol<input type="search" id="sfpBearSearch" class="th-search" placeholder="Filter…" /></div>
+              </th>
+              <th>Close</th>
+              <th>Sweep high</th>
+              <th>Since sweep</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="sfpBearBody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
   <div id="panel-paperbot" class="tab-panel" role="tabpanel">
@@ -1300,7 +1325,8 @@
         <span id="paperBotEnabledBadge" class="paper-enabled-badge off">off</span>
       </h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
-        Simulated Binance futures LONG on <span class="status-tag sfp">SFP</span> and
+        Simulated Binance futures LONG/SHORT on <span class="status-tag sfp">SFP</span>,
+        <span class="status-tag sfp-bear">SFP↓</span>, and
         <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
       <form class="settings-form movers-settings" id="paperBotConfigForm">
@@ -1375,7 +1401,13 @@
         <div class="field" style="min-width: 200px;">
           <label>
             <input type="checkbox" id="paperBotTradeSfp" name="tradeSfpSignals" checked />
-            Trade SFP / sweep-reclaim
+            Trade bullish SFP / sweep-reclaim (LONG)
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeSfpBear" name="tradeBearishSfpSignals" checked />
+            Trade bearish SFP / sweep-reject (SHORT)
           </label>
         </div>
         <div class="field" style="min-width: 200px;">
@@ -1389,7 +1421,7 @@
             <input type="checkbox" id="paperBotExtremalSpikeGate" checked />
             30m extremal spike gate
           </label>
-          <div class="hint">Skip LONG if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average</div>
+          <div class="hint">Skip entry if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average (LONG: bearish body; SHORT: bullish body)</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
@@ -1673,7 +1705,10 @@
           <input type="number" id="liveBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradeSfp" checked /> Trade SFP</label>
+          <label><input type="checkbox" id="liveBotTradeSfp" checked /> Trade bullish SFP (LONG)</label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label><input type="checkbox" id="liveBotTradeSfpBear" checked /> Trade bearish SFP (SHORT)</label>
         </div>
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
@@ -1683,7 +1718,7 @@
             <input type="checkbox" id="liveBotExtremalSpikeGate" checked />
             30m extremal spike gate
           </label>
-          <div class="hint">Skip LONG if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average</div>
+          <div class="hint">Skip entry if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average (LONG: bearish body; SHORT: bullish body)</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label><input type="checkbox" id="liveBotAddOnEnabled" /> Single add-on on move</label>
@@ -1831,7 +1866,8 @@
       <h2>Train bot <span id="backtestStatusBadge" class="paper-enabled-badge off">idle</span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Historical simulation: uses <strong>Strategies</strong> settings for signals and
-        <strong>Paper bot</strong> rules for entries/exits. Fetches <strong>4 days</strong> of klines per USDT-M pair, walks bar-by-bar, collects all trades into one shared $1,000 account.
+        <strong>Paper bot</strong> rules for entries/exits. Fetches klines per USDT-M pair, walks bar-by-bar, collects all trades into one shared account.
+        Re-runs with the same <strong>days</strong>, <strong>symbol list</strong>, and <strong>count</strong> load from a local cache for 24h (cleared on Stop &amp; reset).
       </p>
       <div class="settings-form movers-settings" style="margin-bottom: 12px;">
         <div class="field">
@@ -2121,7 +2157,7 @@
     document.getElementById("storageCleanBtn")?.addEventListener("click", async () => {
       if (
         !confirm(
-          "Delete kline cache, exchange info cache, trade chart snapshots, backtest exports, and scanner results.json?\n\nKeeps: ui-settings, scanner-config, position comments, paper & live bot transaction history."
+          "Delete kline cache, train-bot kline cache, exchange info cache, trade chart snapshots, backtest exports, and scanner results.json?\n\nKeeps: ui-settings, scanner-config, position comments, paper & live bot transaction history."
         )
       ) {
         return;
@@ -2877,8 +2913,12 @@
         if (el) el.textContent = String(n ?? 0);
       };
       setCount("stratSfpActive", counts.sfpActive);
+      setCount("stratSfpBearActive", counts.sfpBearActive);
       setCount("stratPbActive", counts.pullbackActive);
-      const liveN = (counts.sfpActive ?? 0) + (counts.pullbackActive ?? 0);
+      const liveN =
+        (counts.sfpActive ?? 0) +
+        (counts.sfpBearActive ?? 0) +
+        (counts.pullbackActive ?? 0);
       const countEl = document.getElementById("strategiesLiveCount");
       if (countEl) countEl.textContent = liveN ? `(${liveN} live)` : "";
     }
@@ -2980,10 +3020,53 @@
       }
     }
 
+    function renderSfpBearTable(data) {
+      const items = data?.items ?? [];
+      document.getElementById("sfpBearTableCount").textContent = items.length
+        ? `(${items.length})`
+        : "";
+      const tbody = document.getElementById("sfpBearBody");
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No bearish SFP setups</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items
+        .slice(0, 80)
+        .map((r) => {
+          const tag = r.passes
+            ? '<span class="status-tag sfp-bear">SFP↓</span>'
+            : '<span class="near">setup</span>';
+          return `<tr>
+            <td class="sym">${symLink(r.symbol)}</td>
+            <td>${fmt(r.close, 6)}</td>
+            <td>${fmt(r.sweepHigh, 6)}</td>
+            <td>${r.barsSinceSweep ?? "—"}</td>
+            <td>${tag}${r.live ? ' <span class="pass">live</span>' : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    async function loadSfpBearTable() {
+      const q = document.getElementById("sfpBearSearch")?.value || "";
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      try {
+        const res = await fetch("/api/sweep-reject?" + params, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderSfpBearTable(data);
+      } catch (e) {
+        document.getElementById("sfpBearBody").innerHTML =
+          `<tr><td colspan="5" class="empty">${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
     function loadStrategiesTab() {
       if (lastScannerState) fillStrategiesForm(lastScannerState);
       loadStrategiesMonitor();
       loadSfpTable();
+      loadSfpBearTable();
       loadPullbackTable();
     }
 
@@ -3000,6 +3083,10 @@
     document.getElementById("sfpSearch").addEventListener("input", () => {
       clearTimeout(window._sfpSearchTimer);
       window._sfpSearchTimer = setTimeout(loadSfpTable, 300);
+    });
+    document.getElementById("sfpBearSearch")?.addEventListener("input", () => {
+      clearTimeout(window._sfpBearSearchTimer);
+      window._sfpBearSearchTimer = setTimeout(loadSfpBearTable, 300);
     });
     document.getElementById("pullbackSearch").addEventListener("input", () => {
       clearTimeout(window._pbSearchTimer);
@@ -3130,6 +3217,7 @@
 
     function botSignalKindTag(kind) {
       if (kind === "sfp") return '<span class="status-tag sfp">SFP</span>';
+      if (kind === "sfp_bear") return '<span class="status-tag sfp-bear">SFP↓</span>';
       if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
       return '<span class="status-tag muted">—</span>';
     }
@@ -3213,6 +3301,7 @@
         sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
+        tradeBearishSfpSignals: document.getElementById("paperBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
         extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
@@ -3287,6 +3376,8 @@
       }
       document.getElementById("paperBotTradeSfp").checked =
         cfg.tradeSfpSignals !== false;
+      document.getElementById("paperBotTradeSfpBear").checked =
+        cfg.tradeBearishSfpSignals !== false;
       document.getElementById("paperBotTradePullback").checked =
         Boolean(cfg.tradePullbackSignals);
       document.getElementById("paperBotExtremalSpikeGate").checked =
@@ -3746,6 +3837,7 @@
         sfpTakeProfitPct: Number(document.getElementById("liveBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("liveBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
+        tradeBearishSfpSignals: document.getElementById("liveBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
         extremalSpikeGateEnabled: document.getElementById("liveBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
@@ -3801,6 +3893,8 @@
           cfg.smartExitLevelsEnabled !== false ? "1" : "0.45";
       }
       document.getElementById("liveBotTradeSfp").checked = cfg.tradeSfpSignals !== false;
+      document.getElementById("liveBotTradeSfpBear").checked =
+        cfg.tradeBearishSfpSignals !== false;
       document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
       document.getElementById("liveBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
@@ -4148,10 +4242,20 @@
       if (data.signalConfig) {
         const s = data.signalConfig;
         let text =
-          `Signals: ${s.interval ?? "1m"} · SFP + pullback (from Strategies tab / saved config)`;
+          `Signals: ${s.interval ?? "1m"} · SFP + bearish SFP + pullback (from Strategies tab / saved config)`;
         const bc = (data.result || data.last)?.botConfig;
         if (bc?.extremalSpikeGateEnabled !== false) {
           text += " · 30m extremal body gate (opposing direction)";
+        }
+        const kc = data.klineCache;
+        if (kc?.valid && kc.manifest) {
+          const m = kc.manifest;
+          text += ` · Kline cache: ${m.days}d × ${m.symbolCount} symbols (${m.ageHours}h old, valid 24h)`;
+        } else if (kc?.manifest && !kc.valid) {
+          const m = kc.manifest;
+          text += kc.expired
+            ? ` · Kline cache expired (${m.days}d × ${m.symbolCount})`
+            : ` · Kline cache on disk (${m.days}d × ${m.symbolCount}) — mismatch for current run`;
         }
         hint.textContent = text;
       }
@@ -4548,6 +4652,7 @@
         <div><span>Symbols</span> <strong>${state.symbolCount ?? "—"}</strong></div>
         <div><span>Active</span> <strong class="pass">${state.activeCount ?? 0}</strong></div>
         <div><span>SFP</span> <strong>${state.sfpActiveCount ?? 0}</strong></div>
+        <div><span>SFP↓</span> <strong>${state.sfpBearActiveCount ?? 0}</strong></div>
         <div><span>Pullback</span> <strong>${state.pullbackActiveCount ?? 0}</strong></div>
         <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${prefetchLabel(state)}</strong></div>
       `;
@@ -4555,7 +4660,9 @@
       const activeHits = (state.hits ?? []).filter(
         (h) =>
           h.signalStatus === "active" &&
-          (h.signalKind === "sfp" || h.signalKind === "pullback")
+          (h.signalKind === "sfp" ||
+            h.signalKind === "sfp_bear" ||
+            h.signalKind === "pullback")
       );
       document.getElementById("hitCount").textContent = activeHits.length
         ? `(${activeHits.length} active)`
@@ -4572,12 +4679,19 @@
         tbody.innerHTML = rows
           .map((h) => {
             const isSfp = h.signalKind === "sfp";
-            const kindTag = isSfp ? "SFP" : "PULLBACK";
-            const kindCls = isSfp ? "sfp" : "pb";
+            const isSfpBear = h.signalKind === "sfp_bear";
+            const kindTag = isSfp
+              ? "SFP"
+              : isSfpBear
+                ? "SFP↓"
+                : "PULLBACK";
+            const kindCls = isSfp ? "sfp" : isSfpBear ? "sfp-bear" : "pb";
             const tag = `<span class="status-tag ${kindCls}">${kindTag}</span>`;
             const detail = isSfp
               ? `sweep ${fmt(h.sweepLow, 6)} · ${h.barsSinceSweep ?? "—"} bars`
-              : `MA ${fmt(h.ma, 6)} · ${fmt(h.distFromMaPct, 3)}%`;
+              : isSfpBear
+                ? `sweep ${fmt(h.sweepHigh, 6)} · ${h.barsSinceSweep ?? "—"} bars`
+                : `MA ${fmt(h.ma, 6)} · ${fmt(h.distFromMaPct, 3)}%`;
             return `<tr class="hit-active">
               <td><span class="time">${fmtDisplayDateTime(h.triggeredAtIso ?? h.triggeredAt)} ${TZ_LABEL}</span></td>
               <td class="sym">${tag} ${symLink(h.symbol)}</td>
