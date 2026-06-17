@@ -42,7 +42,7 @@
       gap: 12px;
     }
     .positions-panel {
-      flex: 0 1 420px;
+      flex: 0 1 480px;
       min-width: 260px;
       max-width: 100%;
       display: flex;
@@ -87,6 +87,11 @@
     .positions-table th {
       color: var(--muted);
       font-weight: 500;
+    }
+    .positions-table .positions-duration {
+      color: var(--muted);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
     .positions-table .positions-close-btn {
       padding: 2px 8px;
@@ -1433,6 +1438,53 @@
           <label for="paperBotMoveStopOffsetPct">Stop at entry ±%</label>
           <input type="number" id="paperBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
           <div class="hint">LONG: +0 = at entry, +0.5 = 0.5% below, −0.5 = 0.5% above</div>
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotEarlyAbortEnabled" />
+            Early abort (pattern break)
+          </label>
+          <div class="hint">Close young trades if reclaim fails, stalls, or dips hard</div>
+        </div>
+        <div class="field">
+          <label for="paperBotEarlyAbortBars">Early abort after bars</label>
+          <input type="number" id="paperBotEarlyAbortBars" step="1" min="1" max="120" value="8" required />
+        </div>
+        <div class="field">
+          <label for="paperBotEarlyAbortInvalidateBars">Invalidate window (bars)</label>
+          <input type="number" id="paperBotEarlyAbortInvalidateBars" step="1" min="1" max="30" value="3" required />
+        </div>
+        <div class="field">
+          <label for="paperBotEarlyAbortMinProgressPct">Min progress %</label>
+          <input type="number" id="paperBotEarlyAbortMinProgressPct" step="0.1" min="0" max="20" value="0.5" required />
+        </div>
+        <div class="field">
+          <label for="paperBotEarlyAbortMaxAdversePct">Max early adverse %</label>
+          <input type="number" id="paperBotEarlyAbortMaxAdversePct" step="0.1" min="0.1" max="20" value="0.9" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotRunnerEnabled" />
+            Runner (trail past TP)
+          </label>
+          <div class="hint">After strong move, trail SL from peak; exit on reversal</div>
+        </div>
+        <div class="field">
+          <label for="paperBotRunnerActivatePct">Runner activate at +% (0 = auto)</label>
+          <input type="number" id="paperBotRunnerActivatePct" step="0.1" min="0" max="100" value="0" required />
+          <div class="hint">0 uses ~95% of take-profit %</div>
+        </div>
+        <div class="field">
+          <label for="paperBotRunnerGivebackPct">Runner giveback / trail %</label>
+          <input type="number" id="paperBotRunnerGivebackPct" step="0.05" min="0.05" max="10" value="0.5" required />
+        </div>
+        <div class="field">
+          <label for="paperBotRunnerStructureBars">Runner structure bars</label>
+          <input type="number" id="paperBotRunnerStructureBars" step="1" min="2" max="20" value="4" required />
+        </div>
+        <div class="field">
+          <label for="paperBotRunnerReversalSignals">Reversal signals needed</label>
+          <input type="number" id="paperBotRunnerReversalSignals" step="1" min="1" max="3" value="2" required />
         </div>
         <div class="field" style="grid-column: 1 / -1; min-width: 280px;">
           <label for="paperBotBlockedSymbols">Blocked symbols (disabled pairs)</label>
@@ -3069,6 +3121,10 @@
     function paperBotExitReasonHtml(reason) {
       if (reason === "take_profit") return '<span class="pass">TP</span>';
       if (reason === "stop_loss") return '<span class="bad">SL</span>';
+      if (reason === "early_invalidation") return '<span class="bad">early inv</span>';
+      if (reason === "early_stall") return '<span class="near">stall</span>';
+      if (reason === "early_adverse") return '<span class="bad">early adv</span>';
+      if (reason === "runner_exit") return '<span class="pass">runner</span>';
       return escapeHtml(reason ?? "—");
     }
 
@@ -3168,6 +3224,24 @@
         moveStopEnabled: document.getElementById("paperBotMoveStopEnabled").checked,
         moveStopAfterMovePct: Number(document.getElementById("paperBotMoveStopAfterPct").value),
         moveStopOffsetPct: Number(document.getElementById("paperBotMoveStopOffsetPct").value),
+        earlyAbortEnabled: document.getElementById("paperBotEarlyAbortEnabled").checked,
+        earlyAbortBars: Number(document.getElementById("paperBotEarlyAbortBars").value),
+        earlyAbortInvalidateBars: Number(
+          document.getElementById("paperBotEarlyAbortInvalidateBars").value
+        ),
+        earlyAbortMinProgressPct: Number(
+          document.getElementById("paperBotEarlyAbortMinProgressPct").value
+        ),
+        earlyAbortMaxAdversePct: Number(
+          document.getElementById("paperBotEarlyAbortMaxAdversePct").value
+        ),
+        runnerEnabled: document.getElementById("paperBotRunnerEnabled").checked,
+        runnerActivatePct: Number(document.getElementById("paperBotRunnerActivatePct").value),
+        runnerGivebackPct: Number(document.getElementById("paperBotRunnerGivebackPct").value),
+        runnerStructureBars: Number(document.getElementById("paperBotRunnerStructureBars").value),
+        runnerReversalSignals: Number(
+          document.getElementById("paperBotRunnerReversalSignals").value
+        ),
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
         ),
@@ -3229,6 +3303,20 @@
         cfg.moveStopAfterMovePct ?? 5;
       document.getElementById("paperBotMoveStopOffsetPct").value =
         cfg.moveStopOffsetPct ?? 0;
+      document.getElementById("paperBotEarlyAbortEnabled").checked = Boolean(cfg.earlyAbortEnabled);
+      document.getElementById("paperBotEarlyAbortBars").value = cfg.earlyAbortBars ?? 8;
+      document.getElementById("paperBotEarlyAbortInvalidateBars").value =
+        cfg.earlyAbortInvalidateBars ?? 3;
+      document.getElementById("paperBotEarlyAbortMinProgressPct").value =
+        cfg.earlyAbortMinProgressPct ?? 0.5;
+      document.getElementById("paperBotEarlyAbortMaxAdversePct").value =
+        cfg.earlyAbortMaxAdversePct ?? 0.9;
+      document.getElementById("paperBotRunnerEnabled").checked = Boolean(cfg.runnerEnabled);
+      document.getElementById("paperBotRunnerActivatePct").value = cfg.runnerActivatePct ?? 0;
+      document.getElementById("paperBotRunnerGivebackPct").value = cfg.runnerGivebackPct ?? 0.5;
+      document.getElementById("paperBotRunnerStructureBars").value = cfg.runnerStructureBars ?? 4;
+      document.getElementById("paperBotRunnerReversalSignals").value =
+        cfg.runnerReversalSignals ?? 2;
       document.getElementById("paperBotBlockedSymbols").value = (
         cfg.blockedSymbols ?? []
       ).join("\n");
@@ -4602,9 +4690,22 @@
         return;
       }
 
+      const sortedPositions = [...data.positions].sort((a, b) => {
+        const ad =
+          a.durationSec ??
+          positionDurationSec(a.openedAt ?? a.openedAtIso) ??
+          Number.POSITIVE_INFINITY;
+        const bd =
+          b.durationSec ??
+          positionDurationSec(b.openedAt ?? b.openedAtIso) ??
+          Number.POSITIVE_INFINITY;
+        if (ad !== bd) return ad - bd;
+        return String(a.symbol ?? "").localeCompare(String(b.symbol ?? ""));
+      });
+
       body.innerHTML = `<div class="table-wrap"><table class="positions-table">
-        <thead><tr><th>Pair</th><th>SL/TP</th><th>PNL</th><th>ROI</th><th></th></tr></thead>
-        <tbody>${data.positions
+        <thead><tr><th>Pair</th><th>SL/TP</th><th>Duration</th><th>PNL</th><th>ROI</th><th></th></tr></thead>
+        <tbody>${sortedPositions
           .map((p) => {
             const dirCls =
               p.direction === "LONG" ? "dir-long" : "dir-short";
@@ -4613,6 +4714,10 @@
             const roiCls =
               p.roiPct == null ? "" : p.roiPct >= 0 ? "pnl-pos" : "pnl-neg";
             const dirTri = p.direction === "LONG" ? "▲" : "▼";
+            const duration =
+              p.durationSec != null
+                ? fmtDuration(p.durationSec)
+                : fmtPositionDuration(p.openedAt ?? p.openedAtIso);
             const closeBtn = data.enabled
               ? `<button type="button" class="btn secondary sm positions-close-btn" data-symbol="${escapeHtml(p.symbol)}" title="Close position on Binance">Close</button>`
               : "";
@@ -4620,6 +4725,7 @@
             return `<tr>
               <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(p.symbol)}</td>
               <td>${exits}</td>
+              <td class="positions-duration">${escapeHtml(duration)}</td>
               <td class="${pnlCls}">${fmtPnl(p.pnl)}</td>
               <td class="${roiCls}">${fmtPct(p.roiPct, 3)}</td>
               <td>${closeBtn}</td>
