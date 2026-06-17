@@ -58,6 +58,7 @@ const {
   runBacktestSnapshotJob,
   loadLastBacktestResult,
   resetBacktestData,
+  clearBacktestRunArtifacts,
   resolveBacktestSymbols,
   DEFAULT_DAYS,
   RESULT_FILE,
@@ -2662,9 +2663,8 @@ async function main() {
           if (backtestJob.running) {
             throw new Error("Backtest already running");
           }
-          if (backtestSnapshotJob.running) {
-            cancelBacktestSnapshotJob();
-          }
+          cancelBacktestSnapshotJob();
+          clearBacktestRunArtifacts();
           const days = Math.max(
             1,
             Math.min(14, Number(body?.days) || DEFAULT_DAYS)
@@ -2710,7 +2710,7 @@ async function main() {
               symbolsUnknown: unknown,
             },
           })
-            .then(({ result, snapshotWork }) => {
+            .then(({ result }) => {
               if (backtestJob.cancelled) return;
               backtestJob.running = false;
               backtestJob.result = result;
@@ -2720,14 +2720,11 @@ async function main() {
                 total: symList.length,
                 ok: result.symbolsProcessed ?? symList.length,
                 skip: result.symbolsSkipped ?? 0,
-                message: snapshotWork
-                  ? "Simulation complete — generating previews in background"
-                  : "Complete",
+                message: "Complete",
               });
               console.error(
                 `Paper bot backtest done: ${result.summary.closedCount} trades · PnL ${result.summary.totalPnl}`
               );
-              if (snapshotWork) startBacktestSnapshotJob(snapshotWork);
             })
             .catch((e) => {
               if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {
