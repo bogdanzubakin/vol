@@ -52,10 +52,11 @@ const {
   saveTradeSnapshot,
   saveOpenPositionSnapshot,
   cleanOldSnapshots,
+  snapshotExists,
+  sanitizeSnapshotId,
 } = require("./lib/paper-bot-snapshot");
 const {
   runPaperBotBacktest,
-  runBacktestSnapshotJob,
   loadLastBacktestResult,
   resetBacktestData,
   clearBacktestRunArtifacts,
@@ -160,6 +161,8 @@ let backtestJob = {
   error: null,
   startedAt: null,
   lastProgressAt: null,
+  barCache: null,
+  chartCfg: null,
 };
 
 let backtestSnapshotJob = {
@@ -180,92 +183,12 @@ function freshBacktestSnapshotJobState() {
   };
 }
 
-function touchBacktestSnapshotProgress(p) {
-  backtestSnapshotJob.progress = p;
-  backtestSnapshotJob.lastProgressAt = Date.now();
-}
-
 function cancelBacktestSnapshotJob() {
   backtestSnapshotJob.cancelled = true;
   backtestSnapshotJob.running = false;
   backtestSnapshotJob.progress = null;
   backtestSnapshotJob.error = null;
   backtestSnapshotJob.lastProgressAt = null;
-}
-
-function startBacktestSnapshotJob(snapshotWork) {
-  if (!snapshotWork?.trades?.length) return;
-
-  cancelBacktestSnapshotJob();
-  backtestSnapshotJob.running = true;
-  backtestSnapshotJob.cancelled = false;
-  backtestSnapshotJob.error = null;
-  touchBacktestSnapshotProgress({
-    phase: "snapshots",
-    done: 0,
-    total: snapshotWork.trades.length,
-    ok: 0,
-    failed: 0,
-    message: `Queued ${snapshotWork.trades.length} trade previews…`,
-  });
-
-  let snapshotSaveTimer = null;
-
-  const queueSnapshotSave = () => {
-    clearTimeout(snapshotSaveTimer);
-    snapshotSaveTimer = setTimeout(() => {
-      if (backtestJob.result) writeJsonFile(RESULT_FILE(), backtestJob.result);
-    }, 1500);
-  };
-
-  const flushSnapshotSave = () => {
-    clearTimeout(snapshotSaveTimer);
-    if (backtestJob.result) writeJsonFile(RESULT_FILE(), backtestJob.result);
-  };
-
-  runBacktestSnapshotJob({
-    ...snapshotWork,
-    shouldAbort: () => backtestSnapshotJob.cancelled || backtestJob.cancelled,
-    onProgress: (p) => touchBacktestSnapshotProgress(p),
-    onTradeSnapshot: (trade, snapshotId) => {
-      if (backtestJob.result?.closedTrades) {
-        const row = backtestJob.result.closedTrades.find((t) => t.id === trade.id);
-        if (row) row.snapshotId = snapshotId;
-      }
-      queueSnapshotSave();
-    },
-  })
-    .then((stats) => {
-      if (backtestSnapshotJob.cancelled || backtestJob.cancelled) return;
-      backtestSnapshotJob.running = false;
-      flushSnapshotSave();
-      if (backtestJob.result) {
-        backtestJob.result.snapshotsPending = false;
-        backtestJob.result.snapshotsGeneratedAt = formatIsoUtcPlus3(Date.now());
-        backtestJob.result.snapshotStats = stats;
-        writeJsonFile(RESULT_FILE(), backtestJob.result);
-      }
-      touchBacktestSnapshotProgress({
-        phase: "snapshots_done",
-        done: stats.ok + stats.failed,
-        total: stats.ok + stats.failed,
-        ok: stats.ok,
-        failed: stats.failed,
-        message: `Previews ready · ${stats.ok} ok · ${stats.failed} skipped`,
-      });
-      console.error(
-        `Backtest previews done: ${stats.ok} ok · ${stats.failed} skipped`
-      );
-    })
-    .catch((e) => {
-      if (backtestSnapshotJob.cancelled || backtestJob.cancelled) {
-        backtestSnapshotJob.running = false;
-        return;
-      }
-      backtestSnapshotJob.running = false;
-      backtestSnapshotJob.error = e.message || String(e);
-      console.error(`Backtest previews failed: ${backtestSnapshotJob.error}`);
-    });
 }
 
 function freshBacktestJobState() {
@@ -295,6 +218,57 @@ function reconcileBacktestJob() {
     backtestJob.error ||
     `Backtest stalled (no progress for ${mins} min). Use a symbol list, reduce pairs, or wait for rate-limit cooldown and retry.`;
   console.error(backtestJob.error);
+}
+
+async function generateBacktestTradeSnapshot(tradeId) {
+  const id = String(tradeId || "").trim();
+  if (!id) throw new Error("trade id required");
+
+  const snapshotId = sanitizeSnapshotId(id);
+  const result = backtestJob.result || loadLastBacktestResult();
+  const trade = result?.closedTrades?.find((t) => t.id === id);
+
+  if (snapshotExists(snapshotId, "backtest")) {
+    return { snapshotId, symbol: trade?.symbol, cached: true };
+  }
+  if (!result?.closedTrades?.length) {
+    throw new Error("No backtest results — run a backtest first");
+  }
+  if (!trade) throw new Error("Trade not found in backtest results");
+
+  const chartCfg = backtestJob.chartCfg ?? {
+    interval: cfg.interval,
+    corridorDays: cfg.corridorDays,
+    corridorExcludeMinutes: cfg.corridorExcludeMinutes,
+    signalCandles: cfg.signalCandles,
+  };
+
+  let bars = backtestJob.barCache?.get(trade.symbol);
+  if (!bars?.length) {
+    const days = result.runMeta?.historyDays ?? DEFAULT_DAYS;
+    const signalCfg = pickLiveConfig(cfg);
+    const barMs = signalCfg.signalBarMs ?? cfg.signalBarMs ?? 60_000;
+    const barCount = Math.max(
+      Math.ceil((days * 86_400_000) / barMs),
+      minHistoryBars(signalCfg) + 10
+    );
+    bars = await fetchKlinesForBacktest(trade.symbol, barCount);
+  }
+  if (!bars?.length) throw new Error(`No price bars for ${trade.symbol}`);
+
+  const { snapshotId: savedId } = await saveTradeSnapshot({
+    trade,
+    bars,
+    snapshotKind: "backtest",
+    skipCleanup: true,
+    ...chartCfg,
+  });
+
+  trade.snapshotId = savedId;
+  writeJsonFile(RESULT_FILE(), result);
+  if (!backtestJob.result) backtestJob.result = result;
+
+  return { snapshotId: savedId, symbol: trade.symbol, cached: false };
 }
 let klineCache = null;
 let signalKlineCache = null;
@@ -2613,6 +2587,7 @@ async function main() {
         resetLiveBotHistory: () => liveBot.resetHistory(),
         generatePaperBotOpenSnapshot,
         generateLiveBotOpenSnapshot,
+        generateBacktestTradeSnapshot,
         getBacktestStatus: () => {
           reconcileBacktestJob();
           return {
@@ -2642,6 +2617,8 @@ async function main() {
           backtestJob.progress = null;
           backtestJob.startedAt = null;
           backtestJob.lastProgressAt = null;
+          backtestJob.barCache = null;
+          backtestJob.chartCfg = null;
           resetBacktestData();
           if (wasRunning || wasSnapshots) {
             console.error("Paper bot backtest stopped and reset");
@@ -2680,6 +2657,8 @@ async function main() {
           backtestJob.error = null;
           backtestJob.startedAt = startedAt;
           backtestJob.lastProgressAt = startedAt;
+          backtestJob.barCache = null;
+          backtestJob.chartCfg = null;
           backtestJob.progress = {
             phase: "starting",
             done: 0,
@@ -2710,24 +2689,23 @@ async function main() {
               symbolsUnknown: unknown,
             },
           })
-            .then(({ result, snapshotWork }) => {
+            .then(({ result, barCache, chartCfg }) => {
               if (backtestJob.cancelled) return;
               backtestJob.running = false;
               backtestJob.result = result;
+              backtestJob.barCache = barCache ?? null;
+              backtestJob.chartCfg = chartCfg ?? null;
               touchBacktestProgress({
                 phase: "done",
                 done: symList.length,
                 total: symList.length,
                 ok: result.symbolsProcessed ?? symList.length,
                 skip: result.symbolsSkipped ?? 0,
-                message: snapshotWork
-                  ? "Simulation complete — generating previews in background"
-                  : "Complete",
+                message: "Complete",
               });
               console.error(
                 `Paper bot backtest done: ${result.summary.closedCount} trades · PnL ${result.summary.totalPnl}`
               );
-              if (snapshotWork) startBacktestSnapshotJob(snapshotWork);
             })
             .catch((e) => {
               if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {
