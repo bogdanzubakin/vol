@@ -463,6 +463,58 @@
       gap: 10px 16px;
       padding-top: 4px;
     }
+    .bot-settings-form {
+      padding: 0 12px 12px;
+    }
+    .settings-pane {
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .settings-pane summary {
+      padding: 12px 14px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.82rem;
+      color: var(--text);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .settings-pane summary::-webkit-details-marker {
+      display: none;
+    }
+    .settings-pane summary::after {
+      content: "▾";
+      font-size: 0.75rem;
+      color: var(--muted);
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    .settings-pane[open] summary::after {
+      transform: rotate(180deg);
+    }
+    .settings-pane-body .settings-form {
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .bot-settings-actions {
+      margin-top: 4px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+    }
     .btn {
       background: var(--blue);
       color: #0f172a;
@@ -711,8 +763,25 @@
         grid-template-columns: 1fr;
         padding: 12px;
       }
+      .settings-pane-body .settings-form {
+        padding: 12px;
+      }
       .settings-form .field[style*="min-width"] {
         min-width: 0 !important;
+      }
+      .bot-settings-form {
+        padding: 0 8px 10px;
+      }
+      .settings-pane summary {
+        padding: 14px 16px;
+        font-size: 0.88rem;
+        min-height: 44px;
+      }
+      .bot-settings-actions {
+        padding: 14px 16px;
+      }
+      .bot-settings-actions .btn {
+        width: 100%;
       }
       .paper-summary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1329,7 +1398,11 @@
         <span class="status-tag sfp-bear">SFP↓</span>, and
         <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
-      <form class="settings-form movers-settings" id="paperBotConfigForm">
+      <form class="bot-settings-form" id="paperBotConfigForm">
+        <details class="settings-pane">
+          <summary>General</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="min-width: 200px;">
           <label>
             <input type="checkbox" id="paperBotEnabled" name="enabled" />
@@ -1351,6 +1424,13 @@
           <input type="number" id="paperBotLeverage" step="1" min="1" max="125" value="1" required />
           <div class="hint">Isolated margin simulation — notional = margin × leverage</div>
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Stop loss &amp; take profit</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field">
           <label for="paperBotStopPct">Stop loss below corridor high %</label>
           <input type="number" id="paperBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
@@ -1398,6 +1478,13 @@
           <input type="number" id="paperBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
           <div class="hint">Lower TP for sweep-reclaim entries (uses main TP if higher)</div>
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Signal types</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="min-width: 200px;">
           <label>
             <input type="checkbox" id="paperBotTradeSfp" name="tradeSfpSignals" checked />
@@ -1423,6 +1510,13 @@
           </label>
           <div class="hint">Skip entry if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average (LONG: bearish body; SHORT: bullish body)</div>
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Add-on &amp; move stop</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotAddOnEnabled" name="addOnEnabled" />
@@ -1471,6 +1565,13 @@
           <input type="number" id="paperBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
           <div class="hint">LONG: +0 = at entry, +0.5 = 0.5% below, −0.5 = 0.5% above</div>
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Early abort &amp; runner</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotEarlyAbortEnabled" />
@@ -1518,6 +1619,13 @@
           <label for="paperBotRunnerReversalSignals">Reversal signals needed</label>
           <input type="number" id="paperBotRunnerReversalSignals" step="1" min="1" max="3" value="2" required />
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Blocklist &amp; drawdown</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="grid-column: 1 / -1; min-width: 280px;">
           <label for="paperBotBlockedSymbols">Blocked symbols (disabled pairs)</label>
           <textarea
@@ -1554,7 +1662,10 @@
           <input type="number" id="paperBotDrawdownStopPct" step="0.5" min="1" max="100" value="4" required />
           <div class="hint">e.g. 10 = disable after −10% from baseline equity</div>
         </div>
-        <div class="settings-actions">
+            </div>
+          </div>
+        </details>
+        <div class="bot-settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
           <button type="button" class="btn secondary sm" id="paperBotRefresh">Refresh</button>
           <button type="button" class="btn secondary sm" id="paperBotReset">Reset account</button>
@@ -1648,7 +1759,11 @@
         <button type="button" class="btn secondary sm" id="liveBotCloseAll">Close all</button>
         <span class="config-msg" id="liveBotMsg"></span>
       </div>
-      <form class="settings-form movers-settings" id="liveBotConfigForm">
+      <form class="bot-settings-form" id="liveBotConfigForm">
+        <details class="settings-pane">
+          <summary>General</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field">
           <label for="liveBotLeverage">Leverage (isolated)</label>
           <input type="number" id="liveBotLeverage" step="1" min="1" max="125" value="1" required />
@@ -1663,6 +1778,13 @@
           <label for="liveBotMaxOpen">Max open positions</label>
           <input type="number" id="liveBotMaxOpen" step="1" min="1" max="100" value="4" required />
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Stop loss &amp; take profit</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field">
           <label for="liveBotStopPct">Stop below corridor high %</label>
           <input type="number" id="liveBotStopPct" step="0.1" min="0.1" max="50" value="2" required />
@@ -1704,6 +1826,13 @@
           <label for="liveBotSfpTp">SFP take profit cap %</label>
           <input type="number" id="liveBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Signal types</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradeSfp" checked /> Trade bullish SFP (LONG)</label>
         </div>
@@ -1720,6 +1849,13 @@
           </label>
           <div class="hint">Skip entry if a large opposing body (open→close, no wicks) in last 30m ≥ Exclude mult × average (LONG: bearish body; SHORT: bullish body)</div>
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Add-on &amp; move stop</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="min-width: 220px;">
           <label><input type="checkbox" id="liveBotAddOnEnabled" /> Single add-on on move</label>
           <div class="hint">Once per position: fixed margin + leverage boost after +% from entry</div>
@@ -1757,6 +1893,13 @@
           <label for="liveBotMoveStopOffsetPct">Stop at entry ±%</label>
           <input type="number" id="liveBotMoveStopOffsetPct" step="0.01" min="-20" max="20" value="0" required />
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Blocklist &amp; drawdown</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field" style="grid-column: 1 / -1; min-width: 280px;">
           <label for="liveBotBlockedSymbols">Blocked symbols (disabled pairs)</label>
           <textarea
@@ -1792,7 +1935,10 @@
           <label for="liveBotDrawdownStopPct">Max deposit loss %</label>
           <input type="number" id="liveBotDrawdownStopPct" step="0.5" min="1" max="100" value="4" required />
         </div>
-        <div class="settings-actions">
+            </div>
+          </div>
+        </details>
+        <div class="bot-settings-actions">
           <button type="submit" class="btn sm" id="liveBotApply">Save settings</button>
           <button type="button" class="btn secondary sm" id="liveBotRefresh">Refresh</button>
           <button type="button" class="btn secondary sm" id="liveBotResetHistory">Reset history</button>
@@ -1869,7 +2015,10 @@
         <strong>Paper bot</strong> rules for entries/exits. Fetches klines per USDT-M pair, walks bar-by-bar, collects all trades into one shared account.
         Re-runs with the same <strong>days</strong>, <strong>symbol list</strong>, and <strong>count</strong> load from a local cache for 24h (cleared on Stop &amp; reset).
       </p>
-      <div class="settings-form movers-settings" style="margin-bottom: 12px;">
+      <details class="settings-pane bot-settings-form">
+        <summary>Backtest options</summary>
+        <div class="settings-pane-body">
+      <div class="settings-form movers-settings" style="margin-bottom: 0;">
         <div class="field">
           <label for="backtestDays">History days</label>
           <input type="number" id="backtestDays" min="1" max="14" value="4" step="1" />
@@ -1884,15 +2033,17 @@
           <textarea id="backtestSymbolList" rows="4" placeholder="BTCUSDT, ETHUSDT&#10;SOL&#10;DOGEUSDT" spellcheck="false" style="width:100%;max-width:420px;font-family:ui-monospace,monospace;font-size:0.82rem;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:inherit;resize:vertical;"></textarea>
           <div class="hint">One per line or comma-separated. Short names like <code>BTC</code> become <code>BTCUSDT</code>. Only pairs from the scanner universe are used.</div>
         </div>
-        <div class="settings-actions">
-          <button type="button" class="btn sm" id="backtestStart">Run backtest</button>
-          <button type="button" class="btn secondary sm" id="backtestRefresh">Refresh status</button>
-          <button type="button" class="btn secondary sm" id="backtestStopReset">Stop &amp; reset</button>
-          <button type="button" class="btn secondary sm" id="backtestExport">Export optimization data</button>
-          <span class="config-msg" id="backtestMsg"></span>
-          <div class="hint" style="grid-column: 1 / -1; margin-top: 4px;">
-            Export downloads a JSON bundle (v2): enriched trades, equity curve, event log, cross-tabs &amp; histograms, plus settings and source code — re-run backtest after updating to capture new fields.
-          </div>
+      </div>
+        </div>
+      </details>
+      <div class="bot-settings-actions" style="margin: 0 12px 12px;">
+        <button type="button" class="btn sm" id="backtestStart">Run backtest</button>
+        <button type="button" class="btn secondary sm" id="backtestRefresh">Refresh status</button>
+        <button type="button" class="btn secondary sm" id="backtestStopReset">Stop &amp; reset</button>
+        <button type="button" class="btn secondary sm" id="backtestExport">Export optimization data</button>
+        <span class="config-msg" id="backtestMsg"></span>
+        <div class="hint" style="flex: 1 1 100%; margin-top: 4px;">
+          Export downloads a JSON bundle (v2): enriched trades, equity curve, event log, cross-tabs &amp; histograms, plus settings and source code — re-run backtest after updating to capture new fields.
         </div>
       </div>
       <div id="backtestProgress" class="paper-summary" style="display: none; margin-bottom: 12px;">
