@@ -1278,14 +1278,20 @@
     <section>
       <h2>Strategy monitor <span id="strategiesLiveCount"></span></h2>
       <p class="sub" style="margin: 12px 0 8px 12px; font-size: 0.8rem">
-        Tune SFP sweep-reclaim, bearish SFP sweep-reject, and pullback signal settings. Saves to live scanner config. Fast mover and top mover filters are on their own tabs.
+        Tune SFP, bearish SFP, pullback, and level-break scanner detection. Level-break bot toggles are on the Paper bot tab. Saves to live scanner config.
       </p>
       <div class="strategy-monitor" id="strategyMonitor">
         <div><div class="stat-label">Active SFP (long)</div><div class="stat-value" id="stratSfpActive">0</div></div>
         <div><div class="stat-label">Active SFP↓ (short)</div><div class="stat-value" id="stratSfpBearActive">0</div></div>
         <div><div class="stat-label">Active pullback</div><div class="stat-value" id="stratPbActive">0</div></div>
+        <div><div class="stat-label">Active LVL↑ (long)</div><div class="stat-value" id="stratLevelBreakActive">0</div></div>
+        <div><div class="stat-label">Active LVL↓ (short)</div><div class="stat-value" id="stratLevelBreakBearActive">0</div></div>
       </div>
       <form class="settings-form movers-settings" id="strategiesConfigForm">
+        <details class="settings-pane">
+          <summary>SFP / sweep-reclaim</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field">
           <label for="stratSfpRangeBars">SFP range bars</label>
           <input type="number" id="stratSfpRangeBars" step="1" min="10" max="500" value="30" required />
@@ -1302,6 +1308,13 @@
           <label for="stratSfpMinSweepPct">SFP min sweep % below low</label>
           <input type="number" id="stratSfpMinSweepPct" step="0.01" min="0" max="5" value="0.05" required />
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>Fast-mover pullback</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
         <div class="field">
           <label for="stratPullbackMaBars">Pullback MA bars</label>
           <input type="number" id="stratPullbackMaBars" step="1" min="3" max="60" value="7" required />
@@ -1318,16 +1331,26 @@
           <label for="stratPullbackMaxAboveMaPct">Max % above MA at entry</label>
           <input type="number" id="stratPullbackMaxAboveMaPct" step="0.1" min="0.1" max="20" value="1.5" required />
         </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane" open>
+          <summary>Level break detection</summary>
+          <div class="settings-pane-body">
+            <p class="sub" style="margin: 0 0 8px 0; font-size: 0.8rem">
+              Same fields as Paper bot → Level break. Changes here or on Paper bot save update the scanner.
+            </p>
+            <div class="settings-form movers-settings">
         <div class="field">
-          <label for="stratLevelBreakPivotBars">Level break pivot bars</label>
+          <label for="stratLevelBreakPivotBars">Pivot bars (fractal half-width)</label>
           <input type="number" id="stratLevelBreakPivotBars" step="1" min="1" max="12" value="3" required />
         </div>
         <div class="field">
-          <label for="stratLevelBreakLookbackBars">Level break lookback bars</label>
+          <label for="stratLevelBreakLookbackBars">Lookback bars</label>
           <input type="number" id="stratLevelBreakLookbackBars" step="1" min="20" max="300" value="80" required />
         </div>
         <div class="field">
-          <label for="stratLevelBreakMinTouches">Level break min touches</label>
+          <label for="stratLevelBreakMinTouches">Min touches at level</label>
           <input type="number" id="stratLevelBreakMinTouches" step="1" min="1" max="20" value="2" required />
         </div>
         <div class="field">
@@ -1346,6 +1369,9 @@
           <label for="stratLevelBreakApproachBars">Approach lookback bars</label>
           <input type="number" id="stratLevelBreakApproachBars" step="1" min="3" max="60" value="12" required />
         </div>
+            </div>
+          </div>
+        </details>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="strategiesApply">Apply</button>
           <button type="button" class="btn secondary sm" id="strategiesRefresh">Refresh tables</button>
@@ -1423,8 +1449,10 @@
       </h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Simulated Binance futures LONG/SHORT on <span class="status-tag sfp">SFP</span>,
-        <span class="status-tag sfp-bear">SFP↓</span>, and
-        <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
+        <span class="status-tag sfp-bear">SFP↓</span>,
+        <span class="status-tag pb">PULLBACK</span>,
+        <span class="status-tag sfp">LVL↑</span>, and
+        <span class="status-tag sfp-bear">LVL↓</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
       <form class="bot-settings-form" id="paperBotConfigForm">
         <details class="settings-pane">
@@ -1455,6 +1483,66 @@
             </div>
           </div>
         </details>
+        <details class="settings-pane" open>
+          <summary>Level break</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <p class="sub" style="margin: 0 0 8px 0; font-size: 0.8rem">
+          Strong pivot support/resistance with multiple touches — enter after confirmed break (also updates scanner detection on save).
+        </p>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeLevelBreak" name="tradeLevelBreakSignals" checked />
+            Trade level break (LONG)
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeLevelBreakBear" name="tradeLevelBreakBearSignals" checked />
+            Trade level break bear (SHORT)
+          </label>
+        </div>
+        <div class="field">
+          <label for="paperBotMaxLevelBreakCorridor">Max corridor width %</label>
+          <input type="number" id="paperBotMaxLevelBreakCorridor" step="1" min="0" max="100" value="20" required />
+          <div class="hint">0 = off. Skip when local range is too wide/choppy</div>
+        </div>
+        <div class="field">
+          <label for="paperBotLevelBreakTp">Level break take profit cap %</label>
+          <input type="number" id="paperBotLevelBreakTp" step="0.1" min="0" max="200" value="0" required />
+          <div class="hint">0 = use main take profit %. Smart exits cap TP when set</div>
+        </div>
+        <div class="field">
+          <label for="paperLbPivotBars">Pivot bars (fractal half-width)</label>
+          <input type="number" id="paperLbPivotBars" step="1" min="1" max="12" value="3" required />
+        </div>
+        <div class="field">
+          <label for="paperLbLookbackBars">Lookback bars</label>
+          <input type="number" id="paperLbLookbackBars" step="1" min="20" max="300" value="80" required />
+        </div>
+        <div class="field">
+          <label for="paperLbMinTouches">Min touches at level</label>
+          <input type="number" id="paperLbMinTouches" step="1" min="1" max="20" value="2" required />
+        </div>
+        <div class="field">
+          <label for="paperLbTouchPct">Touch tolerance %</label>
+          <input type="number" id="paperLbTouchPct" step="0.05" min="0.05" max="2" value="0.25" required />
+        </div>
+        <div class="field">
+          <label for="paperLbMinPct">Min break beyond level %</label>
+          <input type="number" id="paperLbMinPct" step="0.01" min="0.01" max="2" value="0.08" required />
+        </div>
+        <div class="field">
+          <label for="paperLbApproachPct">Approach within % of level</label>
+          <input type="number" id="paperLbApproachPct" step="0.05" min="0.05" max="3" value="0.4" required />
+        </div>
+        <div class="field">
+          <label for="paperLbApproachBars">Approach lookback bars</label>
+          <input type="number" id="paperLbApproachBars" step="1" min="3" max="60" value="12" required />
+        </div>
+            </div>
+          </div>
+        </details>
         <details class="settings-pane">
           <summary>Stop loss &amp; take profit</summary>
           <div class="settings-pane-body">
@@ -1472,12 +1560,12 @@
         <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
           <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="3" required />
-          <div class="hint">Default: entry × (1 + %). Smart mode uses this as max cap for SFP/pullback</div>
+          <div class="hint">Default: entry × (1 + %). Smart mode uses this as max cap for SFP, pullback &amp; level break</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotSmartExits" name="smartExitLevelsEnabled" checked />
-            Smart SL/TP (SFP &amp; pullback)
+            Smart SL/TP (SFP, pullback &amp; level break)
           </label>
           <div class="hint">Off = range-high SL + fixed TP %. On = sweep/MA-based exits</div>
         </div>
@@ -1500,11 +1588,6 @@
           <label for="paperBotMaxPullbackCorridor">Max pullback corridor width %</label>
           <input type="number" id="paperBotMaxPullbackCorridor" step="1" min="0" max="100" value="20" required />
           <div class="hint">0 = off. Skip fast-mover pullback when local range is too wide</div>
-        </div>
-        <div class="field">
-          <label for="paperBotMaxLevelBreakCorridor">Max level-break corridor width %</label>
-          <input type="number" id="paperBotMaxLevelBreakCorridor" step="1" min="0" max="100" value="20" required />
-          <div class="hint">0 = off. Skip level-break when local range is too wide</div>
         </div>
         <div class="field">
           <label for="paperBotSfpTp">SFP take profit cap %</label>
@@ -1534,18 +1617,6 @@
           <label>
             <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
             Trade fast-mover pullback
-          </label>
-        </div>
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="paperBotTradeLevelBreak" name="tradeLevelBreakSignals" checked />
-            Trade level break (LONG)
-          </label>
-        </div>
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="paperBotTradeLevelBreakBear" name="tradeLevelBreakBearSignals" checked />
-            Trade level break bear (SHORT)
           </label>
         </div>
         <div class="field" style="min-width: 260px;">
@@ -3119,6 +3190,41 @@
       levelBreakApproachBars: "stratLevelBreakApproachBars",
     };
 
+    const PAPER_LEVEL_BREAK_FORM_MAP = {
+      levelBreakPivotBars: "paperLbPivotBars",
+      levelBreakLookbackBars: "paperLbLookbackBars",
+      levelBreakMinTouches: "paperLbMinTouches",
+      levelBreakTouchPct: "paperLbTouchPct",
+      levelBreakMinPct: "paperLbMinPct",
+      levelBreakApproachPct: "paperLbApproachPct",
+      levelBreakApproachBars: "paperLbApproachBars",
+    };
+
+    function fillLevelBreakDetectionForm(config) {
+      if (!config) return;
+      for (const k of STRATEGY_CONFIG_KEYS) {
+        if (!k.startsWith("levelBreak")) continue;
+        const v = config[k];
+        if (v == null) continue;
+        const stratId = STRATEGY_FORM_MAP[k];
+        const paperId = PAPER_LEVEL_BREAK_FORM_MAP[k];
+        const stratEl = stratId ? document.getElementById(stratId) : null;
+        const paperEl = paperId ? document.getElementById(paperId) : null;
+        if (stratEl) stratEl.value = v;
+        if (paperEl) paperEl.value = v;
+      }
+    }
+
+    function levelBreakScannerPatchFromPaperForm() {
+      const patch = {};
+      for (const [key, elId] of Object.entries(PAPER_LEVEL_BREAK_FORM_MAP)) {
+        const el = document.getElementById(elId);
+        if (!el) continue;
+        patch[key] = Number(el.value);
+      }
+      return patch;
+    }
+
     function strategyPatchFromForm() {
       const patch = {};
       for (const k of STRATEGY_CONFIG_KEYS) {
@@ -3139,6 +3245,7 @@
         if (el.type === "checkbox") el.checked = Boolean(state[k]);
         else el.value = state[k];
       }
+      fillLevelBreakDetectionForm(state);
     }
 
     function setStrategiesMsg(text, ok) {
@@ -3157,10 +3264,14 @@
       setCount("stratSfpActive", counts.sfpActive);
       setCount("stratSfpBearActive", counts.sfpBearActive);
       setCount("stratPbActive", counts.pullbackActive);
+      setCount("stratLevelBreakActive", counts.levelBreakActive);
+      setCount("stratLevelBreakBearActive", counts.levelBreakBearActive);
       const liveN =
         (counts.sfpActive ?? 0) +
         (counts.sfpBearActive ?? 0) +
-        (counts.pullbackActive ?? 0);
+        (counts.pullbackActive ?? 0) +
+        (counts.levelBreakActive ?? 0) +
+        (counts.levelBreakBearActive ?? 0);
       const countEl = document.getElementById("strategiesLiveCount");
       if (countEl) countEl.textContent = liveN ? `(${liveN} live)` : "";
     }
@@ -3227,6 +3338,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderStrategyMonitor(data);
+        fillLevelBreakDetectionForm(data.config);
       } catch {
         /* optional */
       }
@@ -3546,6 +3658,9 @@
           document.getElementById("paperBotMaxLevelBreakCorridor").value
         ),
         sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
+        levelBreakTakeProfitPct: Number(
+          document.getElementById("paperBotLevelBreakTp").value
+        ),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradeBearishSfpSignals: document.getElementById("paperBotTradeSfpBear").checked,
@@ -3644,6 +3759,8 @@
       document.getElementById("paperBotMaxLevelBreakCorridor").value =
         cfg.maxLevelBreakCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("paperBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
+      const lbTpEl = document.getElementById("paperBotLevelBreakTp");
+      if (lbTpEl) lbTpEl.value = cfg.levelBreakTakeProfitPct ?? 0;
       document.getElementById("paperBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
       const paperTpMinField = document.getElementById("paperBotTpMinField");
@@ -4052,6 +4169,15 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPaperBot(data, syncForm);
+        if (syncForm) {
+          try {
+            const sres = await fetch("/api/strategies", { cache: "no-store" });
+            const sdata = await sres.json();
+            if (sres.ok) fillLevelBreakDetectionForm(sdata.config);
+          } catch {
+            /* optional */
+          }
+        }
         setPaperBotMsg(
           `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`,
           true
@@ -4071,8 +4197,9 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
+        await applyLivePatch(levelBreakScannerPatchFromPaperForm()).catch(() => {});
         renderPaperBot(data, false);
-        setPaperBotMsg("Settings saved", true);
+        setPaperBotMsg("Settings saved (incl. level-break scanner)", true);
       } catch (err) {
         setPaperBotMsg(err.message, false);
       }
