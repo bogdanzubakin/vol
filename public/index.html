@@ -1667,6 +1667,7 @@
         </details>
         <div class="bot-settings-actions">
           <button type="submit" class="btn sm" id="paperBotApply">Save settings</button>
+          <button type="button" class="btn secondary sm" id="paperBotCopyToLive">Copy to live bot</button>
           <button type="button" class="btn secondary sm" id="paperBotRefresh">Refresh</button>
           <button type="button" class="btn secondary sm" id="paperBotReset">Reset account</button>
           <span class="config-msg" id="paperBotMsg"></span>
@@ -3524,6 +3525,32 @@
       };
     }
 
+    /** Paper-only fields omitted when syncing to live bot. */
+    function paperBotConfigForLiveBot() {
+      const { enabled, initialDeposit, ...shared } = paperBotConfigFromForm();
+      return shared;
+    }
+
+    async function copyPaperBotConfigToLive() {
+      const maxOpen =
+        Number(document.getElementById("liveBotMaxOpen").value) || 4;
+      const patch = {
+        ...paperBotConfigForLiveBot(),
+        maxOpenPositions: maxOpen,
+      };
+      fillLiveBotForm(patch);
+      const res = await fetch("/api/live-bot/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patch }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      renderLiveBot(data, true);
+      setPaperBotMsg("Copied to live bot and saved", true);
+      setLiveBotMsg("Updated from paper bot", true);
+    }
+
     function updatePaperBotBadges(cfg) {
       if (!cfg) return;
       const badge = document.getElementById("paperBotEnabledBadge");
@@ -3980,6 +4007,14 @@
     });
 
     document.getElementById("paperBotRefresh").addEventListener("click", loadPaperBot);
+
+    document.getElementById("paperBotCopyToLive")?.addEventListener("click", async () => {
+      try {
+        await copyPaperBotConfigToLive();
+      } catch (err) {
+        setPaperBotMsg(err.message, false);
+      }
+    });
 
     document.getElementById("paperBotFillWorstPairs")?.addEventListener("click", async () => {
       try {
