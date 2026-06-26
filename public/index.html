@@ -1318,6 +1318,34 @@
           <label for="stratPullbackMaxAboveMaPct">Max % above MA at entry</label>
           <input type="number" id="stratPullbackMaxAboveMaPct" step="0.1" min="0.1" max="20" value="1.5" required />
         </div>
+        <div class="field">
+          <label for="stratLevelBreakPivotBars">Level break pivot bars</label>
+          <input type="number" id="stratLevelBreakPivotBars" step="1" min="1" max="12" value="3" required />
+        </div>
+        <div class="field">
+          <label for="stratLevelBreakLookbackBars">Level break lookback bars</label>
+          <input type="number" id="stratLevelBreakLookbackBars" step="1" min="20" max="300" value="80" required />
+        </div>
+        <div class="field">
+          <label for="stratLevelBreakMinTouches">Level break min touches</label>
+          <input type="number" id="stratLevelBreakMinTouches" step="1" min="1" max="20" value="2" required />
+        </div>
+        <div class="field">
+          <label for="stratLevelBreakTouchPct">Level touch tolerance %</label>
+          <input type="number" id="stratLevelBreakTouchPct" step="0.05" min="0.05" max="2" value="0.25" required />
+        </div>
+        <div class="field">
+          <label for="stratLevelBreakMinPct">Min break beyond level %</label>
+          <input type="number" id="stratLevelBreakMinPct" step="0.01" min="0.01" max="2" value="0.08" required />
+        </div>
+        <div class="field">
+          <label for="stratLevelBreakApproachPct">Approach within % of level</label>
+          <input type="number" id="stratLevelBreakApproachPct" step="0.05" min="0.05" max="3" value="0.4" required />
+        </div>
+        <div class="field">
+          <label for="stratLevelBreakApproachBars">Approach lookback bars</label>
+          <input type="number" id="stratLevelBreakApproachBars" step="1" min="3" max="60" value="12" required />
+        </div>
         <div class="settings-actions">
           <button type="submit" class="btn sm" id="strategiesApply">Apply</button>
           <button type="button" class="btn secondary sm" id="strategiesRefresh">Refresh tables</button>
@@ -1474,6 +1502,11 @@
           <div class="hint">0 = off. Skip fast-mover pullback when local range is too wide</div>
         </div>
         <div class="field">
+          <label for="paperBotMaxLevelBreakCorridor">Max level-break corridor width %</label>
+          <input type="number" id="paperBotMaxLevelBreakCorridor" step="1" min="0" max="100" value="20" required />
+          <div class="hint">0 = off. Skip level-break when local range is too wide</div>
+        </div>
+        <div class="field">
           <label for="paperBotSfpTp">SFP take profit cap %</label>
           <input type="number" id="paperBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
           <div class="hint">Lower TP for sweep-reclaim entries (uses main TP if higher)</div>
@@ -1501,6 +1534,18 @@
           <label>
             <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
             Trade fast-mover pullback
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeLevelBreak" name="tradeLevelBreakSignals" checked />
+            Trade level break (LONG)
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeLevelBreakBear" name="tradeLevelBreakBearSignals" checked />
+            Trade level break bear (SHORT)
           </label>
         </div>
         <div class="field" style="min-width: 260px;">
@@ -3047,6 +3092,13 @@
       "pullbackTouchLookback",
       "pullbackMaxDistancePct",
       "pullbackMaxAboveMaPct",
+      "levelBreakPivotBars",
+      "levelBreakLookbackBars",
+      "levelBreakMinTouches",
+      "levelBreakTouchPct",
+      "levelBreakMinPct",
+      "levelBreakApproachPct",
+      "levelBreakApproachBars",
     ];
 
     const STRATEGY_FORM_MAP = {
@@ -3058,6 +3110,13 @@
       pullbackTouchLookback: "stratPullbackTouchLookback",
       pullbackMaxDistancePct: "stratPullbackMaxDistancePct",
       pullbackMaxAboveMaPct: "stratPullbackMaxAboveMaPct",
+      levelBreakPivotBars: "stratLevelBreakPivotBars",
+      levelBreakLookbackBars: "stratLevelBreakLookbackBars",
+      levelBreakMinTouches: "stratLevelBreakMinTouches",
+      levelBreakTouchPct: "stratLevelBreakTouchPct",
+      levelBreakMinPct: "stratLevelBreakMinPct",
+      levelBreakApproachPct: "stratLevelBreakApproachPct",
+      levelBreakApproachBars: "stratLevelBreakApproachBars",
     };
 
     function strategyPatchFromForm() {
@@ -3402,6 +3461,8 @@
       if (kind === "sfp") return '<span class="status-tag sfp">SFP</span>';
       if (kind === "sfp_bear") return '<span class="status-tag sfp-bear">SFP↓</span>';
       if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
+      if (kind === "level_break") return '<span class="status-tag sfp">LVL↑</span>';
+      if (kind === "level_break_bear") return '<span class="status-tag sfp-bear">LVL↓</span>';
       return '<span class="status-tag muted">—</span>';
     }
 
@@ -3481,11 +3542,16 @@
         maxPullbackCorridorWidthPct: Number(
           document.getElementById("paperBotMaxPullbackCorridor").value
         ),
+        maxLevelBreakCorridorWidthPct: Number(
+          document.getElementById("paperBotMaxLevelBreakCorridor").value
+        ),
         sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradeBearishSfpSignals: document.getElementById("paperBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
+        tradeLevelBreakSignals: document.getElementById("paperBotTradeLevelBreak").checked,
+        tradeLevelBreakBearSignals: document.getElementById("paperBotTradeLevelBreakBear").checked,
         extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
         addOnMarginUsdt: Number(document.getElementById("paperBotAddOnMarginUsdt").value),
@@ -3575,6 +3641,8 @@
       document.getElementById("paperBotMaxSfpCorridor").value = cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("paperBotMaxPullbackCorridor").value =
         cfg.maxPullbackCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
+      document.getElementById("paperBotMaxLevelBreakCorridor").value =
+        cfg.maxLevelBreakCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("paperBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
       document.getElementById("paperBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
@@ -3589,6 +3657,10 @@
         cfg.tradeBearishSfpSignals !== false;
       document.getElementById("paperBotTradePullback").checked =
         Boolean(cfg.tradePullbackSignals);
+      document.getElementById("paperBotTradeLevelBreak").checked =
+        cfg.tradeLevelBreakSignals !== false;
+      document.getElementById("paperBotTradeLevelBreakBear").checked =
+        cfg.tradeLevelBreakBearSignals !== false;
       document.getElementById("paperBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);

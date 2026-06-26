@@ -25,6 +25,8 @@ const {
   barsAtTime,
   analyzeSweepReclaim,
   analyzeSweepReject,
+  analyzeLevelBreakUp,
+  analyzeLevelBreakDown,
   fastMoverPullbackMetrics,
   analyzePullback,
   fastMoverOptsFromCfg,
@@ -115,6 +117,13 @@ const cfg = {
   pullbackTouchLookback: 12,
   pullbackMaxDistancePct: 0.35,
   pullbackMaxAboveMaPct: 1.5,
+  levelBreakPivotBars: 3,
+  levelBreakLookbackBars: 80,
+  levelBreakMinTouches: 2,
+  levelBreakTouchPct: 0.25,
+  levelBreakMinPct: 0.08,
+  levelBreakApproachPct: 0.4,
+  levelBreakApproachBars: 12,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -1047,21 +1056,120 @@ function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
   lastPb.set(sym, pass);
 }
 
-function evaluateSymbolSignals(
+function applyLevelBreakSignal(
   sym,
-  signalBuffers,
-  priceBuffers,
+  analysis,
   qv,
-  sfpActive,
-  sfpHistory,
-  sfpBearActive,
-  sfpBearHistory,
-  pbActive,
-  pbHistory,
-  lastSfp,
-  lastSfpBear,
-  lastPb
+  levelBreakActive,
+  levelBreakHistory,
+  lastLevelBreak
 ) {
+  const pass = Boolean(analysis?.passes);
+  const metrics = analysis?.metrics;
+  const prev = lastLevelBreak.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass && metrics) {
+    const existing = levelBreakHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        levelBreakActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...metrics,
+      signalKind: "level_break",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    levelBreakActive.set(sym, row);
+    levelBreakHistory.set(sym, row);
+    if (!prev) {
+      const detail = `level ${metrics.levelPrice} · ${metrics.levelTouches} touches · break ${metrics.close}`;
+      dashboard?.pushEvent("NEW_LEVEL_BREAK", sym, detail);
+      console.log(`NEW LEVEL BREAK\t${sym}\t${detail}`);
+      paperBot?.onLevelBreakSignal(sym, metrics);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", metrics);
+    dashboard?.pushEvent("END_LEVEL_BREAK", sym);
+    console.log(`LEVEL BREAK END\t${sym}`);
+  }
+
+  lastLevelBreak.set(sym, pass);
+}
+
+function applyLevelBreakBearSignal(
+  sym,
+  analysis,
+  qv,
+  levelBreakBearActive,
+  levelBreakBearHistory,
+  lastLevelBreakBear
+) {
+  const pass = Boolean(analysis?.passes);
+  const metrics = analysis?.metrics;
+  const prev = lastLevelBreakBear.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass && metrics) {
+    const existing = levelBreakBearHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        levelBreakBearActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...metrics,
+      signalKind: "level_break_bear",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    levelBreakBearActive.set(sym, row);
+    levelBreakBearHistory.set(sym, row);
+    if (!prev) {
+      const detail = `level ${metrics.levelPrice} · ${metrics.levelTouches} touches · break ${metrics.close}`;
+      dashboard?.pushEvent("NEW_LEVEL_BREAK_BEAR", sym, detail);
+      console.log(`NEW LEVEL BREAK BEAR\t${sym}\t${detail}`);
+      paperBot?.onLevelBreakBearSignal(sym, metrics);
+    }
+  } else if (prev) {
+    markKindSignalEnded(
+      sym,
+      levelBreakBearActive,
+      levelBreakBearHistory,
+      "level_break_bear",
+      metrics
+    );
+    dashboard?.pushEvent("END_LEVEL_BREAK_BEAR", sym);
+    console.log(`LEVEL BREAK BEAR END\t${sym}`);
+  }
+
+  lastLevelBreakBear.set(sym, pass);
+}
+
+function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
+  const {
+    sfpActive,
+    sfpHistory,
+    sfpBearActive,
+    sfpBearHistory,
+    pbActive,
+    pbHistory,
+    levelBreakActive,
+    levelBreakHistory,
+    levelBreakBearActive,
+    levelBreakBearHistory,
+    lastSfp,
+    lastSfpBear,
+    lastPb,
+    lastLevelBreak,
+    lastLevelBreakBear,
+  } = maps;
   const signalBars = evalSignalBars(sym, signalBuffers);
   const priceBars = evalBars(sym, priceBuffers);
   const fmOpts = fastMoverOptsFromCfg(cfg);
@@ -1070,12 +1178,30 @@ function evaluateSymbolSignals(
   const pb = signalBars
     ? fastMoverPullbackMetrics(signalBars, cfg, fmOpts, priceBars)
     : null;
+  const levelBreak = signalBars ? analyzeLevelBreakUp(signalBars, cfg) : null;
+  const levelBreakBear = signalBars ? analyzeLevelBreakDown(signalBars, cfg) : null;
 
   applySfpSignal(sym, sfp, qv, sfpActive, sfpHistory, lastSfp);
   applySfpBearSignal(sym, sfpBear, qv, sfpBearActive, sfpBearHistory, lastSfpBear);
   applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
+  applyLevelBreakSignal(
+    sym,
+    levelBreak,
+    qv,
+    levelBreakActive,
+    levelBreakHistory,
+    lastLevelBreak
+  );
+  applyLevelBreakBearSignal(
+    sym,
+    levelBreakBear,
+    qv,
+    levelBreakBearActive,
+    levelBreakBearHistory,
+    lastLevelBreakBear
+  );
 
-  return { sfp, sfpBear, pb };
+  return { sfp, sfpBear, pb, levelBreak, levelBreakBear };
 }
 
 function reevaluateAllSymbols(
@@ -1092,9 +1218,15 @@ function reevaluateAllSymbols(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    levelBreakActive,
+    levelBreakHistory,
+    levelBreakBearActive,
+    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastLevelBreak,
+    lastLevelBreakBear,
   } = maps;
 
   for (const sym of symbols) {
@@ -1109,27 +1241,27 @@ function reevaluateAllSymbols(
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
+      if (lastLevelBreak.get(sym)) {
+        markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
+      }
+      if (lastLevelBreakBear.get(sym)) {
+        markKindSignalEnded(
+          sym,
+          levelBreakBearActive,
+          levelBreakBearHistory,
+          "level_break_bear",
+          null
+        );
+      }
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
+      lastLevelBreak.set(sym, false);
+      lastLevelBreakBear.set(sym, false);
       continue;
     }
 
-    evaluateSymbolSignals(
-      sym,
-      signalBuffers,
-      historyBuffers,
-      qv,
-      sfpActive,
-      sfpHistory,
-      sfpBearActive,
-      sfpBearHistory,
-      pbActive,
-      pbHistory,
-      lastSfp,
-      lastSfpBear,
-      lastPb
-    );
+    evaluateSymbolSignals(sym, signalBuffers, historyBuffers, qv, maps);
   }
   refreshAllPaperBotPrices(historyBuffers);
   printHits(maps, true);
@@ -1150,9 +1282,15 @@ function createWsShards(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    levelBreakActive,
+    levelBreakHistory,
+    levelBreakBearActive,
+    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastLevelBreak,
+    lastLevelBreakBear,
   } = maps;
   const streamSuffix = `@kline_${PRIMARY_INTERVAL}`;
   const batches = chunk(
@@ -1176,36 +1314,52 @@ function createWsShards(
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
+      if (lastLevelBreak.get(sym)) {
+        markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
+      }
+      if (lastLevelBreakBear.get(sym)) {
+        markKindSignalEnded(
+          sym,
+          levelBreakBearActive,
+          levelBreakBearHistory,
+          "level_break_bear",
+          null
+        );
+      }
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
+      lastLevelBreak.set(sym, false);
+      lastLevelBreakBear.set(sym, false);
       return;
     }
 
     const prevSfp = lastSfp.get(sym) ?? false;
     const prevSfpBear = lastSfpBear.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
+    const prevLevelBreak = lastLevelBreak.get(sym) ?? false;
+    const prevLevelBreakBear = lastLevelBreakBear.get(sym) ?? false;
 
-    const { sfp, sfpBear, pb } = evaluateSymbolSignals(
+    const { sfp, sfpBear, pb, levelBreak, levelBreakBear } = evaluateSymbolSignals(
       sym,
       signalBuffers,
       historyBuffers,
       qv,
-      sfpActive,
-      sfpHistory,
-      sfpBearActive,
-      sfpBearHistory,
-      pbActive,
-      pbHistory,
-      lastSfp,
-      lastSfpBear,
-      lastPb
+      maps
     );
 
     const sfpPass = Boolean(sfp?.passes);
     const sfpBearPass = Boolean(sfpBear?.passes);
     const pbPass = Boolean(pb?.passes);
-    if (sfpPass !== prevSfp || sfpBearPass !== prevSfpBear || pbPass !== prevPb) {
+    const lbPass = Boolean(levelBreak?.passes);
+    const lbBearPass = Boolean(levelBreakBear?.passes);
+    if (
+      sfpPass !== prevSfp ||
+      sfpBearPass !== prevSfpBear ||
+      pbPass !== prevPb ||
+      lbPass !== prevLevelBreak ||
+      lbBearPass !== prevLevelBreakBear
+    ) {
       printHits(maps, true);
     }
     refreshAllPaperBotPrices(historyBuffers, sym);
@@ -1340,9 +1494,15 @@ function createSignalWsShards(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    levelBreakActive,
+    levelBreakHistory,
+    levelBreakBearActive,
+    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastLevelBreak,
+    lastLevelBreakBear,
   } = maps;
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
@@ -1363,36 +1523,52 @@ function createSignalWsShards(
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
+      if (lastLevelBreak.get(sym)) {
+        markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
+      }
+      if (lastLevelBreakBear.get(sym)) {
+        markKindSignalEnded(
+          sym,
+          levelBreakBearActive,
+          levelBreakBearHistory,
+          "level_break_bear",
+          null
+        );
+      }
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
+      lastLevelBreak.set(sym, false);
+      lastLevelBreakBear.set(sym, false);
       return;
     }
 
     const prevSfp = lastSfp.get(sym) ?? false;
     const prevSfpBear = lastSfpBear.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
+    const prevLevelBreak = lastLevelBreak.get(sym) ?? false;
+    const prevLevelBreakBear = lastLevelBreakBear.get(sym) ?? false;
 
-    const { sfp, sfpBear, pb } = evaluateSymbolSignals(
+    const { sfp, sfpBear, pb, levelBreak, levelBreakBear } = evaluateSymbolSignals(
       sym,
       signalBuffers,
       historyBuffers,
       qv,
-      sfpActive,
-      sfpHistory,
-      sfpBearActive,
-      sfpBearHistory,
-      pbActive,
-      pbHistory,
-      lastSfp,
-      lastSfpBear,
-      lastPb
+      maps
     );
 
     const sfpPass = Boolean(sfp?.passes);
     const sfpBearPass = Boolean(sfpBear?.passes);
     const pbPass = Boolean(pb?.passes);
-    if (sfpPass !== prevSfp || sfpBearPass !== prevSfpBear || pbPass !== prevPb) {
+    const lbPass = Boolean(levelBreak?.passes);
+    const lbBearPass = Boolean(levelBreakBear?.passes);
+    if (
+      sfpPass !== prevSfp ||
+      sfpBearPass !== prevSfpBear ||
+      pbPass !== prevPb ||
+      lbPass !== prevLevelBreak ||
+      lbBearPass !== prevLevelBreakBear
+    ) {
       printHits(maps, true);
     }
   };
@@ -1534,15 +1710,7 @@ function startStaleSymbolRefresh(
               signalBuffers,
               historyBuffers,
               quoteVolMap.get(sym) ?? 0,
-              sfpActive,
-              sfpHistory,
-              sfpBearActive,
-              sfpBearHistory,
-              pbActive,
-              pbHistory,
-              lastSfp,
-              lastSfpBear,
-              lastPb
+              maps
             );
           }
         } catch (e) {
@@ -1819,9 +1987,15 @@ async function main() {
   const sfpBearHistory = new Map();
   const pbActive = new Map();
   const pbHistory = new Map();
+  const levelBreakActive = new Map();
+  const levelBreakHistory = new Map();
+  const levelBreakBearActive = new Map();
+  const levelBreakBearHistory = new Map();
   const lastSfp = new Map();
   const lastSfpBear = new Map();
   const lastPb = new Map();
+  const lastLevelBreak = new Map();
+  const lastLevelBreakBear = new Map();
 
   const signalMaps = () => ({
     sfpActive,
@@ -1830,9 +2004,15 @@ async function main() {
     sfpBearHistory,
     pbActive,
     pbHistory,
+    levelBreakActive,
+    levelBreakHistory,
+    levelBreakBearActive,
+    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastLevelBreak,
+    lastLevelBreakBear,
   });
 
   let symbols = [];
@@ -2274,6 +2454,8 @@ async function main() {
           sfpActive: sfpActive.size,
           sfpBearActive: sfpBearActive.size,
           pullbackActive: pbActive.size,
+          levelBreakActive: levelBreakActive.size,
+          levelBreakBearActive: levelBreakBearActive.size,
         },
         config: {
           sfpLookbackBars: cfg.sfpLookbackBars,
@@ -2283,6 +2465,13 @@ async function main() {
           pullbackTouchLookback: cfg.pullbackTouchLookback,
           pullbackMaxDistancePct: cfg.pullbackMaxDistancePct,
           pullbackMaxAboveMaPct: cfg.pullbackMaxAboveMaPct,
+          levelBreakPivotBars: cfg.levelBreakPivotBars,
+          levelBreakLookbackBars: cfg.levelBreakLookbackBars,
+          levelBreakMinTouches: cfg.levelBreakMinTouches,
+          levelBreakTouchPct: cfg.levelBreakTouchPct,
+          levelBreakMinPct: cfg.levelBreakMinPct,
+          levelBreakApproachPct: cfg.levelBreakApproachPct,
+          levelBreakApproachBars: cfg.levelBreakApproachBars,
         },
         live: {
           sfp: [...sfpActive.entries()].map(([symbol, row]) => ({
