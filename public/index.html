@@ -2351,6 +2351,7 @@
     let dashboardWsReconnectTimer = null;
     let lastPositionsData = null;
     let positionsDurationTimer = null;
+    let lastPositionsRenderKey = "";
     let lastPaperBotOpen = [];
     let lastPaperBotClosed = [];
     let lastBacktestTrades = [];
@@ -5158,6 +5159,33 @@
       return `<span class="exit-flag ${has ? "on" : "off"}" title="${escapeHtml(title)}">${label}</span>`;
     }
 
+    function positionsRenderKey(data) {
+      if (!data?.enabled) return "off";
+      if (data.error) return `err:${data.error}`;
+      return (data.positions ?? [])
+        .map(
+          (p) =>
+            `${p.symbol}:${p.direction}:${p.pnl ?? ""}:${p.hasStopLoss}:${p.hasTakeProfit}`
+        )
+        .sort()
+        .join("|");
+    }
+
+    function updatePositionDurationsInPlace(data) {
+      const body = document.getElementById("positionsBody");
+      if (!body || !data?.positions?.length) return;
+      for (const p of data.positions) {
+        const row = body.querySelector(`tr[data-symbol="${CSS.escape(p.symbol)}"]`);
+        const cell = row?.querySelector(".positions-duration");
+        if (!cell) continue;
+        const duration =
+          p.durationSec != null
+            ? fmtDuration(p.durationSec)
+            : fmtPositionDuration(p.openedAt ?? p.openedAtIso);
+        cell.textContent = duration;
+      }
+    }
+
     function positionsWithFreshDurations(data) {
       if (!data?.positions?.length) return data;
       const now = Date.now();
@@ -5173,12 +5201,26 @@
       };
     }
 
-    function renderPositions(data) {
+    function renderPositions(data, opts = {}) {
+      const durationOnly = Boolean(opts.durationOnly);
+      const renderKey = positionsRenderKey(data);
+
+      if (durationOnly) {
+        if (renderKey === lastPositionsRenderKey && data?.positions?.length) {
+          updatePositionDurationsInPlace(data);
+          return;
+        }
+      }
+
       lastPositionsData = data;
+      lastPositionsRenderKey = renderKey;
+
       if (!positionsDurationTimer) {
         positionsDurationTimer = setInterval(() => {
           if (lastPositionsData?.positions?.length) {
-            renderPositions(positionsWithFreshDurations(lastPositionsData));
+            renderPositions(positionsWithFreshDurations(lastPositionsData), {
+              durationOnly: true,
+            });
           }
         }, 1000);
       }
@@ -5253,7 +5295,7 @@
               ? `<button type="button" class="btn secondary sm positions-close-btn" data-symbol="${escapeHtml(p.symbol)}" title="Close position on Binance">Close</button>`
               : "";
             const exits = `<span class="positions-exits">${positionExitFlag("SL", p.hasStopLoss, p.stopLoss)}${positionExitFlag("TP", p.hasTakeProfit, p.takeProfit)}</span>`;
-            return `<tr>
+            return `<tr data-symbol="${escapeHtml(p.symbol)}">
               <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(p.symbol)}</td>
               <td>${exits}</td>
               <td class="positions-duration">${escapeHtml(duration)}</td>

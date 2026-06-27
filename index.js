@@ -2726,6 +2726,19 @@ async function main() {
   let lastPositionsFullFetchAt = 0;
   let positionsFullRefreshPending = false;
   const POSITIONS_FULL_MS = 25_000;
+  let positionsFetchInflight = null;
+
+  function pruneOpenAtForMap(positionMap) {
+    for (const sym of [...positionsOpenAtMs.keys()]) {
+      if (!positionMap.has(sym)) positionsOpenAtMs.delete(sym);
+    }
+  }
+
+  async function enrichPositionOpenTimes() {
+    getOpenPositions.invalidateCache?.();
+    const data = await getOpenPositions();
+    rememberPositionOpenTimes(data.positions, positionsOpenAtMs);
+  }
 
   async function attachExitOrderFlags(data) {
     if (!data.enabled || !data.positions?.length || !futuresTrader.enabled) {
@@ -2759,41 +2772,49 @@ async function main() {
     }
   }
 
-  fetchPositionsPayload = async () => {
+  async function buildPositionsPayload() {
     const now = Date.now();
+    if (!futuresTrader.enabled) {
+      return getOpenPositions();
+    }
+
     const needFull =
       positionsFullRefreshPending || now - lastPositionsFullFetchAt >= POSITIONS_FULL_MS;
 
-    if (futuresTrader.enabled && !needFull) {
+    const map = await futuresTrader.getPositionMap({ force: needFull });
+    pruneOpenAtForMap(map);
+
+    if (needFull) {
       try {
-        const map = await futuresTrader.getPositionMap();
-        const positions = snapshotPositionsFromMap(map, positionsOpenAtMs);
-        const totalPnl = positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
-        const withFlags = await attachExitOrderFlags({
-          enabled: true,
-          updatedAt: formatIsoUtcPlus3(now),
-          positions,
-          totalPnl: +totalPnl.toFixed(4),
-          hint: null,
-        });
-        exchangeOpenSymbols = new Set(
-          (withFlags.positions ?? []).map((p) => p.symbol).filter(Boolean)
-        );
-        return withFlags;
+        await enrichPositionOpenTimes();
       } catch {
-        /* fall through to REST */
+        /* open-time enrichment is optional */
       }
+      lastPositionsFullFetchAt = now;
+      positionsFullRefreshPending = false;
     }
 
-    const data = await getOpenPositions();
-    rememberPositionOpenTimes(data.positions, positionsOpenAtMs);
-    lastPositionsFullFetchAt = now;
-    positionsFullRefreshPending = false;
-    const withFlags = await attachExitOrderFlags(data);
+    const positions = snapshotPositionsFromMap(map, positionsOpenAtMs);
+    const totalPnl = positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
+    const withFlags = await attachExitOrderFlags({
+      enabled: true,
+      updatedAt: formatIsoUtcPlus3(now),
+      positions,
+      totalPnl: +totalPnl.toFixed(4),
+      hint: null,
+    });
     exchangeOpenSymbols = new Set(
       (withFlags.positions ?? []).map((p) => p.symbol).filter(Boolean)
     );
     return withFlags;
+  }
+
+  fetchPositionsPayload = async () => {
+    if (positionsFetchInflight) return positionsFetchInflight;
+    positionsFetchInflight = buildPositionsPayload().finally(() => {
+      positionsFetchInflight = null;
+    });
+    return positionsFetchInflight;
   };
 
   broadcastPositionsUpdate = () => {
@@ -2812,12 +2833,13 @@ async function main() {
     credentials: resolveBinanceCredentials(kv),
     trader: futuresTrader,
     onAccountUpdate: () => {
-      positionsFullRefreshPending = true;
-      broadcastAccountState();
+      getOpenPositions.invalidateCache?.();
+      broadcastPositionsUpdate();
     },
     onOrderUpdate: () => {
+      getOpenPositions.invalidateCache?.();
       positionsFullRefreshPending = true;
-      broadcastAccountState();
+      broadcastPositionsUpdate();
     },
   });
   if (futuresTrader.enabled) binanceUserStream.start();
