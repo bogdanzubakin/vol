@@ -2346,6 +2346,9 @@
     let paperBotPollTimer = null;
     let liveBotPollTimer = null;
     let backtestPollTimer = null;
+    let dashboardWs = null;
+    let dashboardWsConnected = false;
+    let dashboardWsReconnectTimer = null;
     let lastPaperBotOpen = [];
     let lastPaperBotClosed = [];
     let lastBacktestTrades = [];
@@ -2649,19 +2652,9 @@
       }
       if (name === "paperbot") {
         loadPaperBot(true);
-        if (!paperBotPollTimer) {
-          paperBotPollTimer = setInterval(() => {
-            if (activeTab === "paperbot") loadPaperBot();
-          }, 60_000);
-        }
       }
       if (name === "livebot") {
         loadLiveBot(true);
-        if (!liveBotPollTimer) {
-          liveBotPollTimer = setInterval(() => {
-            if (activeTab === "livebot") loadLiveBot();
-          }, 15_000);
-        }
       }
       if (name === "backtest") {
         loadBacktestStatus();
@@ -5283,6 +5276,7 @@
     }
 
     async function pollPositions() {
+      if (dashboardWsConnected) return;
       try {
         const res = await fetch("/api/positions", { cache: "no-store" });
         if (!res.ok) throw new Error(res.statusText);
@@ -5587,7 +5581,79 @@
       setUiSetting("ui_calcStartAmount", e.target.value);
     });
 
+    function applyFuturesBalanceFromWs(data) {
+      const el = document.getElementById("calcStartAmount");
+      if (!el || el.dataset.userEdited === "1") return;
+      if (data?.enabled && Number.isFinite(Number(data.usdtBalance))) {
+        el.value = fmt2Trim(roundAmount2(Number(data.usdtBalance)));
+        el.dataset.balanceLoaded = "1";
+      }
+    }
+
+    function handleDashboardWsMessage(msg) {
+      if (!msg?.channel) return;
+      if (msg.channel === "snapshot") {
+        const snap = msg.data || {};
+        if (snap.state) {
+          render(snap.state);
+          document.getElementById("error").style.display = "none";
+        }
+        if (snap.positions) renderPositions(snap.positions);
+        if (snap.paperBot) renderPaperBot(snap.paperBot, false);
+        if (snap.liveBot) renderLiveBot(snap.liveBot, false);
+        if (snap.balance) applyFuturesBalanceFromWs(snap.balance);
+        return;
+      }
+      if (msg.channel === "state") {
+        render(msg.data);
+        document.getElementById("error").style.display = "none";
+      } else if (msg.channel === "positions") {
+        renderPositions(msg.data);
+      } else if (msg.channel === "paperBot") {
+        renderPaperBot(msg.data, false);
+      } else if (msg.channel === "liveBot") {
+        renderLiveBot(msg.data, false);
+      } else if (msg.channel === "balance") {
+        applyFuturesBalanceFromWs(msg.data);
+      }
+    }
+
+    function connectDashboardWs() {
+      if (dashboardWsReconnectTimer) {
+        clearTimeout(dashboardWsReconnectTimer);
+        dashboardWsReconnectTimer = null;
+      }
+      if (
+        dashboardWs &&
+        (dashboardWs.readyState === WebSocket.OPEN ||
+          dashboardWs.readyState === WebSocket.CONNECTING)
+      ) {
+        return;
+      }
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      dashboardWs = new WebSocket(`${proto}//${location.host}/ws`);
+      dashboardWs.onopen = () => {
+        dashboardWsConnected = true;
+      };
+      dashboardWs.onclose = () => {
+        dashboardWsConnected = false;
+        dashboardWs = null;
+        dashboardWsReconnectTimer = setTimeout(connectDashboardWs, 3000);
+      };
+      dashboardWs.onerror = () => {
+        dashboardWsConnected = false;
+      };
+      dashboardWs.onmessage = (ev) => {
+        try {
+          handleDashboardWsMessage(JSON.parse(ev.data));
+        } catch {
+          /* ignore */
+        }
+      };
+    }
+
     async function poll() {
+      if (dashboardWsConnected) return;
       const errEl = document.getElementById("error");
       try {
         const res = await fetch("/api/state", { cache: "no-store" });
@@ -5739,8 +5805,13 @@
         }
         poll();
         pollPositions();
-        setInterval(poll, 2000);
-        setInterval(pollPositions, 5000);
+        connectDashboardWs();
+        setInterval(() => {
+          if (!dashboardWsConnected) poll();
+        }, 5000);
+        setInterval(() => {
+          if (!dashboardWsConnected) pollPositions();
+        }, 10000);
       });
     }
 

@@ -49,6 +49,7 @@ const { createPaperBot } = require("./lib/paper-bot");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
+const { createBinanceUserStream } = require("./lib/binance-user-stream");
 const { startPaperBotMorningReports } = require("./lib/paper-bot-report");
 const {
   saveTradeSnapshot,
@@ -159,6 +160,10 @@ let dashboard = null;
 let telegram = null;
 let paperBot = null;
 let liveBot = null;
+let futuresTrader = null;
+let dashboardWs = null;
+let fetchPositionsPayload = null;
+let broadcastAccountState = () => {};
 let stopPaperBotReport = () => {};
 const BACKTEST_STALE_MS = 12 * 60 * 1000;
 
@@ -344,14 +349,63 @@ function getPaperBotBar(sym, historyBuffers) {
   };
 }
 
-function refreshAllPaperBotPrices(historyBuffers, klineSymbol = null) {
+function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
+  const barClosed = Boolean(opts.barClosed);
+  const paperOnly = Boolean(opts.paperOnly);
   const getBar = (s) => getPaperBotBar(s, historyBuffers);
-  paperBot?.updatePrices(getBar);
-  if (liveBot?.hasOpenPositions?.()) {
-    if (!klineSymbol || liveBot.hasOpenSymbol?.(klineSymbol)) {
-      void liveBot.updatePrices(getBar, klineSymbol || null);
-    }
+
+  if (klineSymbol && futuresTrader?.applyMarkPrice) {
+    const tickBar = getPaperBotBar(klineSymbol, historyBuffers);
+    if (tickBar?.close) futuresTrader.applyMarkPrice(klineSymbol, tickBar.close);
   }
+
+  let paperChanged = false;
+  if (paperBot?.getPublicState?.().openPositions?.length) {
+    paperBot.updatePrices(getBar);
+    paperChanged = true;
+  }
+
+  if (paperOnly || !liveBot?.hasOpenPositions?.()) {
+    if (paperChanged) {
+      dashboardWs?.broadcastThrottled(
+        "paperBot",
+        () => paperBot.getPublicState(),
+        500
+      );
+    }
+    return;
+  }
+
+  const afterLive = () => {
+    if (paperChanged) {
+      dashboardWs?.broadcastThrottled(
+        "paperBot",
+        () => paperBot.getPublicState(),
+        500
+      );
+    }
+    dashboardWs?.broadcastThrottled(
+      "liveBot",
+      () => liveBot.getPublicState(),
+      500
+    );
+  };
+
+  if (klineSymbol) {
+    if (!liveBot.hasOpenSymbol?.(klineSymbol)) {
+      if (paperChanged) afterLive();
+      return;
+    }
+    void liveBot.updatePrices(getBar, klineSymbol, { barClosed }).then(afterLive);
+    return;
+  }
+
+  void liveBot.updatePrices(getBar, null, { barClosed: true }).then(afterLive);
+}
+
+/** @deprecated use refreshBotPrices */
+function refreshAllPaperBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
+  refreshBotPrices(historyBuffers, klineSymbol, opts);
 }
 
 function memoryMaxBars() {
@@ -1362,7 +1416,7 @@ function createWsShards(
     ) {
       printHits(maps, true);
     }
-    refreshAllPaperBotPrices(historyBuffers, sym);
+    refreshAllPaperBotPrices(historyBuffers, sym, { barClosed: true });
   };
 
   for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
@@ -1434,7 +1488,7 @@ function createWsShards(
           shard.lastUpdateAt = wsStats.lastUpdateAt;
         }
 
-        refreshAllPaperBotPrices(historyBuffers, sym);
+        refreshAllPaperBotPrices(historyBuffers, sym, { barClosed: isClosed });
         if (!separateSignal && isClosed && change.updated) evaluate(sym);
       });
 
@@ -2526,7 +2580,10 @@ async function main() {
     },
   };
 
-  dashboard = createDashboardPublisher(cfg, { configWritable: !flags.has("no-http") });
+  dashboard = createDashboardPublisher(cfg, {
+    configWritable: !flags.has("no-http"),
+    onPublish: (state) => dashboardWs?.broadcast("state", state),
+  });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
 
   function getBarsForTradeSnapshot(symbol, openedAt, closedAt) {
@@ -2638,7 +2695,7 @@ async function main() {
       `${paperBot.getPublicState().config.enabled ? "enabled" : "disabled (enable in Paper bot tab)"}`
   );
 
-  const futuresTrader = createFuturesTrader({ kv });
+  futuresTrader = createFuturesTrader({ kv });
   liveBot = createLiveBot({
     trader: futuresTrader,
     onTradeClosed: createTradeClosedHandler("Live bot"),
@@ -2658,6 +2715,55 @@ async function main() {
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
   const getFuturesBalance = createFuturesBalanceProvider({ kv });
+
+  fetchPositionsPayload = async () => {
+    const data = await getOpenPositions();
+    if (!data.enabled || !data.positions?.length || !futuresTrader.enabled) {
+      return data;
+    }
+    try {
+      const flags = await futuresTrader.getExitOrderFlagsBySymbol();
+      return {
+        ...data,
+        positions: data.positions.map((p) => {
+          const ex = flags.get(p.symbol) ?? {};
+          return {
+            ...p,
+            hasStopLoss: Boolean(ex.hasStopLoss),
+            hasTakeProfit: Boolean(ex.hasTakeProfit),
+            stopLoss: ex.stopLoss ?? null,
+            takeProfit: ex.takeProfit ?? null,
+          };
+        }),
+      };
+    } catch (e) {
+      return {
+        ...data,
+        positions: data.positions.map((p) => ({
+          ...p,
+          hasStopLoss: null,
+          hasTakeProfit: null,
+        })),
+        exitOrdersError: e.message || String(e),
+      };
+    }
+  };
+
+  broadcastAccountState = () => {
+    if (!dashboardWs) return;
+    dashboardWs.broadcastThrottled("positions", fetchPositionsPayload, 1500);
+    dashboardWs.broadcastThrottled("balance", getFuturesBalance, 1500);
+    dashboardWs.broadcastThrottled("liveBot", () => liveBot.getPublicState(), 500);
+  };
+
+  const binanceUserStream = createBinanceUserStream({
+    credentials: resolveBinanceCredentials(kv),
+    trader: futuresTrader,
+    onAccountUpdate: () => broadcastAccountState(),
+    onOrderUpdate: () => broadcastAccountState(),
+  });
+  if (futuresTrader.enabled) binanceUserStream.start();
+
   const positionsHistory = createPositionsHistoryStore({ kv });
   const binanceCreds = resolveBinanceCredentials(kv);
   if (binanceCreds.enabled) {
@@ -2673,7 +2779,7 @@ async function main() {
       port: kv.has("port") ? Number(kv.get("port")) : undefined,
       host: kv.get("host"),
     });
-    startDashboard(
+    const { dashboardWs: wsHub } = startDashboard(
       () =>
         dashboard.buildState(
           sfpActive,
@@ -2686,6 +2792,20 @@ async function main() {
       {
         port,
         host,
+        getWsSnapshot: async () => ({
+          state: dashboard.buildState(
+            sfpActive,
+            sfpHistory,
+            pbActive,
+            pbHistory,
+            sfpBearActive,
+            sfpBearHistory
+          ),
+          paperBot: paperBot.getPublicState(),
+          liveBot: await liveBot.getPublicState(),
+          positions: await fetchPositionsPayload(),
+          balance: await getFuturesBalance(),
+        }),
         getFastMovers: (searchParams) => scannerApi.getFastMovers(searchParams),
         getSweepReclaim: (searchParams) => scannerApi.getSweepReclaim(searchParams),
         getSweepReject: (searchParams) => scannerApi.getSweepReject(searchParams),
@@ -2694,38 +2814,7 @@ async function main() {
         getTopMovers: (searchParams) => scannerApi.getTopMovers(searchParams),
         getChartData: (symbol, searchParams) =>
           scannerApi.getChartData(symbol, searchParams),
-        getPositions: async () => {
-          const data = await getOpenPositions();
-          if (!data.enabled || !data.positions?.length || !futuresTrader.enabled) {
-            return data;
-          }
-          try {
-            const flags = await futuresTrader.getExitOrderFlagsBySymbol();
-            return {
-              ...data,
-              positions: data.positions.map((p) => {
-                const ex = flags.get(p.symbol) ?? {};
-                return {
-                  ...p,
-                  hasStopLoss: Boolean(ex.hasStopLoss),
-                  hasTakeProfit: Boolean(ex.hasTakeProfit),
-                  stopLoss: ex.stopLoss ?? null,
-                  takeProfit: ex.takeProfit ?? null,
-                };
-              }),
-            };
-          } catch (e) {
-            return {
-              ...data,
-              positions: data.positions.map((p) => ({
-                ...p,
-                hasStopLoss: null,
-                hasTakeProfit: null,
-              })),
-              exitOrdersError: e.message || String(e),
-            };
-          }
-        },
+        getPositions: fetchPositionsPayload,
         closeFuturesPosition: async (symbol) => {
           const sym = String(symbol || "").toUpperCase();
           if (!sym) throw new Error("Symbol required");
@@ -2747,22 +2836,19 @@ async function main() {
           return { ok: true, item: row };
         },
         getPaperBot: () => {
-          refreshAllPaperBotPrices(historyBuffers);
+          refreshBotPrices(historyBuffers, null, { paperOnly: true });
           return paperBot.getPublicState();
         },
         patchPaperBotConfig: (patch) => {
           paperBot.patchConfig(patch);
-          refreshAllPaperBotPrices(historyBuffers);
+          refreshBotPrices(historyBuffers, null, { paperOnly: true });
           return paperBot.getPublicState();
         },
         resetPaperBot: () => {
           paperBot.reset();
           return paperBot.getPublicState();
         },
-        getLiveBot: () => {
-          refreshAllPaperBotPrices(historyBuffers);
-          return liveBot.getPublicState();
-        },
+        getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);
           refreshAllPaperBotPrices(historyBuffers);
@@ -2966,6 +3052,7 @@ async function main() {
         },
       }
     );
+    dashboardWs = wsHub;
     dashboard.publish(
       sfpActive,
       sfpHistory,
@@ -3067,7 +3154,7 @@ async function main() {
       paperBot?.getPublicState().summary?.openCount > 0 ||
       liveBot?.hasOpenPositions()
     ) {
-      refreshAllPaperBotPrices(historyBuffers);
+      refreshBotPrices(historyBuffers, null, { barClosed: true });
     }
   }, 15_000);
 
@@ -3077,7 +3164,7 @@ async function main() {
       hour: tgConfig.paperBotReportHour,
       minute: tgConfig.paperBotReportMinute,
       getReportState: () => {
-        refreshAllPaperBotPrices(historyBuffers);
+        refreshBotPrices(historyBuffers, null, { paperOnly: true });
         return paperBot.getPublicState();
       },
       sendText: (text) => telegram.sendText(text),
