@@ -5720,7 +5720,7 @@
     }
 
     async function poll() {
-      if (dashboardWsConnected) return;
+      if (dashboardWsConnected && !lastScannerState?.prefetching) return;
       const errEl = document.getElementById("error");
       try {
         const res = await fetch("/api/state", { cache: "no-store" });
@@ -5874,7 +5874,7 @@
         pollPositions();
         connectDashboardWs();
         setInterval(() => {
-          if (!dashboardWsConnected) poll();
+          if (!dashboardWsConnected || lastScannerState?.prefetching) poll();
         }, 3000);
         setInterval(() => {
           if (!dashboardWsConnected) pollPositions();

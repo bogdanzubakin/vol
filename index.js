@@ -159,6 +159,7 @@ const restLimiter = { chain: Promise.resolve() };
 let lastHitsPrintAt = 0;
 let prefetching = false;
 let dashboard = null;
+let pushScannerState = null;
 let telegram = null;
 let paperBot = null;
 let liveBot = null;
@@ -1803,7 +1804,8 @@ async function prefetchAllSymbols(
   let fetched = 0;
   let failed = 0;
   const t0 = Date.now();
-  const publishPrefetchStatus = () => {
+  let lastPrefetchUiPushAt = 0;
+  const publishPrefetchStatus = (force = false) => {
     dashboard?.setMeta({
       prefetching: true,
       prefetchStatus: {
@@ -1816,8 +1818,18 @@ async function prefetchAllSymbols(
         elapsedSec: Math.round((Date.now() - t0) / 1000),
       },
     });
+    const now = Date.now();
+    if (
+      force ||
+      done === 0 ||
+      done === symbols.length ||
+      now - lastPrefetchUiPushAt >= 1000
+    ) {
+      lastPrefetchUiPushAt = now;
+      pushScannerState?.();
+    }
   };
-  publishPrefetchStatus();
+  publishPrefetchStatus(true);
 
   console.error(
     `Prefetch ALL ${symbols.length} symbols (${cfg.prefetchDays}d · ${cfg.limit} × ${PRIMARY_INTERVAL}` +
@@ -1839,6 +1851,7 @@ async function prefetchAllSymbols(
   console.error(
     `Prefetch plan: ${cacheSymbols.length} from disk (≥${minPrefetchBars()} bars) · ${restSymbols.length} REST`
   );
+  publishPrefetchStatus(true);
 
   await runConcurrent(cacheSymbols, cfg.prefetchCacheConcurrency, async (sym) => {
     try {
@@ -1902,6 +1915,7 @@ async function prefetchAllSymbols(
       elapsedSec: Math.round((Date.now() - t0) / 1000),
     },
   });
+  pushScannerState?.();
   printHits(maps, true);
   console.error(
     `Prefetch done: ${fromCache} cache-only, ${refreshed} refreshed, ${fetched} cold REST, ${failed} failed`
@@ -2592,6 +2606,19 @@ async function main() {
     onPublish: (state) => dashboardWs?.broadcast("state", state),
   });
   dashboard.setMeta({ symbolCount: 0, prefetching: false });
+
+  pushScannerState = () => {
+    const m = signalMaps();
+    dashboard.publish(
+      m.sfpActive,
+      m.sfpHistory,
+      m.pbActive,
+      m.pbHistory,
+      m.sfpBearActive,
+      m.sfpBearHistory,
+      false
+    );
+  };
 
   function getBarsForTradeSnapshot(symbol, openedAt, closedAt) {
     let bars = historyBuffers.get(symbol) ?? [];
