@@ -76,6 +76,8 @@ const {
   createPositionsProvider,
   createFuturesBalanceProvider,
   resolveBinanceCredentials,
+  snapshotPositionsFromMap,
+  rememberPositionOpenTimes,
 } = require("./lib/binance-positions");
 const { createPositionsHistoryStore } = require("./lib/positions-history");
 const { createTelegramAuth } = require("./lib/telegram-auth");
@@ -164,6 +166,8 @@ let futuresTrader = null;
 let dashboardWs = null;
 let fetchPositionsPayload = null;
 let broadcastAccountState = () => {};
+let broadcastPositionsUpdate = () => {};
+let exchangeOpenSymbols = new Set();
 let stopPaperBotReport = () => {};
 const BACKTEST_STALE_MS = 12 * 60 * 1000;
 
@@ -357,6 +361,9 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
   if (klineSymbol && futuresTrader?.applyMarkPrice) {
     const tickBar = getPaperBotBar(klineSymbol, historyBuffers);
     if (tickBar?.close) futuresTrader.applyMarkPrice(klineSymbol, tickBar.close);
+    if (exchangeOpenSymbols.size > 0 && exchangeOpenSymbols.has(klineSymbol)) {
+      broadcastPositionsUpdate();
+    }
   }
 
   let paperChanged = false;
@@ -2715,9 +2722,12 @@ async function main() {
   const auth = createTelegramAuth({ kv, flags });
   const getOpenPositions = createPositionsProvider({ kv });
   const getFuturesBalance = createFuturesBalanceProvider({ kv });
+  const positionsOpenAtMs = new Map();
+  let lastPositionsFullFetchAt = 0;
+  let positionsFullRefreshPending = false;
+  const POSITIONS_FULL_MS = 25_000;
 
-  fetchPositionsPayload = async () => {
-    const data = await getOpenPositions();
+  async function attachExitOrderFlags(data) {
     if (!data.enabled || !data.positions?.length || !futuresTrader.enabled) {
       return data;
     }
@@ -2747,20 +2757,68 @@ async function main() {
         exitOrdersError: e.message || String(e),
       };
     }
+  }
+
+  fetchPositionsPayload = async () => {
+    const now = Date.now();
+    const needFull =
+      positionsFullRefreshPending || now - lastPositionsFullFetchAt >= POSITIONS_FULL_MS;
+
+    if (futuresTrader.enabled && !needFull) {
+      try {
+        const map = await futuresTrader.getPositionMap();
+        const positions = snapshotPositionsFromMap(map, positionsOpenAtMs);
+        const totalPnl = positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
+        const withFlags = await attachExitOrderFlags({
+          enabled: true,
+          updatedAt: formatIsoUtcPlus3(now),
+          positions,
+          totalPnl: +totalPnl.toFixed(4),
+          hint: null,
+        });
+        exchangeOpenSymbols = new Set(
+          (withFlags.positions ?? []).map((p) => p.symbol).filter(Boolean)
+        );
+        return withFlags;
+      } catch {
+        /* fall through to REST */
+      }
+    }
+
+    const data = await getOpenPositions();
+    rememberPositionOpenTimes(data.positions, positionsOpenAtMs);
+    lastPositionsFullFetchAt = now;
+    positionsFullRefreshPending = false;
+    const withFlags = await attachExitOrderFlags(data);
+    exchangeOpenSymbols = new Set(
+      (withFlags.positions ?? []).map((p) => p.symbol).filter(Boolean)
+    );
+    return withFlags;
+  };
+
+  broadcastPositionsUpdate = () => {
+    if (!dashboardWs) return;
+    dashboardWs.broadcastThrottled("positions", fetchPositionsPayload, 500);
   };
 
   broadcastAccountState = () => {
     if (!dashboardWs) return;
-    dashboardWs.broadcastThrottled("positions", fetchPositionsPayload, 1500);
-    dashboardWs.broadcastThrottled("balance", getFuturesBalance, 1500);
+    broadcastPositionsUpdate();
+    dashboardWs.broadcastThrottled("balance", getFuturesBalance, 5000);
     dashboardWs.broadcastThrottled("liveBot", () => liveBot.getPublicState(), 500);
   };
 
   const binanceUserStream = createBinanceUserStream({
     credentials: resolveBinanceCredentials(kv),
     trader: futuresTrader,
-    onAccountUpdate: () => broadcastAccountState(),
-    onOrderUpdate: () => broadcastAccountState(),
+    onAccountUpdate: () => {
+      positionsFullRefreshPending = true;
+      broadcastAccountState();
+    },
+    onOrderUpdate: () => {
+      positionsFullRefreshPending = true;
+      broadcastAccountState();
+    },
   });
   if (futuresTrader.enabled) binanceUserStream.start();
 
@@ -3053,6 +3111,7 @@ async function main() {
       }
     );
     dashboardWs = wsHub;
+    void fetchPositionsPayload().then((data) => dashboardWs?.broadcast("positions", data));
     dashboard.publish(
       sfpActive,
       sfpHistory,
@@ -3157,6 +3216,10 @@ async function main() {
       refreshBotPrices(historyBuffers, null, { barClosed: true });
     }
   }, 15_000);
+
+  const positionsBroadcastTimer = setInterval(() => {
+    if (futuresTrader?.enabled) broadcastPositionsUpdate();
+  }, 2000);
 
   if (telegram.enabled && tgConfig.paperBotReport) {
     stopPaperBotReport = startPaperBotMorningReports({
