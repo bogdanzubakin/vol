@@ -3831,10 +3831,7 @@
       if (key === "durationSec") {
         const closed = row.closedAtIso ?? row.closedAt;
         return (
-          positionDurationSec(
-            row.openedAtIso ?? row.openedAt,
-            closed ?? Date.now()
-          ) ?? 0
+          positionDurationSec(row, closed ?? Date.now()) ?? 0
         );
       }
       if (key === "openedAt") {
@@ -3936,6 +3933,7 @@
             options.live && p.symbol
               ? `<button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button>`
               : '<span class="time">—</span>';
+          const openMs = positionOpenMs(p);
           return `<tr class="data-row">
               <td class="sym-cell" data-label="Symbol">${symLink(p.symbol)}</td>
               <td data-label="Signal">${kind}</td>
@@ -3945,7 +3943,7 @@
               <td class="pass" data-label="TP">${fmt(p.takeProfit, 6)}</td>
               <td class="${unrCls}" data-label="Unrealized">${fmtUsd(p.unrealizedPnl)}</td>
               <td class="${unrPctCls}" data-label="Unrealized %">${unrPct == null ? "—" : `${fmt(unrPct, 2)}%`}</td>
-              <td class="history-duration" data-label="Duration">${fmtPositionDuration(p.openedAtIso ?? p.openedAt)}</td>
+              <td class="history-duration" data-label="Duration" data-opened-at-ms="${openMs ?? ""}">${escapeHtml(fmtLivePositionDuration(p))}</td>
               <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
               <td data-label="Actions">${options.live ? closeBtn : '<span class="time">—</span>'}</td>
             </tr>`;
@@ -3960,6 +3958,28 @@
         openBody.querySelectorAll(".live-close-btn").forEach((btn) => {
           btn.addEventListener("click", () => closeLiveSymbol(btn.dataset.symbol));
         });
+      }
+      ensureBotOpenDurationTimer();
+    }
+
+    let botOpenDurationTimer = null;
+
+    function ensureBotOpenDurationTimer() {
+      if (botOpenDurationTimer) return;
+      botOpenDurationTimer = setInterval(updateBotOpenDurationsInPlace, 1000);
+    }
+
+    function updateBotOpenDurationsInPlace() {
+      for (const bodyId of ["paperBotOpenBody", "liveBotOpenBody"]) {
+        const body = document.getElementById(bodyId);
+        if (!body) continue;
+        for (const cell of body.querySelectorAll("td.history-duration[data-opened-at-ms]")) {
+          const ms = Number(cell.dataset.openedAtMs);
+          if (!Number.isFinite(ms)) continue;
+          cell.textContent = fmtDuration(
+            Math.max(0, Math.floor((Date.now() - ms) / 1000))
+          );
+        }
       }
     }
 
@@ -5178,24 +5198,21 @@
         const row = body.querySelector(`tr[data-symbol="${CSS.escape(p.symbol)}"]`);
         const cell = row?.querySelector(".positions-duration");
         if (!cell) continue;
-        const duration =
-          p.durationSec != null
-            ? fmtDuration(p.durationSec)
-            : fmtPositionDuration(p.openedAt ?? p.openedAtIso);
-        cell.textContent = duration;
+        const openMs = positionOpenMs(p);
+        if (openMs != null) {
+          row.dataset.openedAtMs = String(openMs);
+          cell.dataset.openedAtMs = String(openMs);
+        }
+        cell.textContent = fmtLivePositionDuration(p);
       }
     }
 
     function positionsWithFreshDurations(data) {
       if (!data?.positions?.length) return data;
-      const now = Date.now();
       return {
         ...data,
         positions: data.positions.map((p) => {
-          const durationSec = positionDurationSec(
-            p.openedAt ?? p.openedAtIso,
-            now
-          );
+          const durationSec = positionDurationSec(p);
           return durationSec != null ? { ...p, durationSec } : p;
         }),
       };
@@ -5264,14 +5281,8 @@
       }
 
       const sortedPositions = [...data.positions].sort((a, b) => {
-        const ad =
-          a.durationSec ??
-          positionDurationSec(a.openedAt ?? a.openedAtIso) ??
-          Number.POSITIVE_INFINITY;
-        const bd =
-          b.durationSec ??
-          positionDurationSec(b.openedAt ?? b.openedAtIso) ??
-          Number.POSITIVE_INFINITY;
+        const ad = positionDurationSec(a) ?? Number.POSITIVE_INFINITY;
+        const bd = positionDurationSec(b) ?? Number.POSITIVE_INFINITY;
         if (ad !== bd) return ad - bd;
         return String(a.symbol ?? "").localeCompare(String(b.symbol ?? ""));
       });
@@ -5287,18 +5298,16 @@
             const roiCls =
               p.roiPct == null ? "" : p.roiPct >= 0 ? "pnl-pos" : "pnl-neg";
             const dirTri = p.direction === "LONG" ? "▲" : "▼";
-            const duration =
-              p.durationSec != null
-                ? fmtDuration(p.durationSec)
-                : fmtPositionDuration(p.openedAt ?? p.openedAtIso);
+            const openMs = positionOpenMs(p);
+            const duration = fmtLivePositionDuration(p);
             const closeBtn = data.enabled
               ? `<button type="button" class="btn secondary sm positions-close-btn" data-symbol="${escapeHtml(p.symbol)}" title="Close position on Binance">Close</button>`
               : "";
             const exits = `<span class="positions-exits">${positionExitFlag("SL", p.hasStopLoss, p.stopLoss)}${positionExitFlag("TP", p.hasTakeProfit, p.takeProfit)}</span>`;
-            return `<tr data-symbol="${escapeHtml(p.symbol)}">
+            return `<tr data-symbol="${escapeHtml(p.symbol)}"${openMs != null ? ` data-opened-at-ms="${openMs}"` : ""}>
               <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(p.symbol)}</td>
               <td>${exits}</td>
-              <td class="positions-duration">${escapeHtml(duration)}</td>
+              <td class="positions-duration"${openMs != null ? ` data-opened-at-ms="${openMs}"` : ""}>${escapeHtml(duration)}</td>
               <td class="${pnlCls}">${fmtPnl(p.pnl)}</td>
               <td class="${roiCls}">${fmtPct(p.roiPct, 3)}</td>
               <td>${closeBtn}</td>
@@ -5367,8 +5376,21 @@
       return `${s}s`;
     }
 
+    function positionOpenMs(row) {
+      if (row?.openedAtMs != null && Number.isFinite(row.openedAtMs)) {
+        return row.openedAtMs;
+      }
+      if (typeof row?.openedAt === "number" && Number.isFinite(row.openedAt)) {
+        return row.openedAt;
+      }
+      return parseDisplayIso(row?.openedAtIso ?? row?.openedAt);
+    }
+
     function positionDurationSec(openedAt, closedAt = Date.now()) {
-      const openMs = parseDisplayIso(openedAt);
+      const openMs =
+        typeof openedAt === "object" && openedAt != null
+          ? positionOpenMs(openedAt)
+          : parseDisplayIso(openedAt);
       let closeMs =
         closedAt === Date.now() ? closedAt : parseDisplayIso(closedAt);
       if (openMs == null || closeMs == null) return null;
@@ -5377,6 +5399,10 @@
 
     function fmtPositionDuration(openedAt, closedAt) {
       return fmtDuration(positionDurationSec(openedAt, closedAt));
+    }
+
+    function fmtLivePositionDuration(row) {
+      return fmtDuration(positionDurationSec(row));
     }
 
     function fmtHistoryDate(t) {

@@ -58,7 +58,25 @@ function utcMsToDatetimeLocalValue(ms) {
 
 function parseDisplayIso(s) {
   if (s == null || s === "") return null;
-  if (typeof s === "number") return s;
-  const t = Date.parse(String(s));
-  return Number.isFinite(t) ? t : null;
+  if (typeof s === "number") return Number.isFinite(s) ? s : null;
+  const str = String(s).trim().replace(" ", "T");
+  if (/[+-]\d{2}:?\d{2}$|Z$/i.test(str)) {
+    const t = Date.parse(str);
+    return Number.isFinite(t) ? t : null;
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(str);
+  if (!m) {
+    const t = Date.parse(str);
+    return Number.isFinite(t) ? t : null;
+  }
+  return (
+    Date.UTC(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      Number(m[4]),
+      Number(m[5]),
+      Number(m[6] || 0)
+    ) - TZ_OFFSET_MS
+  );
 }

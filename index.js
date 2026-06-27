@@ -2761,6 +2761,15 @@ async function main() {
     }
   }
 
+  function markEnrichIfMissingOpenTimes(positionMap) {
+    for (const sym of positionMap.keys()) {
+      if (!positionsOpenAtMs.has(sym)) {
+        positionsFullRefreshPending = true;
+        return;
+      }
+    }
+  }
+
   async function enrichPositionOpenTimes() {
     getOpenPositions.invalidateCache?.();
     const data = await getOpenPositions();
@@ -2810,6 +2819,7 @@ async function main() {
 
     const map = await futuresTrader.getPositionMap({ force: needFull });
     pruneOpenAtForMap(map);
+    markEnrichIfMissingOpenTimes(map);
 
     if (needFull) {
       try {
