@@ -2202,7 +2202,7 @@
           </tbody>
         </table>
       </div>
-      <h3 style="margin: 20px 12px 8px; font-size: 0.95rem">Per symbol (top PnL)</h3>
+      <h3 style="margin: 20px 12px 8px; font-size: 0.95rem" id="backtestSymbolsHeading">Per symbol</h3>
       <div class="table-wrap">
         <table>
           <thead>
@@ -4730,12 +4730,19 @@
       renderBacktestTradesBody(lastBacktestTrades, lastBacktestTradesTotal);
 
       const symBody = document.getElementById("backtestSymbolsBody");
+      const symHeading = document.getElementById("backtestSymbolsHeading");
       const rows = (r.perSymbol ?? [])
-        .filter((x) => !x.error && !x.skipped)
-        .sort((a, b) => (b.pnl ?? 0) - (a.pnl ?? 0))
-        .slice(0, 50);
+        .filter((x) => !x.error && !x.skipped && (x.trades ?? 0) > 0)
+        .sort((a, b) => (b.pnl ?? 0) - (a.pnl ?? 0));
+      if (symHeading) {
+        symHeading.textContent =
+          rows.length > 0
+            ? `Per symbol (${rows.length} with trades)`
+            : "Per symbol";
+      }
       if (!rows.length) {
-        symBody.innerHTML = '<tr><td colspan="5" class="empty">No symbol stats</td></tr>';
+        symBody.innerHTML =
+          '<tr><td colspan="5" class="empty">No symbols with trades</td></tr>';
       } else {
         symBody.innerHTML = rows
           .map((row) => {
@@ -4785,6 +4792,8 @@
       }
       updateBotSortHeaders("data-backtest-sort", backtestTradesSort);
       const symBody = document.getElementById("backtestSymbolsBody");
+      const symHeading = document.getElementById("backtestSymbolsHeading");
+      if (symHeading) symHeading.textContent = "Per symbol";
       if (symBody) {
         symBody.innerHTML =
           '<tr><td colspan="5" class="empty">No symbol stats</td></tr>';
