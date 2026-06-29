@@ -2965,6 +2965,12 @@ async function main() {
           paperBot.reset();
           return paperBot.getPublicState();
         },
+        closePaperBotSymbol: (symbol) => {
+          refreshBotPrices(historyBuffers, symbol, { paperOnly: true });
+          const state = paperBot.closeSymbol(symbol);
+          dashboardWs?.broadcast("paperBot", state);
+          return state;
+        },
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);

@@ -3562,6 +3562,7 @@
       if (reason === "early_stall") return '<span class="near">stall</span>';
       if (reason === "early_adverse") return '<span class="bad">early adv</span>';
       if (reason === "runner_exit") return '<span class="pass">runner</span>';
+      if (reason === "manual") return '<span class="near">manual</span>';
       return escapeHtml(reason ?? "—");
     }
 
@@ -3929,10 +3930,9 @@
           const previewBtn = p.id
             ? `<button type="button" class="btn secondary sm ${options.live ? "live-" : ""}open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
             : "";
-          const closeBtn =
-            options.live && p.symbol
-              ? `<button type="button" class="btn secondary sm live-close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button>`
-              : '<span class="time">—</span>';
+          const closeBtn = p.symbol
+            ? `<button type="button" class="btn secondary sm ${options.live ? "live-" : "paper-"}close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button>`
+            : '<span class="time">—</span>';
           const openMs = positionOpenMs(p);
           return `<tr class="data-row">
               <td class="sym-cell" data-label="Symbol">${symLink(p.symbol)}</td>
@@ -3945,7 +3945,7 @@
               <td class="${unrPctCls}" data-label="Unrealized %">${unrPct == null ? "—" : `${fmt(unrPct, 2)}%`}</td>
               <td class="history-duration" data-label="Duration" data-opened-at-ms="${openMs ?? ""}">${escapeHtml(fmtLivePositionDuration(p))}</td>
               <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
-              <td data-label="Actions">${options.live ? closeBtn : '<span class="time">—</span>'}</td>
+              <td data-label="Actions">${closeBtn}</td>
             </tr>`;
         })
         .join("");
@@ -3954,11 +3954,12 @@
           generateOpenPositionSnapshot(btn.dataset.positionId, btn.dataset.symbol, options.live ? "live" : "paper")
         );
       });
-      if (options.live) {
-        openBody.querySelectorAll(".live-close-btn").forEach((btn) => {
-          btn.addEventListener("click", () => closeLiveSymbol(btn.dataset.symbol));
+      openBody.querySelectorAll(".live-close-btn, .paper-close-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (options.live) closeLiveSymbol(btn.dataset.symbol);
+          else closePaperSymbol(btn.dataset.symbol);
         });
-      }
+      });
       ensureBotOpenDurationTimer();
     }
 
@@ -4433,6 +4434,21 @@
         }
       } catch (e) {
         setLiveBotMsg(e.message, false);
+      }
+    }
+
+    async function closePaperSymbol(symbol) {
+      if (!confirm(`Close paper position ${symbol}?`)) return;
+      try {
+        const res = await fetch(`/api/paper-bot/close/${encodeURIComponent(symbol)}`, {
+          method: "POST",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderPaperBot(data, true);
+        setPaperBotMsg(`Closed ${symbol}`, true);
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
       }
     }
 
