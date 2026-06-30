@@ -142,7 +142,6 @@ const cfg = {
   staleSymbolRefreshMs: 30_000,
   staleSymbolRefreshBatchSize: 30,
   staleSymbolRefreshAfterBars: 3,
-  maxHitsToPrint: 40,
   quoteVolRefreshMs: 15 * 60 * 1000,
   minQuoteVolume24h: 0,
   printHitsMinIntervalMs: 2000,
@@ -950,36 +949,6 @@ function printHits(maps, force = false) {
   pruneSignalHistory(sfpBearHistory);
   pruneSignalHistory(pbHistory);
 
-  const rows = [
-    ...[...sfpHistory.entries()].map(([symbol, m]) => ({
-      symbol,
-      status: m.ended ? "ENDED" : "SFP",
-      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
-      signalKind: "sfp",
-      ...m,
-    })),
-    ...[...sfpBearHistory.entries()].map(([symbol, m]) => ({
-      symbol,
-      status: m.ended ? "ENDED" : "SFP BEAR",
-      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
-      signalKind: "sfp_bear",
-      ...m,
-    })),
-    ...[...pbHistory.entries()].map(([symbol, m]) => ({
-      symbol,
-      status: m.ended ? "ENDED" : "PULLBACK",
-      triggeredAt: formatIsoUtcPlus3(m.triggeredAt),
-      signalKind: "pullback",
-      ...m,
-    })),
-  ]
-    .sort((a, b) => {
-      const at = a.triggeredAt ? Date.parse(a.triggeredAt) : 0;
-      const bt = b.triggeredAt ? Date.parse(b.triggeredAt) : 0;
-      return bt - at;
-    })
-    .slice(0, cfg.maxHitsToPrint);
-
   if (dashboard) {
     dashboard.setMeta({ prefetching });
     dashboard.publish(
@@ -992,14 +961,6 @@ function printHits(maps, force = false) {
       force
     );
   }
-
-  console.clear();
-  console.log(
-    formatIsoUtcPlus3(Date.now()),
-    `${cfg.interval}: SFP + bearish SFP + pullback scanner` +
-      (prefetching ? " (prefetching…)" : "")
-  );
-  console.table(rows);
 }
 
 function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
@@ -1028,14 +989,12 @@ function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
     if (!prev) {
       const detail = `sweep ${metrics.sweepLow?.toFixed(6)} · reclaim ${metrics.close} · ${metrics.barsSinceSweep} bars`;
       dashboard?.pushEvent("NEW_SFP", sym, detail);
-      console.log(`NEW SFP\t${sym}\t${detail}`);
       paperBot?.onSfpSignal(sym, metrics);
       liveBot?.onSfpSignal(sym, metrics);
     }
   } else if (prev) {
     markKindSignalEnded(sym, sfpActive, sfpHistory, "sfp", metrics);
     dashboard?.pushEvent("END_SFP", sym);
-    console.log(`SFP END\t${sym}`);
   }
 
   lastSfp.set(sym, pass);
@@ -1067,14 +1026,12 @@ function applySfpBearSignal(sym, analysis, qv, sfpBearActive, sfpBearHistory, la
     if (!prev) {
       const detail = `sweep ${metrics.sweepHigh?.toFixed(6)} · reject ${metrics.close} · ${metrics.barsSinceSweep} bars`;
       dashboard?.pushEvent("NEW_SFP_BEAR", sym, detail);
-      console.log(`NEW SFP BEAR\t${sym}\t${detail}`);
       paperBot?.onSfpBearSignal(sym, metrics);
       liveBot?.onSfpBearSignal(sym, metrics);
     }
   } else if (prev) {
     markKindSignalEnded(sym, sfpBearActive, sfpBearHistory, "sfp_bear", metrics);
     dashboard?.pushEvent("END_SFP_BEAR", sym);
-    console.log(`SFP BEAR END\t${sym}`);
   }
 
   lastSfpBear.set(sym, pass);
@@ -1105,14 +1062,12 @@ function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
     if (!prev) {
       const detail = `MA${pb.maBars} ${pb.ma} · +${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
       dashboard?.pushEvent("NEW_PB", sym, detail);
-      console.log(`NEW PULLBACK\t${sym}\t${detail}`);
       paperBot?.onPullbackSignal(sym, pb);
       liveBot?.onPullbackSignal(sym, pb);
     }
   } else if (prev) {
     markKindSignalEnded(sym, pbActive, pbHistory, "pullback", pb);
     dashboard?.pushEvent("END_PB", sym);
-    console.log(`PULLBACK END\t${sym}`);
   }
 
   lastPb.set(sym, pass);
@@ -1151,13 +1106,11 @@ function applyLevelBreakSignal(
     if (!prev) {
       const detail = `level ${metrics.levelPrice} · ${metrics.levelTouches} touches · break ${metrics.close}`;
       dashboard?.pushEvent("NEW_LEVEL_BREAK", sym, detail);
-      console.log(`NEW LEVEL BREAK\t${sym}\t${detail}`);
       paperBot?.onLevelBreakSignal(sym, metrics);
     }
   } else if (prev) {
     markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", metrics);
     dashboard?.pushEvent("END_LEVEL_BREAK", sym);
-    console.log(`LEVEL BREAK END\t${sym}`);
   }
 
   lastLevelBreak.set(sym, pass);
@@ -1196,7 +1149,6 @@ function applyLevelBreakBearSignal(
     if (!prev) {
       const detail = `level ${metrics.levelPrice} · ${metrics.levelTouches} touches · break ${metrics.close}`;
       dashboard?.pushEvent("NEW_LEVEL_BREAK_BEAR", sym, detail);
-      console.log(`NEW LEVEL BREAK BEAR\t${sym}\t${detail}`);
       paperBot?.onLevelBreakBearSignal(sym, metrics);
     }
   } else if (prev) {
@@ -1208,7 +1160,6 @@ function applyLevelBreakBearSignal(
       metrics
     );
     dashboard?.pushEvent("END_LEVEL_BREAK_BEAR", sym);
-    console.log(`LEVEL BREAK BEAR END\t${sym}`);
   }
 
   lastLevelBreakBear.set(sym, pass);
