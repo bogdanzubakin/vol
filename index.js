@@ -169,7 +169,8 @@ let broadcastAccountState = () => {};
 let broadcastPositionsUpdate = () => {};
 let exchangeOpenSymbols = new Set();
 let stopPaperBotReport = () => {};
-const BACKTEST_STALE_MS = 12 * 60 * 1000;
+const BACKTEST_STALE_MS = 30 * 60 * 1000;
+const BACKTEST_STALE_RATE_LIMIT_MS = 120 * 60 * 1000;
 
 let backtestJob = {
   running: false,
@@ -224,17 +225,34 @@ function freshBacktestJobState() {
 function touchBacktestProgress(p) {
   backtestJob.progress = p;
   backtestJob.lastProgressAt = Date.now();
+  if (
+    backtestJob.running &&
+    backtestJob.error?.startsWith("Backtest stalled")
+  ) {
+    backtestJob.error = null;
+  }
 }
 
 function reconcileBacktestJob() {
   if (!backtestJob.running || !backtestJob.lastProgressAt) return;
   const idle = Date.now() - backtestJob.lastProgressAt;
-  if (idle <= BACKTEST_STALE_MS) return;
-  backtestJob.running = false;
+  const phase = backtestJob.progress?.phase;
+  const limit =
+    phase === "rate_limit" ? BACKTEST_STALE_RATE_LIMIT_MS : BACKTEST_STALE_MS;
+  if (idle <= limit) return;
+  const sym = backtestJob.progress?.symbol;
+  const detail = backtestJob.progress?.message;
   const mins = Math.round(idle / 60_000);
+  const where = sym ? ` (last: ${sym})` : "";
+  const hint =
+    phase === "rate_limit"
+      ? "Binance rate limit cooldown can take a while — wait or retry later."
+      : phase === "simulate"
+        ? "Simulation on a large history can take several minutes per symbol."
+        : "If this persists, try a symbol list or fewer days.";
   backtestJob.error =
     backtestJob.error ||
-    `Backtest stalled (no progress for ${mins} min). Use a symbol list, reduce pairs, or wait for rate-limit cooldown and retry.`;
+    `Backtest stalled (no progress for ${mins} min${where}). ${detail ? `${detail} ` : ""}${hint}`;
   console.error(backtestJob.error);
 }
 
@@ -458,18 +476,21 @@ function parseBanUntil(text) {
 }
 
 async function waitForBan(banUntil) {
-  const waitMs = banUntil - Date.now();
-  if (waitMs <= 0) return;
-  const sec = Math.ceil(waitMs / 1000);
-  console.error(`IP banned — waiting ${sec}s before retry...`);
-  if (backtestJob.running) {
-    touchBacktestProgress({
-      ...(backtestJob.progress ?? {}),
-      phase: "rate_limit",
-      message: `Binance API cooldown — waiting ${sec}s…`,
-    });
+  while (true) {
+    const waitMs = banUntil - Date.now();
+    if (waitMs <= 0) return;
+    const sec = Math.ceil(waitMs / 1000);
+    console.error(`IP banned — waiting ${sec}s before retry...`);
+    if (backtestJob.running) {
+      touchBacktestProgress({
+        ...(backtestJob.progress ?? {}),
+        phase: "rate_limit",
+        message: `Binance API cooldown — waiting ${sec}s…`,
+      });
+    }
+    const chunk = Math.min(waitMs + 500, 30_000);
+    await sleep(chunk);
   }
-  await sleep(waitMs + 500);
 }
 
 restLimiter.schedule = function schedule(fn) {
@@ -605,7 +626,7 @@ async function fetchKlines(symbol, limit = cfg.limit) {
   return all.slice(-limit);
 }
 
-async function fetchKlinesInterval(symbol, interval, limit) {
+async function fetchKlinesInterval(symbol, interval, limit, onBatch) {
   let all = [];
   let endTime;
   let remaining = limit;
@@ -627,6 +648,7 @@ async function fetchKlinesInterval(symbol, interval, limit) {
     if (endTime !== undefined) params.endTime = String(endTime);
 
     const rows = await getJson("/fapi/v1/klines", params);
+    onBatch?.({ symbol, interval, fetched: all.length, target: limit });
     if (!rows.length) break;
 
     const parsed = parseKlines(rows);
@@ -668,7 +690,8 @@ async function fetchKlinesGapForInterval(
   symbol,
   interval,
   startTime,
-  endTime
+  endTime,
+  onBatch
 ) {
   if (startTime >= endTime) return [];
   const barMs = intervalBarMs(interval);
@@ -684,6 +707,7 @@ async function fetchKlinesGapForInterval(
       endTime: String(endTime),
     };
     const rows = await getJson("/fapi/v1/klines", params);
+    onBatch?.();
     if (!rows.length) break;
 
     merged = mergeBarsByOpenTime(merged, parseKlines(rows));
@@ -746,7 +770,13 @@ async function loadSymbolHistory(symbol) {
 }
 
 /** Backtest walks signal-timeframe bars; optional interval for 1m fast-mover input. */
-async function fetchKlinesForBacktest(symbol, barCount, interval = cfg.interval) {
+async function fetchKlinesForBacktest(
+  symbol,
+  barCount,
+  interval = cfg.interval,
+  onHeartbeat
+) {
+  const touch = () => onHeartbeat?.({ symbol, interval });
   const useSignalCache =
     interval === cfg.interval && signalKlineCache != null;
   const cache = useSignalCache ? signalKlineCache : klineCache;
@@ -764,7 +794,9 @@ async function fetchKlinesForBacktest(symbol, barCount, interval = cfg.interval)
   }
 
   try {
-    const fetched = await fetchKlinesInterval(symbol, interval, barCount);
+    const fetched = await fetchKlinesInterval(symbol, interval, barCount, () =>
+      touch()
+    );
     bars = mergeBarsByOpenTime(bars, fetched);
 
     if (cached.length && fetched.length) {
@@ -775,7 +807,8 @@ async function fetchKlinesForBacktest(symbol, barCount, interval = cfg.interval)
           symbol,
           interval,
           lastCached.closeTime + 1,
-          firstFetched.openTime - 1
+          firstFetched.openTime - 1,
+          () => touch()
         );
         bars = mergeBarsByOpenTime(cached, gap, fetched);
       }
@@ -3016,15 +3049,32 @@ async function main() {
             skip: 0,
             message: `Starting ${symList.length} symbols × ${days}d…`,
           };
+          const heartbeatKlines = (sym) => {
+            if (!backtestJob.running) return;
+            const prev = backtestJob.progress ?? {};
+            touchBacktestProgress({
+              ...prev,
+              phase: prev.phase === "simulate" ? "simulate" : "loading",
+              symbol: sym,
+              message:
+                prev.phase === "simulate"
+                  ? prev.message
+                  : `Loading ${sym} (${days}d)…`,
+            });
+          };
           runPaperBotBacktest({
             symbols: symList,
             signalCfg: cfg,
             botConfig: paperBot.getPublicState().config,
             days,
             fetchKlinesForSymbol: (sym, limit) =>
-              fetchKlinesForBacktest(sym, limit),
+              fetchKlinesForBacktest(sym, limit, cfg.interval, () =>
+                heartbeatKlines(sym)
+              ),
             fetchKlines1mForSymbol: (sym, limit) =>
-              fetchKlinesForBacktest(sym, limit, "1m"),
+              fetchKlinesForBacktest(sym, limit, "1m", () =>
+                heartbeatKlines(sym)
+              ),
             onProgress: (p) => {
               touchBacktestProgress(p);
             },

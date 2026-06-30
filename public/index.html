@@ -1774,7 +1774,7 @@
           <div class="hint">Turns bot off when equity falls by % from baseline (set on enable/reset)</div>
         </div>
         <div class="field">
-          <label for="paperBotDrawdownStopPct">Max deposit loss %</label>
+          <label for="paperBotDrawdownStopPct">Max loss % (closed trades only)</label>
           <input type="number" id="paperBotDrawdownStopPct" step="0.5" min="1" max="100" value="4" required />
           <div class="hint">e.g. 10 = disable after −10% from baseline equity</div>
         </div>
@@ -2049,7 +2049,7 @@
           <div class="hint">Disarms when wallet+unrealized drops by % from baseline (set on arm)</div>
         </div>
         <div class="field">
-          <label for="liveBotDrawdownStopPct">Max loss % (bot trades only)</label>
+          <label for="liveBotDrawdownStopPct">Max loss % (closed trades only)</label>
           <input type="number" id="liveBotDrawdownStopPct" step="0.5" min="1" max="100" value="4" required />
         </div>
             </div>
