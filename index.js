@@ -2965,6 +2965,7 @@ async function main() {
         disarmLiveBot: () => liveBot.disarm(),
         closeLiveBotSymbol: (symbol) => liveBot.closeSymbol(symbol),
         closeAllLiveBot: () => liveBot.closeAll(),
+        forgetLiveBotOpen: (symbol) => liveBot.forgetOpenPositions(symbol),
         syncLiveBot: () => liveBot.syncFromExchange(),
         resetLiveBotHistory: () => liveBot.resetHistory(),
         generatePaperBotOpenSnapshot,

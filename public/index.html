@@ -1874,6 +1874,7 @@
         <button type="button" class="btn secondary sm" id="liveBotDisarm">Disarm</button>
         <button type="button" class="btn secondary sm" id="liveBotSync">Sync exchange</button>
         <button type="button" class="btn secondary sm" id="liveBotCloseAll">Close all</button>
+        <button type="button" class="btn secondary sm" id="liveBotForgetOpen">Forget open</button>
         <span class="config-msg" id="liveBotMsg"></span>
       </div>
       <form class="bot-settings-form" id="liveBotConfigForm">
@@ -3933,6 +3934,10 @@
           const closeBtn = p.symbol
             ? `<button type="button" class="btn secondary sm ${options.live ? "live-" : "paper-"}close-btn" data-symbol="${escapeHtml(p.symbol)}">Close</button>`
             : '<span class="time">—</span>';
+          const forgetBtn =
+            options.live && p.symbol
+              ? `<button type="button" class="btn secondary sm live-forget-btn" data-symbol="${escapeHtml(p.symbol)}">Forget</button>`
+              : "";
           const openMs = positionOpenMs(p);
           return `<tr class="data-row">
               <td class="sym-cell" data-label="Symbol">${symLink(p.symbol)}</td>
@@ -3945,7 +3950,7 @@
               <td class="${unrPctCls}" data-label="Unrealized %">${unrPct == null ? "—" : `${fmt(unrPct, 2)}%`}</td>
               <td class="history-duration" data-label="Duration" data-opened-at-ms="${openMs ?? ""}">${escapeHtml(fmtLivePositionDuration(p))}</td>
               <td class="col-chart-desktop" data-label="Chart">${previewBtn || '<span class="time">—</span>'}</td>
-              <td data-label="Actions">${closeBtn}</td>
+              <td data-label="Actions">${closeBtn} ${forgetBtn}</td>
             </tr>`;
         })
         .join("");
@@ -3959,6 +3964,9 @@
           if (options.live) closeLiveSymbol(btn.dataset.symbol);
           else closePaperSymbol(btn.dataset.symbol);
         });
+      });
+      openBody.querySelectorAll(".live-forget-btn").forEach((btn) => {
+        btn.addEventListener("click", () => forgetLiveSymbol(btn.dataset.symbol));
       });
       ensureBotOpenDurationTimer();
     }
@@ -4467,6 +4475,28 @@
       }
     }
 
+    async function forgetLiveSymbol(symbol) {
+      if (
+        !confirm(
+          `Forget ${symbol} in the live bot? The exchange position stays open and is removed from bot stats. The symbol will be auto-blocked until you remove it from the blocked list.`
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/live-bot/forget-open/${encodeURIComponent(symbol)}`,
+          { method: "POST" }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg(`Forgot ${symbol}`, true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    }
+
     document.getElementById("liveBotConfigForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
@@ -4572,6 +4602,25 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderLiveBot(data, true);
         setLiveBotMsg("All positions closed", true);
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+      }
+    });
+
+    document.getElementById("liveBotForgetOpen").addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Forget all open live bot positions? They stay on Binance but are removed from bot stats (unrealized PnL, open count). Symbols are auto-blocked."
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await fetch("/api/live-bot/forget-open", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveBot(data, true);
+        setLiveBotMsg("Open positions forgotten", true);
       } catch (e) {
         setLiveBotMsg(e.message, false);
       }
