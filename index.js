@@ -116,7 +116,8 @@ const EXCHANGE_INFO_CACHE = dataPath("futures-exchangeInfo.json");
 const KLINES_CACHE_DIR = dataPath("klines");
 console.error(`Kline cache dir: ${KLINES_CACHE_DIR}`);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { createRestQueue, sleep: restSleep } = require("./lib/rest-queue");
+const sleep = restSleep;
 
 const cfg = {
   interval: "1m",
@@ -168,7 +169,19 @@ applyBarConfig(cfg);
 scannerConfig.loadInto(cfg);
 applyBarConfig(cfg);
 
-const restLimiter = { chain: Promise.resolve() };
+const liveRestQueue = createRestQueue({
+  label: "live",
+  gapMs: () => cfg.restMinGapMs,
+});
+
+const backtestRestQueue = createRestQueue({
+  label: "backtest",
+  gapMs: () =>
+    backtestJob?.running
+      ? Math.max(80, Math.floor(cfg.restMinGapMs / 5))
+      : cfg.restMinGapMs,
+});
+
 let lastHitsPrintAt = 0;
 let prefetching = false;
 let dashboard = null;
@@ -813,16 +826,13 @@ async function waitForBan(banUntil) {
   }
 }
 
+const restLimiter = {};
 restLimiter.schedule = function schedule(fn) {
-  this.chain = this.chain.then(async () => {
-    await sleep(cfg.restMinGapMs);
-    return fn();
-  });
-  return this.chain;
+  return liveRestQueue.schedule(fn);
 };
 
-async function getJson(pathName, params = {}, attempt = 0) {
-  return restLimiter.schedule(async () => {
+async function restJsonFetch(pathName, params = {}, attempt = 0, restQueue = liveRestQueue) {
+  return restQueue.schedule(async () => {
     const q = new URLSearchParams(params).toString();
     const url = `${REST_BASE}${pathName}${q ? `?${q}` : ""}`;
     const res = await fetch(url);
@@ -832,11 +842,11 @@ async function getJson(pathName, params = {}, attempt = 0) {
       const banUntil = parseBanUntil(text);
       if (banUntil && banUntil > Date.now()) {
         await waitForBan(banUntil);
-        return getJson(pathName, params, attempt);
+        return restJsonFetch(pathName, params, attempt, restQueue);
       }
       if (attempt < 5) {
         await sleep(cfg.restRetryMs * (attempt + 1));
-        return getJson(pathName, params, attempt + 1);
+        return restJsonFetch(pathName, params, attempt + 1, restQueue);
       }
       throw new Error(`${pathName} ${res.status} ${text}`);
     }
@@ -844,6 +854,10 @@ async function getJson(pathName, params = {}, attempt = 0) {
     if (!res.ok) throw new Error(`${pathName} ${res.status} ${text}`);
     return JSON.parse(text);
   });
+}
+
+async function getJson(pathName, params = {}, attempt = 0) {
+  return restJsonFetch(pathName, params, attempt, liveRestQueue);
 }
 
 function readExchangeInfoCache() {
@@ -946,17 +960,16 @@ async function fetchKlines(symbol, limit = cfg.limit) {
   return all.slice(-limit);
 }
 
-async function fetchKlinesInterval(symbol, interval, limit, onBatch) {
+async function fetchKlinesInterval(
+  symbol,
+  interval,
+  limit,
+  onBatch,
+  restQueue = liveRestQueue
+) {
   let all = [];
   let endTime;
   let remaining = limit;
-  const { ms: barMs } = (() => {
-    const m = /^(\d+)([mhd])$/.exec(interval);
-    if (!m) return { ms: 60_000 };
-    const n = Number(m[1]);
-    const minutes = m[2] === "m" ? n : m[2] === "h" ? n * 60 : n * 24 * 60;
-    return { ms: minutes * 60 * 1000 };
-  })();
 
   while (remaining > 0) {
     const batch = Math.min(remaining, KLINE_MAX);
@@ -967,7 +980,7 @@ async function fetchKlinesInterval(symbol, interval, limit, onBatch) {
     };
     if (endTime !== undefined) params.endTime = String(endTime);
 
-    const rows = await getJson("/fapi/v1/klines", params);
+    const rows = await restJsonFetch("/fapi/v1/klines", params, 0, restQueue);
     onBatch?.({ symbol, interval, fetched: all.length, target: limit });
     if (!rows.length) break;
 
@@ -1011,7 +1024,8 @@ async function fetchKlinesGapForInterval(
   interval,
   startTime,
   endTime,
-  onBatch
+  onBatch,
+  restQueue = liveRestQueue
 ) {
   if (startTime >= endTime) return [];
   const barMs = intervalBarMs(interval);
@@ -1026,7 +1040,7 @@ async function fetchKlinesGapForInterval(
       startTime: String(cursor),
       endTime: String(endTime),
     };
-    const rows = await getJson("/fapi/v1/klines", params);
+    const rows = await restJsonFetch("/fapi/v1/klines", params, 0, restQueue);
     onBatch?.();
     if (!rows.length) break;
 
@@ -1114,8 +1128,12 @@ async function fetchKlinesForBacktest(
   }
 
   try {
-    const fetched = await fetchKlinesInterval(symbol, interval, barCount, () =>
-      touch()
+    const fetched = await fetchKlinesInterval(
+      symbol,
+      interval,
+      barCount,
+      () => touch(),
+      backtestRestQueue
     );
     bars = mergeBarsByOpenTime(bars, fetched);
 
@@ -1128,7 +1146,8 @@ async function fetchKlinesForBacktest(
           interval,
           lastCached.closeTime + 1,
           firstFetched.openTime - 1,
-          () => touch()
+          () => touch(),
+          backtestRestQueue
         );
         bars = mergeBarsByOpenTime(cached, gap, fetched);
       }
@@ -3415,8 +3434,6 @@ async function main() {
                   : `Loading ${sym} (${days}d)…`,
             });
           };
-          const savedRestGap = cfg.restMinGapMs;
-          cfg.restMinGapMs = Math.max(100, Math.floor(savedRestGap / 5));
           runPaperBotBacktest({
             symbols: symList,
             signalCfg: cfg,
@@ -3444,7 +3461,6 @@ async function main() {
             },
           })
             .then(({ result, barCache, chartCfg }) => {
-              cfg.restMinGapMs = savedRestGap;
               if (backtestJob.cancelled) return;
               backtestJob.running = false;
               backtestJob.result = result;
@@ -3463,7 +3479,6 @@ async function main() {
               );
             })
             .catch((e) => {
-              cfg.restMinGapMs = savedRestGap;
               if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {
                 backtestJob.running = false;
                 return;
