@@ -47,13 +47,14 @@ const {
 } = require("./lib/telegram-notify");
 const { createPaperBot } = require("./lib/paper-bot");
 const {
-  ensureDefaultModelOnDisk,
+  ensureAllDefaultModelsOnDisk,
   getModelStatus,
   trainFromTrades,
   reloadModel,
 } = require("./lib/early-exit-model");
+const { normalizeAiModelScope } = require("./lib/ai-model-scope");
 const {
-  ensureDefaultModelOnDisk: ensureSfpRegimeModelOnDisk,
+  ensureAllDefaultModelsOnDisk: ensureAllSfpRegimeModelsOnDisk,
   getModelStatus: getSfpRegimeModelStatus,
   trainFromTrades: trainSfpRegimeFromTrades,
   reloadModel: reloadSfpRegimeModel,
@@ -175,6 +176,7 @@ let pushScannerState = null;
 let telegram = null;
 let paperBot = null;
 let sfpRegimeMonitor = null;
+let liveSfpRegimeMonitor = null;
 let liveBot = null;
 let futuresTrader = null;
 let dashboardWs = null;
@@ -212,9 +214,35 @@ function freshAiTrainJob() {
 }
 
 const aiTrainJob = {
-  early_exit: freshAiTrainJob(),
-  sfp_regime: freshAiTrainJob(),
+  paper: {
+    early_exit: freshAiTrainJob(),
+    sfp_regime: freshAiTrainJob(),
+  },
+  live: {
+    early_exit: freshAiTrainJob(),
+    sfp_regime: freshAiTrainJob(),
+  },
 };
+
+function aiTrainJobFor(model, scope = "paper") {
+  const key = normalizeAiModelScope(scope);
+  const field = model === "sfp_regime" ? "sfp_regime" : "early_exit";
+  return aiTrainJob[key][field];
+}
+
+function getEarlyExitModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("early_exit", scope)
+  );
+}
+
+function getSfpRegimeModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getSfpRegimeModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("sfp_regime", scope)
+  );
+}
 
 function modelStatusWithTraining(getStatus, job) {
   return {
@@ -226,14 +254,6 @@ function modelStatusWithTraining(getStatus, job) {
       result: job.result,
     },
   };
-}
-
-function getEarlyExitModelStatusFull() {
-  return modelStatusWithTraining(getModelStatus, aiTrainJob.early_exit);
-}
-
-function getSfpRegimeModelStatusFull() {
-  return modelStatusWithTraining(getSfpRegimeModelStatus, aiTrainJob.sfp_regime);
 }
 
 function freshBacktestSnapshotJobState() {
@@ -427,14 +447,17 @@ function fetchBarsForSfpRegimeTraining(symbol) {
   return loadTrainingBarsForSymbol(symbol);
 }
 
-function collectEarlyExitTrainingTrades(source = "auto") {
-  const mode = String(source || "auto").toLowerCase();
-  const backtest = loadLastBacktestResult();
-  const paper = paperBot?.getClosedTrades?.() ?? [];
+function collectEarlyExitTrainingTrades(source = "auto", scope = "paper") {
   const filterSfp = (list) =>
     (list ?? []).filter(
       (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
     );
+  if (normalizeAiModelScope(scope) === "live") {
+    return filterSfp(liveBot?.getClosedTrades?.() ?? []);
+  }
+  const mode = String(source || "auto").toLowerCase();
+  const backtest = loadLastBacktestResult();
+  const paper = paperBot?.getClosedTrades?.() ?? [];
   if (mode === "paper") return filterSfp(paper);
   if (mode === "backtest") return filterSfp(backtest?.closedTrades);
   const merged = [...filterSfp(backtest?.closedTrades), ...filterSfp(paper)];
@@ -450,15 +473,18 @@ function collectEarlyExitTrainingTrades(source = "auto") {
 }
 
 function startEarlyExitTraining(body = {}) {
-  const job = aiTrainJob.early_exit;
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("early_exit", scope);
   if (job.running) {
     throw new Error("Early-exit model training already running");
   }
-  const trades = collectEarlyExitTrainingTrades(body.source);
+  const trades = collectEarlyExitTrainingTrades(body.source, scope);
   if (!trades.length) {
-    throw new Error(
-      "No closed trades for training — run train bot or accumulate paper bot history"
-    );
+    const hint =
+      scope === "live"
+        ? "accumulate live bot SFP closed trades"
+        : "run train bot or accumulate paper bot history";
+    throw new Error(`No closed trades for training — ${hint}`);
   }
 
   job.running = true;
@@ -471,20 +497,24 @@ function startEarlyExitTraining(body = {}) {
     message: `Preparing ${trades.length} SFP trades…`,
   };
 
-  const cfg = paperBot.getPublicState().config;
   void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
     try {
       await trainFromTrades(trades, fetchBarsForEarlyExitTraining, {
         ...cfg,
-        source: `trained:${body.source ?? "auto"}`,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
         onProgress: (p) => {
           job.progress = p;
         },
       });
-      reloadModel();
+      reloadModel(scope);
       job.result = {
         tradesUsed: trades.length,
-        model: getModelStatus(),
+        model: getModelStatus(scope),
       };
       job.progress = {
         phase: "done",
@@ -494,27 +524,30 @@ function startEarlyExitTraining(body = {}) {
       };
     } catch (e) {
       job.error = e.message || String(e);
-      console.error(`Early-exit model training failed: ${job.error}`);
+      console.error(`Early-exit model training failed (${scope}): ${job.error}`);
     } finally {
       job.running = false;
     }
   })();
 
-  return { ok: true, started: true, trades: trades.length };
+  return { ok: true, started: true, trades: trades.length, scope };
 }
 
 function trainEarlyExitModelFromHistory(body = {}) {
   return startEarlyExitTraining(body);
 }
 
-function collectSfpRegimeTrainingTrades(source = "auto") {
-  const mode = String(source || "auto").toLowerCase();
-  const backtest = loadLastBacktestResult();
-  const paper = paperBot?.getClosedTrades?.() ?? [];
+function collectSfpRegimeTrainingTrades(source = "auto", scope = "paper") {
   const filterSfp = (list) =>
     (list ?? []).filter(
       (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
     );
+  if (normalizeAiModelScope(scope) === "live") {
+    return filterSfp(liveBot?.getClosedTrades?.() ?? []);
+  }
+  const mode = String(source || "auto").toLowerCase();
+  const backtest = loadLastBacktestResult();
+  const paper = paperBot?.getClosedTrades?.() ?? [];
   if (mode === "paper") return filterSfp(paper);
   if (mode === "backtest") return filterSfp(backtest?.closedTrades);
   const merged = [...filterSfp(backtest?.closedTrades), ...filterSfp(paper)];
@@ -530,15 +563,18 @@ function collectSfpRegimeTrainingTrades(source = "auto") {
 }
 
 function startSfpRegimeTraining(body = {}) {
-  const job = aiTrainJob.sfp_regime;
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("sfp_regime", scope);
   if (job.running) {
     throw new Error("SFP regime model training already running");
   }
-  const trades = collectSfpRegimeTrainingTrades(body.source);
+  const trades = collectSfpRegimeTrainingTrades(body.source, scope);
   if (!trades.length) {
-    throw new Error(
-      "No SFP closed trades for training — run train bot with SFP signals enabled"
-    );
+    const hint =
+      scope === "live"
+        ? "accumulate live bot SFP closed trades"
+        : "run train bot with SFP signals enabled";
+    throw new Error(`No SFP closed trades for training — ${hint}`);
   }
 
   job.running = true;
@@ -551,20 +587,24 @@ function startSfpRegimeTraining(body = {}) {
     message: `Preparing ${trades.length} SFP trades…`,
   };
 
-  const cfg = paperBot.getPublicState().config;
   void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
     try {
       await trainSfpRegimeFromTrades(trades, fetchBarsForSfpRegimeTraining, {
         ...cfg,
-        source: `trained:${body.source ?? "auto"}`,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
         onProgress: (p) => {
           job.progress = p;
         },
       });
-      reloadSfpRegimeModel();
+      reloadSfpRegimeModel(scope);
       job.result = {
         tradesUsed: trades.length,
-        model: getSfpRegimeModelStatus(),
+        model: getSfpRegimeModelStatus(scope),
       };
       job.progress = {
         phase: "done",
@@ -574,13 +614,13 @@ function startSfpRegimeTraining(body = {}) {
       };
     } catch (e) {
       job.error = e.message || String(e);
-      console.error(`SFP regime model training failed: ${job.error}`);
+      console.error(`SFP regime model training failed (${scope}): ${job.error}`);
     } finally {
       job.running = false;
     }
   })();
 
-  return { ok: true, started: true, trades: trades.length };
+  return { ok: true, started: true, trades: trades.length, scope };
 }
 
 function trainSfpRegimeModelFromHistory(body = {}) {
@@ -596,11 +636,27 @@ function refreshSfpRegimeForSymbol(sym, historyBuffers) {
   sfpRegimeMonitor.refreshSymbol(sym, bars, cfg);
 }
 
+function refreshLiveSfpRegimeForSymbol(sym, historyBuffers) {
+  if (!liveSfpRegimeMonitor || !liveBot) return;
+  const cfg = liveBot.getConfig?.();
+  if (!cfg?.aiSfpRegimeEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  liveSfpRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
 function getSfpRegimeMonitorSnapshot() {
   if (!sfpRegimeMonitor || !paperBot) {
     return { ok: true, enabled: false, tracked: 0, badCount: 0, worst: [] };
   }
   return sfpRegimeMonitor.getSnapshot(paperBot.getPublicState().config);
+}
+
+function getLiveSfpRegimeMonitorSnapshot() {
+  if (!liveSfpRegimeMonitor || !liveBot) {
+    return { ok: true, enabled: false, tracked: 0, badCount: 0, worst: [], scope: "live" };
+  }
+  return liveSfpRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
 }
 
 function getPaperBotBar(sym, historyBuffers) {
@@ -645,6 +701,7 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
 
   if (barClosed && klineSymbol) {
     refreshSfpRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshLiveSfpRegimeForSymbol(klineSymbol, historyBuffers);
   }
 
   let paperChanged = false;
@@ -2966,11 +3023,12 @@ async function main() {
     );
   }
 
-  ensureDefaultModelOnDisk();
-  ensureSfpRegimeModelOnDisk();
+  ensureAllDefaultModelsOnDisk();
+  ensureAllSfpRegimeModelsOnDisk();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
+    modelScope: "paper",
   });
 
   paperBot = createPaperBot({
@@ -2988,6 +3046,12 @@ async function main() {
   );
 
   futuresTrader = createFuturesTrader({ kv });
+
+  liveSfpRegimeMonitor = createSfpRegimeMonitor({
+    getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
+    modelScope: "live",
+  });
+
   liveBot = createLiveBot({
     trader: futuresTrader,
     onTradeClosed: createTradeClosedHandler("Live bot"),
@@ -2995,6 +3059,10 @@ async function main() {
     onExitOrdersFailed: (pos, detail) =>
       telegram?.onExitOrdersFailed?.(pos, detail),
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
+    sfpRegimeMonitor: liveSfpRegimeMonitor,
+    getRecentBars: (sym, limit) =>
+      getRecentBarsForBot(sym, historyBuffers, limit),
+    getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
   });
   void liveBot.getPublicState().then((st) => {
     console.error(
@@ -3229,10 +3297,15 @@ async function main() {
           dashboardWs?.broadcast("paperBot", state);
           return state;
         },
-        getEarlyExitModelStatus: () => getEarlyExitModelStatusFull(),
+        getEarlyExitModelStatus: (scope) =>
+          getEarlyExitModelStatusFull(scope),
         trainEarlyExitModel: (body) => trainEarlyExitModelFromHistory(body),
-        getSfpRegimeModelStatus: () => getSfpRegimeModelStatusFull(),
-        getSfpRegimeMonitor: () => getSfpRegimeMonitorSnapshot(),
+        getSfpRegimeModelStatus: (scope) =>
+          getSfpRegimeModelStatusFull(scope),
+        getSfpRegimeMonitor: (scope) =>
+          normalizeAiModelScope(scope) === "live"
+            ? getLiveSfpRegimeMonitorSnapshot()
+            : getSfpRegimeMonitorSnapshot(),
         trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
@@ -3571,6 +3644,15 @@ async function main() {
         syms,
         (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
         paperBot.getPublicState().config,
+        50
+      );
+    }
+    if (liveSfpRegimeMonitor && liveBot?.getConfig?.()?.aiSfpRegimeEnabled) {
+      const syms = [...historyBuffers.keys()];
+      liveSfpRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        liveBot.getConfig(),
         50
       );
     }

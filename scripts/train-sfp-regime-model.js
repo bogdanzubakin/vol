@@ -4,15 +4,17 @@
  *
  *   node scripts/train-sfp-regime-model.js
  *   node scripts/train-sfp-regime-model.js --source backtest
+ *   node scripts/train-sfp-regime-model.js --scope live
  */
 
 const path = require("path");
 const { dataPath, readJsonFile } = require("../lib/data-dir");
+const { normalizeAiModelScope } = require("../lib/ai-model-scope");
 const { createKlineCacheStore } = require("../lib/kline-cache");
 const { readSymbolBars } = require("../lib/backtest-kline-cache");
 const { loadLastBacktestResult } = require("../lib/paper-bot-backtest");
 const {
-  ensureDefaultModelOnDisk,
+  ensureAllDefaultModelsOnDisk,
   trainFromTrades,
   getModelStatus,
 } = require("../lib/sfp-regime-model");
@@ -21,10 +23,12 @@ const PRIMARY_INTERVAL = "1m";
 
 function parseArgs(argv) {
   let source = "auto";
+  let scope = "paper";
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--source" && argv[i + 1]) source = argv[++i];
+    if (argv[i] === "--scope" && argv[i + 1]) scope = argv[++i];
   }
-  return { source };
+  return { source, scope: normalizeAiModelScope(scope) };
 }
 
 function loadPaperTrades() {
@@ -38,7 +42,13 @@ function filterSfp(trades) {
   );
 }
 
-function collectTrades(source) {
+function loadLiveTrades() {
+  const raw = readJsonFile(dataPath("live-bot-state.json"), null);
+  return raw?.closedTrades ?? [];
+}
+
+function collectTrades(source, scope) {
+  if (scope === "live") return filterSfp(loadLiveTrades());
   const paper = filterSfp(loadPaperTrades());
   const backtest = filterSfp(loadLastBacktestResult()?.closedTrades);
   if (source === "paper") return paper;
@@ -55,12 +65,16 @@ function collectTrades(source) {
 }
 
 async function main() {
-  const { source } = parseArgs(process.argv);
-  ensureDefaultModelOnDisk();
+  const { source, scope } = parseArgs(process.argv);
+  ensureAllDefaultModelsOnDisk();
 
-  const trades = collectTrades(source);
+  const trades = collectTrades(source, scope);
   if (!trades.length) {
-    console.error("No SFP closed trades found.");
+    console.error(
+      scope === "live"
+        ? "No live bot SFP closed trades found."
+        : "No SFP closed trades found."
+    );
     process.exit(1);
   }
 
@@ -79,14 +93,15 @@ async function main() {
     return bars;
   }
 
-  console.error(`Training SFP regime from ${trades.length} trades (source=${source})…`);
+  console.error(`Training SFP regime from ${trades.length} trades (scope=${scope} source=${source})…`);
   const model = await trainFromTrades(trades, fetchBars, {
-    source: `cli:${source}`,
+    modelScope: scope,
+    source: `cli:${scope}:${source}`,
     onProgress: (p) => {
       if (p?.message) console.error(p.message);
     },
   });
-  const status = getModelStatus();
+  const status = getModelStatus(scope);
   const bm = status.bullMetrics ?? status.metrics ?? {};
   const rm = status.bearMetrics ?? {};
   console.error(

@@ -2088,6 +2088,78 @@
           </div>
         </details>
         <details class="settings-pane">
+          <summary>AI early exit (SFP)</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiEarlyExitEnabled" />
+            AI early exit — SFP only (live bot)
+          </label>
+          <div class="hint">Uses live model file — trained from live bot closed trades only</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiEarlyExitHardThreshold">Hard exit threshold</label>
+          <input type="number" id="liveBotAiEarlyExitHardThreshold" step="0.01" min="0.5" max="0.95" value="0.76" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiEarlyExitSoftThreshold">Soft exit threshold</label>
+          <input type="number" id="liveBotAiEarlyExitSoftThreshold" step="0.01" min="0.5" max="0.95" value="0.88" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiEarlyExitMinBars">Min bars in trade</label>
+          <input type="number" id="liveBotAiEarlyExitMinBars" step="1" min="1" max="30" value="9" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiEarlyExitBarCloseOnly" checked />
+            Score on bar close only
+          </label>
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotAiModelStatus">Live model: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainAiModel">Train live SFP model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>AI SFP regime filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiSfpRegimeEnabled" />
+            AI SFP regime filter (live bot)
+          </label>
+          <div class="hint">Separate live bull/bear models — skips SFP entries during poor regimes</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiSfpRegimeBullThreshold">Bull bad-regime threshold</label>
+          <input type="number" id="liveBotAiSfpRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.78" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiSfpRegimeBearThreshold">Bear bad-regime threshold</label>
+          <input type="number" id="liveBotAiSfpRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.72" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiSfpRegimeThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="liveBotAiSfpRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotSfpRegimeStatus">Live monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainSfpRegime">Train live regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
           <summary>Blocklist &amp; drawdown</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
@@ -4313,24 +4385,40 @@
 
     let earlyExitTrainPolling = false;
     let sfpRegimeTrainPolling = false;
+    let liveEarlyExitTrainPolling = false;
+    let liveSfpRegimeTrainPolling = false;
 
-    function resumeEarlyExitTrainPollIfNeeded(data) {
-      if (!data?.training?.running || earlyExitTrainPolling) return;
-      earlyExitTrainPolling = true;
+    function aiModelApiUrl(path, scope) {
+      if (!scope) return path;
+      const sep = path.includes("?") ? "&" : "?";
+      return `${path}${sep}scope=${encodeURIComponent(scope)}`;
+    }
+
+    function resumeEarlyExitTrainPollIfNeeded(data, scope = "paper") {
+      const polling = scope === "live" ? liveEarlyExitTrainPolling : earlyExitTrainPolling;
+      if (!data?.training?.running || polling) return;
+      if (scope === "live") liveEarlyExitTrainPolling = true;
+      else earlyExitTrainPolling = true;
       void pollAiModelTraining("/api/early-exit-model", () => {
-        void loadEarlyExitModelStatus();
-      }).finally(() => {
-        earlyExitTrainPolling = false;
+        if (scope === "live") void loadLiveEarlyExitModelStatus();
+        else void loadEarlyExitModelStatus();
+      }, scope).finally(() => {
+        if (scope === "live") liveEarlyExitTrainPolling = false;
+        else earlyExitTrainPolling = false;
       });
     }
 
-    function resumeSfpRegimeTrainPollIfNeeded(data) {
-      if (!data?.training?.running || sfpRegimeTrainPolling) return;
-      sfpRegimeTrainPolling = true;
+    function resumeSfpRegimeTrainPollIfNeeded(data, scope = "paper") {
+      const polling = scope === "live" ? liveSfpRegimeTrainPolling : sfpRegimeTrainPolling;
+      if (!data?.training?.running || polling) return;
+      if (scope === "live") liveSfpRegimeTrainPolling = true;
+      else sfpRegimeTrainPolling = true;
       void pollAiModelTraining("/api/sfp-regime-model", () => {
-        void loadSfpRegimeMonitorStatus();
-      }).finally(() => {
-        sfpRegimeTrainPolling = false;
+        if (scope === "live") void loadLiveSfpRegimeMonitorStatus();
+        else void loadSfpRegimeMonitorStatus();
+      }, scope).finally(() => {
+        if (scope === "live") liveSfpRegimeTrainPolling = false;
+        else sfpRegimeTrainPolling = false;
       });
     }
 
@@ -4350,9 +4438,9 @@
       return null;
     }
 
-    async function pollAiModelTraining(apiPath, onTick) {
+    async function pollAiModelTraining(apiPath, onTick, scope) {
       while (true) {
-        const res = await fetch(apiPath, { cache: "no-store" });
+        const res = await fetch(aiModelApiUrl(apiPath, scope), { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         onTick(data);
         const t = data.training;
@@ -4366,8 +4454,8 @@
       if (!el) return;
       try {
         const [modelRes, monRes] = await Promise.all([
-          fetch("/api/sfp-regime-model", { cache: "no-store" }),
-          fetch("/api/sfp-regime-monitor", { cache: "no-store" }),
+          fetch(aiModelApiUrl("/api/sfp-regime-model", "paper"), { cache: "no-store" }),
+          fetch(aiModelApiUrl("/api/sfp-regime-monitor", "paper"), { cache: "no-store" }),
         ]);
         const model = await modelRes.json().catch(() => ({}));
         const mon = await monRes.json().catch(() => ({}));
@@ -4395,9 +4483,49 @@
         el.textContent = trainLine
           ? `Training: ${trainLine}`
           : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
-        resumeSfpRegimeTrainPollIfNeeded(model);
+        resumeSfpRegimeTrainPollIfNeeded(model, "paper");
       } catch (e) {
         el.textContent = `Monitor: ${e.message}`;
+      }
+    }
+
+    async function loadLiveSfpRegimeMonitorStatus() {
+      const el = document.getElementById("liveBotSfpRegimeStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/sfp-regime-model", "live"), { cache: "no-store" }),
+          fetch(aiModelApiUrl("/api/sfp-regime-monitor", "live"), { cache: "no-store" }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null
+            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
+            : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+            ? ` · bad now: ${mon.worst
+                .slice(0, 5)
+                .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                .join(", ")}`
+            : mon.enabled
+              ? " · no bad regimes flagged"
+              : "";
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        resumeSfpRegimeTrainPollIfNeeded(model, "live");
+      } catch (e) {
+        el.textContent = `Live monitor: ${e.message}`;
       }
     }
 
@@ -4405,13 +4533,15 @@
       const el = document.getElementById("paperBotAiModelStatus");
       if (!el) return;
       try {
-        const res = await fetch("/api/early-exit-model", { cache: "no-store" });
+        const res = await fetch(aiModelApiUrl("/api/early-exit-model", "paper"), {
+          cache: "no-store",
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         const trainLine = formatAiTrainProgress(data.training);
         if (trainLine) {
           el.textContent = `Training: ${trainLine}`;
-          resumeEarlyExitTrainPollIfNeeded(data);
+          resumeEarlyExitTrainPollIfNeeded(data, "paper");
           return;
         }
         const hm = data.hardMetrics ?? data.metrics ?? {};
@@ -4429,6 +4559,39 @@
           samples;
       } catch (e) {
         el.textContent = `Model: ${e.message}`;
+      }
+    }
+
+    async function loadLiveEarlyExitModelStatus() {
+      const el = document.getElementById("liveBotAiModelStatus");
+      if (!el) return;
+      try {
+        const res = await fetch(aiModelApiUrl("/api/early-exit-model", "live"), {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const trainLine = formatAiTrainProgress(data.training);
+        if (trainLine) {
+          el.textContent = `Training: ${trainLine}`;
+          resumeEarlyExitTrainPollIfNeeded(data, "live");
+          return;
+        }
+        const hm = data.hardMetrics ?? data.metrics ?? {};
+        const sm = data.softMetrics ?? {};
+        const hardAcc =
+          hm.accuracy != null ? ` · hard acc ${(hm.accuracy * 100).toFixed(1)}%` : "";
+        const softAcc =
+          sm.accuracy != null ? ` · soft acc ${(sm.accuracy * 100).toFixed(1)}%` : "";
+        const samples = hm.samples ? ` · ${hm.samples} hard samples` : "";
+        el.textContent =
+          `Live SFP v${data.version ?? 2}: ${data.source ?? "—"} · hard ${data.hardThreshold ?? data.threshold ?? "—"} · soft ${data.softThreshold ?? "—"}` +
+          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap") +
+          hardAcc +
+          softAcc +
+          samples;
+      } catch (e) {
+        el.textContent = `Live model: ${e.message}`;
       }
     }
 
@@ -4493,14 +4656,14 @@
         const res = await fetch("/api/early-exit-model/train", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: "auto" }),
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         setPaperBotMsg(`SFP training started (${data.trades ?? "?"} trades)…`, true);
         const training = await pollAiModelTraining("/api/early-exit-model", () => {
           void loadEarlyExitModelStatus();
-        });
+        }, "paper");
         await loadEarlyExitModelStatus();
         if (training?.error) throw new Error(training.error);
         const m = training?.result?.model?.metrics ?? {};
@@ -4531,14 +4694,14 @@
         const res = await fetch("/api/sfp-regime-model/train", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: "auto" }),
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         setPaperBotMsg(`SFP training started (${data.trades ?? "?"} trades)…`, true);
         const training = await pollAiModelTraining("/api/sfp-regime-model", () => {
           void loadSfpRegimeMonitorStatus();
-        });
+        }, "paper");
         await loadSfpRegimeMonitorStatus();
         if (training?.error) throw new Error(training.error);
         const m = training?.result?.model?.metrics ?? {};
@@ -4620,6 +4783,32 @@
         ),
         drawdownStopEnabled: document.getElementById("liveBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("liveBotDrawdownStopPct").value),
+        aiEarlyExitEnabled: document.getElementById("liveBotAiEarlyExitEnabled").checked,
+        aiEarlyExitHardThreshold: Number(
+          document.getElementById("liveBotAiEarlyExitHardThreshold").value
+        ),
+        aiEarlyExitSoftThreshold: Number(
+          document.getElementById("liveBotAiEarlyExitSoftThreshold").value
+        ),
+        aiEarlyExitThreshold: Number(
+          document.getElementById("liveBotAiEarlyExitHardThreshold").value
+        ),
+        aiEarlyExitMinBars: Number(
+          document.getElementById("liveBotAiEarlyExitMinBars").value
+        ),
+        aiEarlyExitBarCloseOnly: document.getElementById(
+          "liveBotAiEarlyExitBarCloseOnly"
+        ).checked,
+        aiSfpRegimeEnabled: document.getElementById("liveBotAiSfpRegimeEnabled").checked,
+        aiSfpRegimeBullThreshold: Number(
+          document.getElementById("liveBotAiSfpRegimeBullThreshold").value
+        ),
+        aiSfpRegimeBearThreshold: Number(
+          document.getElementById("liveBotAiSfpRegimeBearThreshold").value
+        ),
+        aiSfpRegimeThreshold: Number(
+          document.getElementById("liveBotAiSfpRegimeThreshold").value
+        ),
       };
     }
 
@@ -4679,6 +4868,26 @@
       document.getElementById("liveBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 4;
+      document.getElementById("liveBotAiEarlyExitEnabled").checked = Boolean(
+        cfg.aiEarlyExitEnabled
+      );
+      document.getElementById("liveBotAiEarlyExitHardThreshold").value =
+        cfg.aiEarlyExitHardThreshold ?? cfg.aiEarlyExitThreshold ?? 0.76;
+      document.getElementById("liveBotAiEarlyExitSoftThreshold").value =
+        cfg.aiEarlyExitSoftThreshold ?? 0.88;
+      document.getElementById("liveBotAiEarlyExitMinBars").value =
+        cfg.aiEarlyExitMinBars ?? 9;
+      document.getElementById("liveBotAiEarlyExitBarCloseOnly").checked =
+        cfg.aiEarlyExitBarCloseOnly !== false;
+      document.getElementById("liveBotAiSfpRegimeEnabled").checked = Boolean(
+        cfg.aiSfpRegimeEnabled
+      );
+      document.getElementById("liveBotAiSfpRegimeBullThreshold").value =
+        cfg.aiSfpRegimeBullThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.78;
+      document.getElementById("liveBotAiSfpRegimeBearThreshold").value =
+        cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
+      document.getElementById("liveBotAiSfpRegimeThreshold").value =
+        cfg.aiSfpRegimeThreshold ?? 0.58;
       updateLiveBotBadges(cfg);
     }
 
@@ -4759,6 +4968,8 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderLiveBot(data, syncForm);
+        void loadLiveEarlyExitModelStatus();
+        void loadLiveSfpRegimeMonitorStatus();
         if (!data.busy) {
           setLiveBotMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
         }
@@ -4837,6 +5048,82 @@
     });
 
     document.getElementById("liveBotRefresh").addEventListener("click", () => loadLiveBot(true));
+
+    document.getElementById("liveBotTrainAiModel")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live SFP early-exit model from live bot closed trades only? Requires kline cache for bar replay."
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainAiModel");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live model training…", true);
+        const res = await fetch("/api/early-exit-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(`Live training started (${data.trades ?? "?"} trades)…`, true);
+        const training = await pollAiModelTraining("/api/early-exit-model", () => {
+          void loadLiveEarlyExitModelStatus();
+        }, "live");
+        await loadLiveEarlyExitModelStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setLiveBotMsg(
+          `Live SFP model trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadLiveEarlyExitModelStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveBotTrainSfpRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live SFP regime model from live bot closed trades only?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainSfpRegime");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live regime training…", true);
+        const res = await fetch("/api/sfp-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(`Live regime training started (${data.trades ?? "?"} trades)…`, true);
+        const training = await pollAiModelTraining("/api/sfp-regime-model", () => {
+          void loadLiveSfpRegimeMonitorStatus();
+        }, "live");
+        await loadLiveSfpRegimeMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setLiveBotMsg(
+          `Live regime trained (${training?.result?.tradesUsed ?? data.trades} SFP trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadLiveSfpRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById("liveBotFillWorstPairs")?.addEventListener("click", async () => {
       try {
