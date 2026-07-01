@@ -860,27 +860,44 @@ async function restJsonFetch(
   shouldAbort = null
 ) {
   return restQueue.schedule(async () => {
-    throwIfBacktestAborted(shouldAbort);
+    let currentAttempt = attempt;
     const q = new URLSearchParams(params).toString();
     const url = `${REST_BASE}${pathName}${q ? `?${q}` : ""}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-    const text = await res.text();
 
-    if (res.status === 418 || res.status === 429) {
-      const banUntil = parseBanUntil(text);
-      if (banUntil && banUntil > Date.now()) {
-        await waitForBan(banUntil, shouldAbort);
-        return restJsonFetch(pathName, params, attempt, restQueue, shouldAbort);
+    while (true) {
+      throwIfBacktestAborted(shouldAbort);
+
+      let res;
+      let text;
+      try {
+        res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+        text = await res.text();
+      } catch (e) {
+        if (currentAttempt < 5) {
+          currentAttempt++;
+          await sleep(cfg.restRetryMs * currentAttempt);
+          continue;
+        }
+        throw e;
       }
-      if (attempt < 5) {
-        await sleep(cfg.restRetryMs * (attempt + 1));
-        return restJsonFetch(pathName, params, attempt + 1, restQueue, shouldAbort);
+
+      if (res.status === 418 || res.status === 429) {
+        const banUntil = parseBanUntil(text);
+        if (banUntil && banUntil > Date.now()) {
+          await waitForBan(banUntil, shouldAbort);
+          continue;
+        }
+        if (currentAttempt < 5) {
+          currentAttempt++;
+          await sleep(cfg.restRetryMs * currentAttempt);
+          continue;
+        }
+        throw new Error(`${pathName} ${res.status} ${text}`);
       }
-      throw new Error(`${pathName} ${res.status} ${text}`);
+
+      if (!res.ok) throw new Error(`${pathName} ${res.status} ${text}`);
+      return JSON.parse(text);
     }
-
-    if (!res.ok) throw new Error(`${pathName} ${res.status} ${text}`);
-    return JSON.parse(text);
   });
 }
 
@@ -3693,13 +3710,6 @@ async function main() {
         quoteVolMap
       )
     : [];
-  const stopStaleRefresh = startStaleSymbolRefresh(
-    symbols,
-    historyBuffers,
-    signalBuffers,
-    signalMaps(),
-    quoteVolMap
-  );
 
   if (wantPrefetch) {
     await prefetchAllSymbols(
@@ -3715,6 +3725,14 @@ async function main() {
       "Skipping prefetch (--no-prefetch). History will build from cache/WebSocket."
     );
   }
+
+  const stopStaleRefresh = startStaleSymbolRefresh(
+    symbols,
+    historyBuffers,
+    signalBuffers,
+    signalMaps(),
+    quoteVolMap
+  );
 
   const paperBotPriceTimer = setInterval(() => {
     if (
