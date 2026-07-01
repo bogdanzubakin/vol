@@ -9,7 +9,8 @@
     "start:scanner": "node index.js --all",
     "visualize": "node scripts/visualize-cache.js",
     "visualize:signals": "node scripts/visualize-cache.js --signals-only",
-    "telegram:chats": "node scripts/telegram-chats.js"
+    "telegram:chats": "node scripts/telegram-chats.js",
+    "train:early-exit": "node scripts/train-early-exit-model.js"
   },
   "engines": {
     "node": ">=18"

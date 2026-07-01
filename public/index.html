@@ -1739,6 +1739,42 @@
           </div>
         </details>
         <details class="settings-pane">
+          <summary>AI early exit</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiEarlyExitEnabled" />
+            AI early exit (paper bot)
+          </label>
+          <div class="hint">Lightweight logistic model on Railway — scores each bar for stall / giveback / adverse patterns</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiEarlyExitThreshold">Exit probability threshold</label>
+          <input type="number" id="paperBotAiEarlyExitThreshold" step="0.01" min="0.5" max="0.95" value="0.62" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiEarlyExitMinBars">Min bars in trade</label>
+          <input type="number" id="paperBotAiEarlyExitMinBars" step="1" min="1" max="30" value="2" required />
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiEarlyExitBarCloseOnly" checked />
+            Score on bar close only
+          </label>
+          <div class="hint">Recommended on Railway — one inference per closed candle</div>
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotAiModelStatus">Model: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainAiModel">Train from history</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
           <summary>Blocklist &amp; drawdown</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
@@ -3563,6 +3599,7 @@
       if (reason === "early_stall") return '<span class="near">stall</span>';
       if (reason === "early_adverse") return '<span class="bad">early adv</span>';
       if (reason === "runner_exit") return '<span class="pass">runner</span>';
+      if (reason === "ai_early_exit") return '<span class="near">AI exit</span>';
       if (reason === "manual") return '<span class="near">manual</span>';
       return escapeHtml(reason ?? "—");
     }
@@ -3693,6 +3730,16 @@
         runnerReversalSignals: Number(
           document.getElementById("paperBotRunnerReversalSignals").value
         ),
+        aiEarlyExitEnabled: document.getElementById("paperBotAiEarlyExitEnabled").checked,
+        aiEarlyExitThreshold: Number(
+          document.getElementById("paperBotAiEarlyExitThreshold").value
+        ),
+        aiEarlyExitMinBars: Number(
+          document.getElementById("paperBotAiEarlyExitMinBars").value
+        ),
+        aiEarlyExitBarCloseOnly: document.getElementById(
+          "paperBotAiEarlyExitBarCloseOnly"
+        ).checked,
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
         ),
@@ -3804,6 +3851,15 @@
       document.getElementById("paperBotRunnerStructureBars").value = cfg.runnerStructureBars ?? 4;
       document.getElementById("paperBotRunnerReversalSignals").value =
         cfg.runnerReversalSignals ?? 2;
+      document.getElementById("paperBotAiEarlyExitEnabled").checked = Boolean(
+        cfg.aiEarlyExitEnabled
+      );
+      document.getElementById("paperBotAiEarlyExitThreshold").value =
+        cfg.aiEarlyExitThreshold ?? 0.62;
+      document.getElementById("paperBotAiEarlyExitMinBars").value =
+        cfg.aiEarlyExitMinBars ?? 2;
+      document.getElementById("paperBotAiEarlyExitBarCloseOnly").checked =
+        cfg.aiEarlyExitBarCloseOnly !== false;
       document.getElementById("paperBotBlockedSymbols").value = (
         cfg.blockedSymbols ?? []
       ).join("\n");
@@ -4188,12 +4244,34 @@
       }
     }
 
+    async function loadEarlyExitModelStatus() {
+      const el = document.getElementById("paperBotAiModelStatus");
+      if (!el) return;
+      try {
+        const res = await fetch("/api/early-exit-model", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const m = data.metrics ?? {};
+        const acc =
+          m.accuracy != null ? ` · acc ${(m.accuracy * 100).toFixed(1)}%` : "";
+        const samples = m.samples ? ` · ${m.samples} samples` : "";
+        el.textContent =
+          `Model: ${data.source ?? "—"} · threshold ${data.threshold ?? "—"}` +
+          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap") +
+          acc +
+          samples;
+      } catch (e) {
+        el.textContent = `Model: ${e.message}`;
+      }
+    }
+
     async function loadPaperBot(syncForm = false) {
       try {
         const res = await fetch("/api/paper-bot", { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPaperBot(data, syncForm);
+        void loadEarlyExitModelStatus();
         if (syncForm) {
           try {
             const sres = await fetch("/api/strategies", { cache: "no-store" });
@@ -4231,6 +4309,35 @@
     });
 
     document.getElementById("paperBotRefresh").addEventListener("click", loadPaperBot);
+
+    document.getElementById("paperBotTrainAiModel")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train AI early-exit model from train-bot + paper bot closed trades? Requires kline cache for bar replay."
+        )
+      ) {
+        return;
+      }
+      try {
+        setPaperBotMsg("Training model…", true);
+        const res = await fetch("/api/early-exit-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        await loadEarlyExitModelStatus();
+        const m = data.model?.metrics ?? {};
+        setPaperBotMsg(
+          `Model trained (${data.tradesUsed} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadEarlyExitModelStatus();
+      }
+    });
 
     document.getElementById("paperBotCopyToLive")?.addEventListener("click", async () => {
       try {

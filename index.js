@@ -46,6 +46,12 @@ const {
   createTelegramNotifier,
 } = require("./lib/telegram-notify");
 const { createPaperBot } = require("./lib/paper-bot");
+const {
+  ensureDefaultModelOnDisk,
+  getModelStatus,
+  trainFromTrades,
+  reloadModel,
+} = require("./lib/early-exit-model");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
@@ -356,6 +362,49 @@ function evalBars(sym, historyBuffers) {
   );
 }
 
+function fetchBarsForEarlyExitTraining(symbol, openedAt, closedAt) {
+  const sym = String(symbol || "").toUpperCase();
+  let bars = signalKlineCache?.read(sym) ?? klineCache?.read(sym) ?? [];
+  if (!bars.length) return [];
+  const from = openedAt - 120_000;
+  const to = closedAt + 120_000;
+  return bars.filter((b) => b.closeTime >= from && b.closeTime <= to);
+}
+
+function collectEarlyExitTrainingTrades(source = "auto") {
+  const mode = String(source || "auto").toLowerCase();
+  const backtest = loadLastBacktestResult();
+  const paper = paperBot?.getClosedTrades?.() ?? [];
+  if (mode === "paper") return paper;
+  if (mode === "backtest") return backtest?.closedTrades ?? [];
+  const merged = [...(backtest?.closedTrades ?? []), ...paper];
+  const seen = new Set();
+  const out = [];
+  for (const t of merged) {
+    const key = t.id ?? `${t.symbol}-${t.openedAt}-${t.closedAt}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+function trainEarlyExitModelFromHistory(body = {}) {
+  const trades = collectEarlyExitTrainingTrades(body.source);
+  if (!trades.length) {
+    throw new Error(
+      "No closed trades for training — run train bot or accumulate paper bot history"
+    );
+  }
+  const cfg = paperBot.getPublicState().config;
+  const model = trainFromTrades(trades, fetchBarsForEarlyExitTraining, {
+    ...cfg,
+    source: `trained:${body.source ?? "auto"}`,
+  });
+  reloadModel();
+  return { model: getModelStatus(), tradesUsed: trades.length };
+}
+
 function getPaperBotBar(sym, historyBuffers) {
   const bars = primaryBarSource(sym, historyBuffers);
   let b = bars?.[bars.length - 1];
@@ -365,10 +414,22 @@ function getPaperBotBar(sym, historyBuffers) {
   }
   if (!b) return null;
   return {
-    close: +b.close,
-    low: +(b.low ?? b.close),
+    openTime: b.openTime,
+    closeTime: b.closeTime,
+    open: +b.open,
     high: +(b.high ?? b.close),
+    low: +(b.low ?? b.close),
+    close: +b.close,
+    volume: b.volume != null ? +b.volume : undefined,
   };
+}
+
+function getRecentBarsForBot(sym, historyBuffers, limit = 12) {
+  let bars = primaryBarSource(sym, historyBuffers);
+  if (!bars?.length && klineCache) {
+    bars = klineCache.read(sym) ?? [];
+  }
+  return bars?.slice(-limit) ?? [];
 }
 
 function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
@@ -2703,10 +2764,14 @@ async function main() {
     );
   }
 
+  ensureDefaultModelOnDisk();
+
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
+    getRecentBars: (sym, limit) =>
+      getRecentBarsForBot(sym, historyBuffers, limit),
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -2955,6 +3020,8 @@ async function main() {
           dashboardWs?.broadcast("paperBot", state);
           return state;
         },
+        getEarlyExitModelStatus: () => getModelStatus(),
+        trainEarlyExitModel: (body) => trainEarlyExitModelFromHistory(body),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);
