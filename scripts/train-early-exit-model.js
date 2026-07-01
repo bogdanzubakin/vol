@@ -113,7 +113,7 @@ async function main() {
     const sym = String(symbol).toUpperCase();
     let bars = klineCache.read(sym) ?? [];
     if (!bars.length) {
-      bars = readSymbolBars("signal", sym) ?? [];
+      bars = readSymbolBars("mover", sym) ?? readSymbolBars("signal", sym) ?? [];
     }
     if (!bars.length) return [];
     const from = openedAt - 120_000;

@@ -2494,7 +2494,8 @@
       <h2>Train bot <span id="backtestStatusBadge" class="paper-enabled-badge off">idle</span></h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Historical simulation: uses <strong>Strategies</strong> settings for signals and
-        <strong>Paper bot</strong> rules for entries/exits. Fetches klines per USDT-M pair, walks bar-by-bar, collects all trades into one shared account.
+        <strong>Paper bot</strong> rules for entries/exits. When signal interval is not 1m, train bot also fetches
+        <strong>1m klines</strong> for TP/SL, early abort, and AI exits (same precision as live). Fetches klines per USDT-M pair, walks bar-by-bar, collects all trades into one shared account.
         Re-runs with the same <strong>days</strong>, <strong>symbol list</strong>, and <strong>count</strong> load from a local cache for 24h (cleared on Stop &amp; reset).
       </p>
       <details class="settings-pane bot-settings-form">
@@ -5991,7 +5992,13 @@
       if (data.signalConfig) {
         const s = data.signalConfig;
         let text =
-          `Signals: ${s.interval ?? "1m"} · SFP + bearish SFP + pullback (from Strategies tab / saved config)`;
+          `Signals: ${s.interval ?? "1m"}` +
+          (s.interval && s.interval !== "1m" ? " · exits simulated on 1m (like live)" : "") +
+          ` · SFP + bearish SFP + pullback (from Strategies tab / saved config)`;
+        const runMeta = (data.result || data.last)?.runMeta;
+        if (runMeta?.simulationInterval === "1m" && runMeta?.signalInterval !== "1m") {
+          text += ` · ${runMeta.signalBarsPerSymbol ?? "?"} signal bars + ${runMeta.simulationBarsPerSymbol ?? "?"}×1m sim bars/symbol`;
+        }
         const bc = (data.result || data.last)?.botConfig;
         if (bc?.extremalSpikeGateEnabled !== false) {
           text += " · 30m extremal body gate (opposing direction)";

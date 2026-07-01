@@ -13,6 +13,7 @@ const scannerConfig = require("../lib/scanner-config");
 const { applyBarConfig, pickLiveConfig } = require("../lib/signal-metrics");
 const { normalizeConfig } = require("../lib/paper-bot");
 const { mergeBarsByOpenTime, createKlineCacheStore } = require("../lib/kline-cache");
+const { readSymbolBars } = require("../lib/backtest-kline-cache");
 const {
   runPaperBotBacktest,
   resolveBacktestSymbols,
@@ -234,8 +235,23 @@ async function main() {
     }
   }
 
+  async function fetchKlines1mForSymbol(symbol, barCount) {
+    const sym = String(symbol).toUpperCase();
+    try {
+      return await fetchKlinesInterval(sym, "1m", barCount, restQueueForCli);
+    } catch (e) {
+      const cached = readSymbolBars("mover", sym);
+      if (cached?.length >= 200) {
+        console.error(`Backtest ${sym}: 1m REST failed (${e.message}), using cached mover bars`);
+        return cached.length > barCount ? cached.slice(-barCount) : cached;
+      }
+      throw e;
+    }
+  }
+
   console.error(
-    `Train bot: ${list.length} symbols × ${days}d · interval ${signalCfg.interval} · SFP ${botConfig.tradeSfpSignals}/${botConfig.tradeBearishSfpSignals}`
+    `Train bot: ${list.length} symbols × ${days}d · signals ${signalCfg.interval}` +
+      (signalCfg.interval !== "1m" ? " · exits 1m" : "")
   );
 
   let lastLog = 0;
@@ -245,6 +261,7 @@ async function main() {
     botConfig,
     days,
     fetchKlinesForSymbol,
+    fetchKlines1mForSymbol: signalCfg.interval !== "1m" ? fetchKlines1mForSymbol : null,
     restGapMs,
     onProgress: (p) => {
       const now = Date.now();

@@ -483,7 +483,10 @@ function loadTrainingBarsForSymbol(sym) {
   const symbol = String(sym || "").toUpperCase();
   let bars = signalKlineCache?.read(symbol) ?? klineCache?.read(symbol) ?? [];
   if (!bars.length) {
-    bars = readSymbolBars("signal", symbol) ?? [];
+    bars =
+      readSymbolBars("mover", symbol) ??
+      readSymbolBars("signal", symbol) ??
+      [];
   }
   return bars;
 }
