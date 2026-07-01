@@ -52,6 +52,13 @@ const {
   trainFromTrades,
   reloadModel,
 } = require("./lib/early-exit-model");
+const {
+  ensureDefaultModelOnDisk: ensureSfpRegimeModelOnDisk,
+  getModelStatus: getSfpRegimeModelStatus,
+  trainFromTrades: trainSfpRegimeFromTrades,
+  reloadModel: reloadSfpRegimeModel,
+} = require("./lib/sfp-regime-model");
+const { createSfpRegimeMonitor } = require("./lib/sfp-regime-monitor");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
@@ -167,6 +174,7 @@ let dashboard = null;
 let pushScannerState = null;
 let telegram = null;
 let paperBot = null;
+let sfpRegimeMonitor = null;
 let liveBot = null;
 let futuresTrader = null;
 let dashboardWs = null;
@@ -405,6 +413,60 @@ function trainEarlyExitModelFromHistory(body = {}) {
   return { model: getModelStatus(), tradesUsed: trades.length };
 }
 
+function collectSfpRegimeTrainingTrades(source = "auto") {
+  const mode = String(source || "auto").toLowerCase();
+  const backtest = loadLastBacktestResult();
+  const paper = paperBot?.getClosedTrades?.() ?? [];
+  const filterSfp = (list) =>
+    (list ?? []).filter(
+      (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
+    );
+  if (mode === "paper") return filterSfp(paper);
+  if (mode === "backtest") return filterSfp(backtest?.closedTrades);
+  const merged = [...filterSfp(backtest?.closedTrades), ...filterSfp(paper)];
+  const seen = new Set();
+  const out = [];
+  for (const t of merged) {
+    const key = t.id ?? `${t.symbol}-${t.openedAt}-${t.closedAt}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+function trainSfpRegimeModelFromHistory(body = {}) {
+  const trades = collectSfpRegimeTrainingTrades(body.source);
+  if (!trades.length) {
+    throw new Error(
+      "No SFP closed trades for training — run train bot with SFP signals enabled"
+    );
+  }
+  const cfg = paperBot.getPublicState().config;
+  trainSfpRegimeFromTrades(trades, fetchBarsForEarlyExitTraining, {
+    ...cfg,
+    source: `trained:${body.source ?? "auto"}`,
+  });
+  reloadSfpRegimeModel();
+  return { model: getSfpRegimeModelStatus(), tradesUsed: trades.length };
+}
+
+function refreshSfpRegimeForSymbol(sym, historyBuffers) {
+  if (!sfpRegimeMonitor || !paperBot) return;
+  const cfg = paperBot.getPublicState().config;
+  if (!cfg.aiSfpRegimeEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  sfpRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
+function getSfpRegimeMonitorSnapshot() {
+  if (!sfpRegimeMonitor || !paperBot) {
+    return { ok: true, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return sfpRegimeMonitor.getSnapshot(paperBot.getPublicState().config);
+}
+
 function getPaperBotBar(sym, historyBuffers) {
   const bars = primaryBarSource(sym, historyBuffers);
   let b = bars?.[bars.length - 1];
@@ -443,6 +505,10 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
     if (exchangeOpenSymbols.size > 0 && exchangeOpenSymbols.has(klineSymbol)) {
       broadcastPositionsUpdate();
     }
+  }
+
+  if (barClosed && klineSymbol) {
+    refreshSfpRegimeForSymbol(klineSymbol, historyBuffers);
   }
 
   let paperChanged = false;
@@ -2765,6 +2831,11 @@ async function main() {
   }
 
   ensureDefaultModelOnDisk();
+  ensureSfpRegimeModelOnDisk();
+
+  sfpRegimeMonitor = createSfpRegimeMonitor({
+    getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
+  });
 
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
@@ -2772,6 +2843,8 @@ async function main() {
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
+    sfpRegimeMonitor,
+    getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -3022,6 +3095,9 @@ async function main() {
         },
         getEarlyExitModelStatus: () => getModelStatus(),
         trainEarlyExitModel: (body) => trainEarlyExitModelFromHistory(body),
+        getSfpRegimeModelStatus: () => getSfpRegimeModelStatus(),
+        getSfpRegimeMonitor: () => getSfpRegimeMonitorSnapshot(),
+        trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);
@@ -3348,6 +3424,15 @@ async function main() {
       liveBot?.hasOpenPositions()
     ) {
       refreshBotPrices(historyBuffers, null, { barClosed: true });
+    }
+    if (sfpRegimeMonitor && paperBot?.getPublicState?.().config?.aiSfpRegimeEnabled) {
+      const syms = [...historyBuffers.keys()];
+      sfpRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        paperBot.getPublicState().config,
+        50
+      );
     }
   }, 15_000);
 

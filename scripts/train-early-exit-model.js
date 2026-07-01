@@ -22,12 +22,23 @@ const PRIMARY_INTERVAL = "1m";
 
 function parseArgs(argv) {
   let source = "auto";
+  let exportPath = null;
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--source" && argv[i + 1]) {
       source = argv[++i];
+    } else if (argv[i] === "--export" && argv[i + 1]) {
+      exportPath = argv[++i];
     }
   }
-  return { source };
+  return { source, exportPath };
+}
+
+function loadExportTrades(exportPath) {
+  const raw = readJsonFile(exportPath, null);
+  if (!raw) throw new Error(`Export not found: ${exportPath}`);
+  const trades = raw?.backtest?.closedTrades ?? raw?.closedTrades ?? [];
+  if (!trades.length) throw new Error(`No closedTrades in export: ${exportPath}`);
+  return trades;
 }
 
 function loadPaperTrades() {
@@ -52,10 +63,20 @@ function collectTrades(source) {
 }
 
 async function main() {
-  const { source } = parseArgs(process.argv);
+  const { source, exportPath } = parseArgs(process.argv);
   ensureDefaultModelOnDisk();
 
-  const trades = collectTrades(source);
+  let trades;
+  if (exportPath) {
+    trades = loadExportTrades(exportPath).filter(
+      (t) => t.exitReason !== "ai_early_exit"
+    );
+    console.error(
+      `Loaded ${trades.length} trades from export (excluded ai_early_exit labels).`
+    );
+  } else {
+    trades = collectTrades(source);
+  }
   if (!trades.length) {
     console.error("No closed trades found. Run train bot or paper bot first.");
     process.exit(1);
@@ -77,7 +98,10 @@ async function main() {
   }
 
   console.error(`Training from ${trades.length} trades (source=${source})…`);
-  const model = trainFromTrades(trades, fetchBars, { source: `cli:${source}` });
+  const model = trainFromTrades(trades, fetchBars, {
+    source: exportPath ? `export:${path.basename(exportPath)}` : `cli:${source}`,
+    minThreshold: 0.78,
+  });
   const status = getModelStatus();
   console.error(
     `Saved ${status.path} · acc ${(model.metrics.accuracy * 100).toFixed(1)}% · ${model.metrics.samples} samples`

@@ -1751,11 +1751,11 @@
         </div>
         <div class="field">
           <label for="paperBotAiEarlyExitThreshold">Exit probability threshold</label>
-          <input type="number" id="paperBotAiEarlyExitThreshold" step="0.01" min="0.5" max="0.95" value="0.62" required />
+          <input type="number" id="paperBotAiEarlyExitThreshold" step="0.01" min="0.5" max="0.95" value="0.82" required />
         </div>
         <div class="field">
           <label for="paperBotAiEarlyExitMinBars">Min bars in trade</label>
-          <input type="number" id="paperBotAiEarlyExitMinBars" step="1" min="1" max="30" value="2" required />
+          <input type="number" id="paperBotAiEarlyExitMinBars" step="1" min="1" max="30" value="9" required />
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
@@ -1770,6 +1770,31 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="paperBotTrainAiModel">Train from history</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>AI SFP regime filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiSfpRegimeEnabled" />
+            AI SFP regime filter (paper bot)
+          </label>
+          <div class="hint">Continuously scores tradable symbols — skips bullish/bearish SFP entries during choppy or historically poor regimes (not manual blocklist)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiSfpRegimeThreshold">Bad-regime threshold</label>
+          <input type="number" id="paperBotAiSfpRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotSfpRegimeStatus">Monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainSfpRegime">Train SFP regime model</button>
         </div>
             </div>
           </div>
@@ -3740,6 +3765,11 @@
         aiEarlyExitBarCloseOnly: document.getElementById(
           "paperBotAiEarlyExitBarCloseOnly"
         ).checked,
+        aiSfpRegimeEnabled: document.getElementById("paperBotAiSfpRegimeEnabled")
+          .checked,
+        aiSfpRegimeThreshold: Number(
+          document.getElementById("paperBotAiSfpRegimeThreshold").value
+        ),
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
         ),
@@ -3855,11 +3885,16 @@
         cfg.aiEarlyExitEnabled
       );
       document.getElementById("paperBotAiEarlyExitThreshold").value =
-        cfg.aiEarlyExitThreshold ?? 0.62;
+        cfg.aiEarlyExitThreshold ?? 0.82;
       document.getElementById("paperBotAiEarlyExitMinBars").value =
-        cfg.aiEarlyExitMinBars ?? 2;
+        cfg.aiEarlyExitMinBars ?? 9;
       document.getElementById("paperBotAiEarlyExitBarCloseOnly").checked =
         cfg.aiEarlyExitBarCloseOnly !== false;
+      document.getElementById("paperBotAiSfpRegimeEnabled").checked = Boolean(
+        cfg.aiSfpRegimeEnabled
+      );
+      document.getElementById("paperBotAiSfpRegimeThreshold").value =
+        cfg.aiSfpRegimeThreshold ?? 0.58;
       document.getElementById("paperBotBlockedSymbols").value = (
         cfg.blockedSymbols ?? []
       ).join("\n");
@@ -4244,6 +4279,37 @@
       }
     }
 
+    async function loadSfpRegimeMonitorStatus() {
+      const el = document.getElementById("paperBotSfpRegimeStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch("/api/sfp-regime-model", { cache: "no-store" }),
+          fetch("/api/sfp-regime-monitor", { cache: "no-store" }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const acc =
+          model.metrics?.accuracy != null
+            ? ` · acc ${(model.metrics.accuracy * 100).toFixed(1)}%`
+            : "";
+        const worst =
+          mon.worst?.length > 0
+            ? ` · bad now: ${mon.worst
+                .slice(0, 5)
+                .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                .join(", ")}`
+            : mon.enabled
+              ? " · no bad regimes flagged"
+              : "";
+        el.textContent =
+          `Model: ${model.source ?? "—"}${acc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+      } catch (e) {
+        el.textContent = `Monitor: ${e.message}`;
+      }
+    }
+
     async function loadEarlyExitModelStatus() {
       const el = document.getElementById("paperBotAiModelStatus");
       if (!el) return;
@@ -4272,6 +4338,7 @@
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPaperBot(data, syncForm);
         void loadEarlyExitModelStatus();
+        void loadSfpRegimeMonitorStatus();
         if (syncForm) {
           try {
             const sres = await fetch("/api/strategies", { cache: "no-store" });
@@ -4336,6 +4403,35 @@
       } catch (e) {
         setPaperBotMsg(e.message, false);
         void loadEarlyExitModelStatus();
+      }
+    });
+
+    document.getElementById("paperBotTrainSfpRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train SFP regime model from SFP closed trades in train-bot + paper history?"
+        )
+      ) {
+        return;
+      }
+      try {
+        setPaperBotMsg("Training SFP regime model…", true);
+        const res = await fetch("/api/sfp-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        await loadSfpRegimeMonitorStatus();
+        const m = data.model?.metrics ?? {};
+        setPaperBotMsg(
+          `SFP regime trained (${data.tradesUsed} SFP trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadSfpRegimeMonitorStatus();
       }
     });
 
