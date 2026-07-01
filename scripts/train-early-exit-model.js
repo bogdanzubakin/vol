@@ -98,9 +98,12 @@ async function main() {
   }
 
   console.error(`Training from ${trades.length} trades (source=${source})…`);
-  const model = trainFromTrades(trades, fetchBars, {
+  const model = await trainFromTrades(trades, fetchBars, {
     source: exportPath ? `export:${path.basename(exportPath)}` : `cli:${source}`,
     minThreshold: 0.78,
+    onProgress: (p) => {
+      if (p?.message) console.error(p.message);
+    },
   });
   const status = getModelStatus();
   console.error(

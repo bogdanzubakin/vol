@@ -78,7 +78,12 @@ async function main() {
   }
 
   console.error(`Training SFP regime from ${trades.length} trades (source=${source})…`);
-  const model = trainFromTrades(trades, fetchBars, { source: `cli:${source}` });
+  const model = await trainFromTrades(trades, fetchBars, {
+    source: `cli:${source}`,
+    onProgress: (p) => {
+      if (p?.message) console.error(p.message);
+    },
+  });
   console.error(
     `Saved ${getModelStatus().path} · acc ${(model.metrics.accuracy * 100).toFixed(1)}%`
   );

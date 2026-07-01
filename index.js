@@ -184,6 +184,7 @@ let broadcastPositionsUpdate = () => {};
 let exchangeOpenSymbols = new Set();
 let stopPaperBotReport = () => {};
 const BACKTEST_STALE_MS = 30 * 60 * 1000;
+const BACKTEST_STALE_SIMULATE_MS = 120 * 60 * 1000;
 const BACKTEST_STALE_RATE_LIMIT_MS = 120 * 60 * 1000;
 
 let backtestJob = {
@@ -205,6 +206,35 @@ let backtestSnapshotJob = {
   error: null,
   lastProgressAt: null,
 };
+
+function freshAiTrainJob() {
+  return { running: false, progress: null, error: null, result: null };
+}
+
+const aiTrainJob = {
+  early_exit: freshAiTrainJob(),
+  sfp_regime: freshAiTrainJob(),
+};
+
+function modelStatusWithTraining(getStatus, job) {
+  return {
+    ...getStatus(),
+    training: {
+      running: job.running,
+      progress: job.progress,
+      error: job.error,
+      result: job.result,
+    },
+  };
+}
+
+function getEarlyExitModelStatusFull() {
+  return modelStatusWithTraining(getModelStatus, aiTrainJob.early_exit);
+}
+
+function getSfpRegimeModelStatusFull() {
+  return modelStatusWithTraining(getSfpRegimeModelStatus, aiTrainJob.sfp_regime);
+}
 
 function freshBacktestSnapshotJobState() {
   return {
@@ -247,12 +277,17 @@ function touchBacktestProgress(p) {
   }
 }
 
+function backtestStaleLimitMs(phase) {
+  if (phase === "rate_limit") return BACKTEST_STALE_RATE_LIMIT_MS;
+  if (phase === "simulate" || phase === "saving") return BACKTEST_STALE_SIMULATE_MS;
+  return BACKTEST_STALE_MS;
+}
+
 function reconcileBacktestJob() {
   if (!backtestJob.running || !backtestJob.lastProgressAt) return;
   const idle = Date.now() - backtestJob.lastProgressAt;
   const phase = backtestJob.progress?.phase;
-  const limit =
-    phase === "rate_limit" ? BACKTEST_STALE_RATE_LIMIT_MS : BACKTEST_STALE_MS;
+  const limit = backtestStaleLimitMs(phase);
   if (idle <= limit) return;
   const sym = backtestJob.progress?.symbol;
   const detail = backtestJob.progress?.message;
@@ -397,20 +432,62 @@ function collectEarlyExitTrainingTrades(source = "auto") {
   return out;
 }
 
-function trainEarlyExitModelFromHistory(body = {}) {
+function startEarlyExitTraining(body = {}) {
+  const job = aiTrainJob.early_exit;
+  if (job.running) {
+    throw new Error("Early-exit model training already running");
+  }
   const trades = collectEarlyExitTrainingTrades(body.source);
   if (!trades.length) {
     throw new Error(
       "No closed trades for training — run train bot or accumulate paper bot history"
     );
   }
+
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} trades…`,
+  };
+
   const cfg = paperBot.getPublicState().config;
-  const model = trainFromTrades(trades, fetchBarsForEarlyExitTraining, {
-    ...cfg,
-    source: `trained:${body.source ?? "auto"}`,
-  });
-  reloadModel();
-  return { model: getModelStatus(), tradesUsed: trades.length };
+  void (async () => {
+    try {
+      await trainFromTrades(trades, fetchBarsForEarlyExitTraining, {
+        ...cfg,
+        source: `trained:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadModel();
+      job.result = {
+        tradesUsed: trades.length,
+        model: getModelStatus(),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(`Early-exit model training failed: ${job.error}`);
+    } finally {
+      job.running = false;
+    }
+  })();
+
+  return { ok: true, started: true, trades: trades.length };
+}
+
+function trainEarlyExitModelFromHistory(body = {}) {
+  return startEarlyExitTraining(body);
 }
 
 function collectSfpRegimeTrainingTrades(source = "auto") {
@@ -435,20 +512,62 @@ function collectSfpRegimeTrainingTrades(source = "auto") {
   return out;
 }
 
-function trainSfpRegimeModelFromHistory(body = {}) {
+function startSfpRegimeTraining(body = {}) {
+  const job = aiTrainJob.sfp_regime;
+  if (job.running) {
+    throw new Error("SFP regime model training already running");
+  }
   const trades = collectSfpRegimeTrainingTrades(body.source);
   if (!trades.length) {
     throw new Error(
       "No SFP closed trades for training — run train bot with SFP signals enabled"
     );
   }
+
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} SFP trades…`,
+  };
+
   const cfg = paperBot.getPublicState().config;
-  trainSfpRegimeFromTrades(trades, fetchBarsForEarlyExitTraining, {
-    ...cfg,
-    source: `trained:${body.source ?? "auto"}`,
-  });
-  reloadSfpRegimeModel();
-  return { model: getSfpRegimeModelStatus(), tradesUsed: trades.length };
+  void (async () => {
+    try {
+      await trainSfpRegimeFromTrades(trades, fetchBarsForEarlyExitTraining, {
+        ...cfg,
+        source: `trained:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadSfpRegimeModel();
+      job.result = {
+        tradesUsed: trades.length,
+        model: getSfpRegimeModelStatus(),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(`SFP regime model training failed: ${job.error}`);
+    } finally {
+      job.running = false;
+    }
+  })();
+
+  return { ok: true, started: true, trades: trades.length };
+}
+
+function trainSfpRegimeModelFromHistory(body = {}) {
+  return startSfpRegimeTraining(body);
 }
 
 function refreshSfpRegimeForSymbol(sym, historyBuffers) {
@@ -3093,9 +3212,9 @@ async function main() {
           dashboardWs?.broadcast("paperBot", state);
           return state;
         },
-        getEarlyExitModelStatus: () => getModelStatus(),
+        getEarlyExitModelStatus: () => getEarlyExitModelStatusFull(),
         trainEarlyExitModel: (body) => trainEarlyExitModelFromHistory(body),
-        getSfpRegimeModelStatus: () => getSfpRegimeModelStatus(),
+        getSfpRegimeModelStatus: () => getSfpRegimeModelStatusFull(),
         getSfpRegimeMonitor: () => getSfpRegimeMonitorSnapshot(),
         trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
         getLiveBot: () => liveBot.getPublicState(),
@@ -3170,7 +3289,7 @@ async function main() {
           clearBacktestRunArtifacts();
           const days = Math.max(
             1,
-            Math.min(14, Number(body?.days) || DEFAULT_DAYS)
+            Math.min(21, Number(body?.days) || DEFAULT_DAYS)
           );
           const { symList, unknown, mode, requested } = resolveBacktestSymbols(
             body,
@@ -3206,6 +3325,8 @@ async function main() {
                   : `Loading ${sym} (${days}d)…`,
             });
           };
+          const savedRestGap = cfg.restMinGapMs;
+          cfg.restMinGapMs = Math.max(100, Math.floor(savedRestGap / 5));
           runPaperBotBacktest({
             symbols: symList,
             signalCfg: cfg,
@@ -3233,6 +3354,7 @@ async function main() {
             },
           })
             .then(({ result, barCache, chartCfg }) => {
+              cfg.restMinGapMs = savedRestGap;
               if (backtestJob.cancelled) return;
               backtestJob.running = false;
               backtestJob.result = result;
@@ -3251,6 +3373,7 @@ async function main() {
               );
             })
             .catch((e) => {
+              cfg.restMinGapMs = savedRestGap;
               if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {
                 backtestJob.running = false;
                 return;

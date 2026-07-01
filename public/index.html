@@ -2200,7 +2200,7 @@
       <div class="settings-form movers-settings" style="margin-bottom: 0;">
         <div class="field">
           <label for="backtestDays">History days</label>
-          <input type="number" id="backtestDays" min="1" max="14" value="4" step="1" />
+          <input type="number" id="backtestDays" min="1" max="21" value="4" step="1" />
         </div>
         <div class="field">
           <label for="backtestMaxSymbols">Max symbols (0 = all)</label>
@@ -4279,6 +4279,56 @@
       }
     }
 
+    let earlyExitTrainPolling = false;
+    let sfpRegimeTrainPolling = false;
+
+    function resumeEarlyExitTrainPollIfNeeded(data) {
+      if (!data?.training?.running || earlyExitTrainPolling) return;
+      earlyExitTrainPolling = true;
+      void pollAiModelTraining("/api/early-exit-model", () => {
+        void loadEarlyExitModelStatus();
+      }).finally(() => {
+        earlyExitTrainPolling = false;
+      });
+    }
+
+    function resumeSfpRegimeTrainPollIfNeeded(data) {
+      if (!data?.training?.running || sfpRegimeTrainPolling) return;
+      sfpRegimeTrainPolling = true;
+      void pollAiModelTraining("/api/sfp-regime-model", () => {
+        void loadSfpRegimeMonitorStatus();
+      }).finally(() => {
+        sfpRegimeTrainPolling = false;
+      });
+    }
+
+    function formatAiTrainProgress(training) {
+      if (!training) return null;
+      const p = training.progress;
+      if (training.running) {
+        if (p?.phase === "fit" && p.total > 0) {
+          return `${p.message ?? "Training"} (${p.done ?? 0}/${p.total})`;
+        }
+        if (p?.phase === "samples" && p.total > 0) {
+          return `${p.message ?? "Building samples"} (${p.done ?? 0}/${p.total})`;
+        }
+        return p?.message ?? "Training…";
+      }
+      if (training.error) return `Training failed: ${training.error}`;
+      return null;
+    }
+
+    async function pollAiModelTraining(apiPath, onTick) {
+      while (true) {
+        const res = await fetch(apiPath, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        onTick(data);
+        const t = data.training;
+        if (!t?.running) return t;
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+
     async function loadSfpRegimeMonitorStatus() {
       const el = document.getElementById("paperBotSfpRegimeStatus");
       if (!el) return;
@@ -4294,8 +4344,11 @@
           model.metrics?.accuracy != null
             ? ` · acc ${(model.metrics.accuracy * 100).toFixed(1)}%`
             : "";
+        const trainLine = formatAiTrainProgress(model.training);
         const worst =
-          mon.worst?.length > 0
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
             ? ` · bad now: ${mon.worst
                 .slice(0, 5)
                 .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
@@ -4303,8 +4356,10 @@
             : mon.enabled
               ? " · no bad regimes flagged"
               : "";
-        el.textContent =
-          `Model: ${model.source ?? "—"}${acc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `Model: ${model.source ?? "—"}${acc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        resumeSfpRegimeTrainPollIfNeeded(model);
       } catch (e) {
         el.textContent = `Monitor: ${e.message}`;
       }
@@ -4317,6 +4372,12 @@
         const res = await fetch("/api/early-exit-model", { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
+        const trainLine = formatAiTrainProgress(data.training);
+        if (trainLine) {
+          el.textContent = `Training: ${trainLine}`;
+          resumeEarlyExitTrainPollIfNeeded(data);
+          return;
+        }
         const m = data.metrics ?? {};
         const acc =
           m.accuracy != null ? ` · acc ${(m.accuracy * 100).toFixed(1)}%` : "";
@@ -4385,8 +4446,10 @@
       ) {
         return;
       }
+      const btn = document.getElementById("paperBotTrainAiModel");
       try {
-        setPaperBotMsg("Training model…", true);
+        btn.disabled = true;
+        setPaperBotMsg("Starting model training…", true);
         const res = await fetch("/api/early-exit-model/train", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -4394,15 +4457,22 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(`Training started (${data.trades ?? "?"} trades)…`, true);
+        const training = await pollAiModelTraining("/api/early-exit-model", () => {
+          void loadEarlyExitModelStatus();
+        });
         await loadEarlyExitModelStatus();
-        const m = data.model?.metrics ?? {};
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
         setPaperBotMsg(
-          `Model trained (${data.tradesUsed} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          `Model trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
           true
         );
       } catch (e) {
         setPaperBotMsg(e.message, false);
         void loadEarlyExitModelStatus();
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -4414,8 +4484,10 @@
       ) {
         return;
       }
+      const btn = document.getElementById("paperBotTrainSfpRegime");
       try {
-        setPaperBotMsg("Training SFP regime model…", true);
+        btn.disabled = true;
+        setPaperBotMsg("Starting SFP regime training…", true);
         const res = await fetch("/api/sfp-regime-model/train", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -4423,15 +4495,22 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(`SFP training started (${data.trades ?? "?"} trades)…`, true);
+        const training = await pollAiModelTraining("/api/sfp-regime-model", () => {
+          void loadSfpRegimeMonitorStatus();
+        });
         await loadSfpRegimeMonitorStatus();
-        const m = data.model?.metrics ?? {};
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
         setPaperBotMsg(
-          `SFP regime trained (${data.tradesUsed} SFP trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          `SFP regime trained (${training?.result?.tradesUsed ?? data.trades} SFP trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
           true
         );
       } catch (e) {
         setPaperBotMsg(e.message, false);
         void loadSfpRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
       }
     });
 
