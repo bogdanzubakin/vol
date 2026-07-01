@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Train SFP regime filter model from SFP closed trades.
+ * Train level-break regime filter model from level-break closed trades.
  *
- *   node scripts/train-sfp-regime-model.js
- *   node scripts/train-sfp-regime-model.js --source backtest
- *   node scripts/train-sfp-regime-model.js --scope live
+ *   node scripts/train-level-break-regime-model.js
+ *   node scripts/train-level-break-regime-model.js --source backtest
+ *   node scripts/train-level-break-regime-model.js --scope live
  */
 
 const path = require("path");
@@ -18,7 +18,7 @@ const {
   ensureAllDefaultModelsOnDisk,
   trainFromTrades,
   getModelStatus,
-} = require("../lib/sfp-regime-model");
+} = require("../lib/level-break-regime-model");
 
 const PRIMARY_INTERVAL = "1m";
 
@@ -37,9 +37,9 @@ function loadPaperTrades() {
   return raw?.closedTrades ?? [];
 }
 
-function filterSfp(trades) {
+function filterLevelBreak(trades) {
   return (trades ?? []).filter(
-    (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
+    (t) => t.signalKind === "level_break" || t.signalKind === "level_break_bear"
   );
 }
 
@@ -57,7 +57,7 @@ function collectTrades(source, scope) {
       paperTrades: loadPaperTrades(),
       liveTrades: loadLiveTrades(),
     },
-    filterSfp
+    filterLevelBreak
   );
 }
 
@@ -69,16 +69,17 @@ async function main() {
   if (!trades.length) {
     console.error(
       scope === "live"
-        ? "No SFP closed trades found. Run train bot first (live fills are merged when available)."
-        : "No SFP closed trades found."
+        ? "No level-break closed trades found. Run train bot with level-break signals enabled (live fills merged when available)."
+        : "No level-break closed trades found — run train bot with level-break signals enabled."
     );
     process.exit(1);
   }
 
   const klineCache = createKlineCacheStore({
-    cacheDir: path.join(dataPath(), "klines"),
+    dir: path.join(dataPath(), "klines"),
     interval: PRIMARY_INTERVAL,
-    cacheMaxBars: 5000,
+    maxBars: 5000,
+    evalLimit: 5000,
   });
 
   function fetchBars(symbol) {
@@ -90,8 +91,10 @@ async function main() {
     return bars;
   }
 
-  console.error(`Training SFP regime from ${trades.length} trades (scope=${scope} source=${source})…`);
-  const model = await trainFromTrades(trades, fetchBars, {
+  console.error(
+    `Training level-break regime from ${trades.length} trades (scope=${scope} source=${source})…`
+  );
+  await trainFromTrades(trades, fetchBars, {
     modelScope: scope,
     source: `cli:${scope}:${source}`,
     onProgress: (p) => {

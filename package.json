@@ -11,7 +11,8 @@
     "visualize:signals": "node scripts/visualize-cache.js --signals-only",
     "telegram:chats": "node scripts/telegram-chats.js",
     "train:early-exit": "node scripts/train-early-exit-model.js",
-    "train:sfp-regime": "node scripts/train-sfp-regime-model.js"
+    "train:sfp-regime": "node scripts/train-sfp-regime-model.js",
+    "train:level-break-regime": "node scripts/train-level-break-regime-model.js"
   },
   "engines": {
     "node": ">=18"

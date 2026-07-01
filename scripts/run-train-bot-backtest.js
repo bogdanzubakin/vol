@@ -184,6 +184,11 @@ function printSummary(result) {
   console.error(
     `SFP bull/bear: ${s.sfpSignals ?? 0}/${s.sfpBearSignals ?? 0} · regime skips ${s.sfpRegimeSkips ?? 0}`
   );
+  if (s.levelBreakSignals != null || s.levelBreakRegimeSkips != null) {
+    console.error(
+      `Level-break bull/bear: ${s.levelBreakSignals ?? 0}/${s.levelBreakBearSignals ?? 0} · regime skips ${s.levelBreakRegimeSkips ?? 0}`
+    );
+  }
   console.error(
     `Symbols: ${result.symbolsProcessed}/${result.symbolsTotal} (${result.symbolsSkipped} skipped) · ${result.days}d · ${result.elapsedSec}s`
   );

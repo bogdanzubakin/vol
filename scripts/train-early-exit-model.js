@@ -12,6 +12,7 @@ const path = require("path");
 const { readJsonFile } = require("../lib/data-dir");
 const { dataPath } = require("../lib/data-dir");
 const { normalizeAiModelScope } = require("../lib/ai-model-scope");
+const { collectAiTrainingTrades } = require("../lib/ai-training-trades");
 const { readSymbolBars } = require("../lib/backtest-kline-cache");
 const { createKlineCacheStore } = require("../lib/kline-cache");
 const { loadLastBacktestResult } = require("../lib/paper-bot-backtest");
@@ -63,20 +64,16 @@ function collectTrades(source, scope) {
     (list ?? []).filter(
       (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
     );
-  if (scope === "live") return filterSfp(loadLiveTrades());
-  const paper = filterSfp(loadPaperTrades());
-  const backtest = filterSfp(loadLastBacktestResult()?.closedTrades);
-  if (source === "paper") return paper;
-  if (source === "backtest") return backtest;
-  const seen = new Set();
-  const out = [];
-  for (const t of [...backtest, ...paper]) {
-    const key = t.id ?? `${t.symbol}-${t.openedAt}-${t.closedAt}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
+  return collectAiTrainingTrades(
+    source,
+    scope,
+    {
+      backtestTrades: loadLastBacktestResult()?.closedTrades,
+      paperTrades: loadPaperTrades(),
+      liveTrades: loadLiveTrades(),
+    },
+    filterSfp
+  );
 }
 
 async function main() {
@@ -99,7 +96,7 @@ async function main() {
   if (!trades.length) {
     console.error(
       scope === "live"
-        ? "No live bot closed trades found."
+        ? "No closed trades found. Run train bot first (live fills are merged when available)."
         : "No closed trades found. Run train bot or paper bot first."
     );
     process.exit(1);

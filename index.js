@@ -53,6 +53,7 @@ const {
   reloadModel,
 } = require("./lib/early-exit-model");
 const { normalizeAiModelScope } = require("./lib/ai-model-scope");
+const { collectAiTrainingTrades } = require("./lib/ai-training-trades");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllSfpRegimeModelsOnDisk,
   getModelStatus: getSfpRegimeModelStatus,
@@ -60,6 +61,13 @@ const {
   reloadModel: reloadSfpRegimeModel,
 } = require("./lib/sfp-regime-model");
 const { createSfpRegimeMonitor } = require("./lib/sfp-regime-monitor");
+const {
+  ensureAllDefaultModelsOnDisk: ensureAllLevelBreakRegimeModelsOnDisk,
+  getModelStatus: getLevelBreakRegimeModelStatus,
+  trainFromTrades: trainLevelBreakRegimeFromTrades,
+  reloadModel: reloadLevelBreakRegimeModel,
+} = require("./lib/level-break-regime-model");
+const { createLevelBreakRegimeMonitor } = require("./lib/level-break-regime-monitor");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
@@ -190,6 +198,8 @@ let telegram = null;
 let paperBot = null;
 let sfpRegimeMonitor = null;
 let liveSfpRegimeMonitor = null;
+let levelBreakRegimeMonitor = null;
+let liveLevelBreakRegimeMonitor = null;
 let liveBot = null;
 let futuresTrader = null;
 let dashboardWs = null;
@@ -250,17 +260,20 @@ const aiTrainJob = {
   paper: {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
+    level_break_regime: freshAiTrainJob(),
   },
   live: {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
+    level_break_regime: freshAiTrainJob(),
   },
 };
 
 function aiTrainJobFor(model, scope = "paper") {
   const key = normalizeAiModelScope(scope);
-  const field = model === "sfp_regime" ? "sfp_regime" : "early_exit";
-  return aiTrainJob[key][field];
+  if (model === "sfp_regime") return aiTrainJob[key].sfp_regime;
+  if (model === "level_break_regime") return aiTrainJob[key].level_break_regime;
+  return aiTrainJob[key].early_exit;
 }
 
 function getEarlyExitModelStatusFull(scope = "paper") {
@@ -274,6 +287,13 @@ function getSfpRegimeModelStatusFull(scope = "paper") {
   return modelStatusWithTraining(
     () => getSfpRegimeModelStatus(normalizeAiModelScope(scope)),
     aiTrainJobFor("sfp_regime", scope)
+  );
+}
+
+function getLevelBreakRegimeModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getLevelBreakRegimeModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("level_break_regime", scope)
   );
 }
 
@@ -480,29 +500,21 @@ function fetchBarsForSfpRegimeTraining(symbol) {
   return loadTrainingBarsForSymbol(symbol);
 }
 
+function aiTrainingTradeDeps() {
+  const backtest = loadLastBacktestResult();
+  return {
+    backtestTrades: backtest?.closedTrades,
+    paperTrades: paperBot?.getClosedTrades?.() ?? [],
+    liveTrades: liveBot?.getClosedTrades?.() ?? [],
+  };
+}
+
 function collectEarlyExitTrainingTrades(source = "auto", scope = "paper") {
-  const filterSfp = (list) =>
+  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
     (list ?? []).filter(
       (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
-    );
-  if (normalizeAiModelScope(scope) === "live") {
-    return filterSfp(liveBot?.getClosedTrades?.() ?? []);
-  }
-  const mode = String(source || "auto").toLowerCase();
-  const backtest = loadLastBacktestResult();
-  const paper = paperBot?.getClosedTrades?.() ?? [];
-  if (mode === "paper") return filterSfp(paper);
-  if (mode === "backtest") return filterSfp(backtest?.closedTrades);
-  const merged = [...filterSfp(backtest?.closedTrades), ...filterSfp(paper)];
-  const seen = new Set();
-  const out = [];
-  for (const t of merged) {
-    const key = t.id ?? `${t.symbol}-${t.openedAt}-${t.closedAt}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
+    )
+  );
 }
 
 function startEarlyExitTraining(body = {}) {
@@ -515,7 +527,7 @@ function startEarlyExitTraining(body = {}) {
   if (!trades.length) {
     const hint =
       scope === "live"
-        ? "accumulate live bot SFP closed trades"
+        ? "run train bot first (live fills are merged when available)"
         : "run train bot or accumulate paper bot history";
     throw new Error(`No closed trades for training — ${hint}`);
   }
@@ -571,28 +583,11 @@ function trainEarlyExitModelFromHistory(body = {}) {
 }
 
 function collectSfpRegimeTrainingTrades(source = "auto", scope = "paper") {
-  const filterSfp = (list) =>
+  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
     (list ?? []).filter(
       (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
-    );
-  if (normalizeAiModelScope(scope) === "live") {
-    return filterSfp(liveBot?.getClosedTrades?.() ?? []);
-  }
-  const mode = String(source || "auto").toLowerCase();
-  const backtest = loadLastBacktestResult();
-  const paper = paperBot?.getClosedTrades?.() ?? [];
-  if (mode === "paper") return filterSfp(paper);
-  if (mode === "backtest") return filterSfp(backtest?.closedTrades);
-  const merged = [...filterSfp(backtest?.closedTrades), ...filterSfp(paper)];
-  const seen = new Set();
-  const out = [];
-  for (const t of merged) {
-    const key = t.id ?? `${t.symbol}-${t.openedAt}-${t.closedAt}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
+    )
+  );
 }
 
 function startSfpRegimeTraining(body = {}) {
@@ -658,6 +653,113 @@ function startSfpRegimeTraining(body = {}) {
 
 function trainSfpRegimeModelFromHistory(body = {}) {
   return startSfpRegimeTraining(body);
+}
+
+function collectLevelBreakRegimeTrainingTrades(source = "auto", scope = "paper") {
+  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
+    (list ?? []).filter(
+      (t) => t.signalKind === "level_break" || t.signalKind === "level_break_bear"
+    )
+  );
+}
+
+function startLevelBreakRegimeTraining(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("level_break_regime", scope);
+  if (job.running) {
+    throw new Error("Level-break regime model training already running");
+  }
+  const trades = collectLevelBreakRegimeTrainingTrades(body.source, scope);
+  if (!trades.length) {
+    const hint =
+      scope === "live"
+        ? "run train bot with level-break signals enabled (live fills merged when available)"
+        : "run train bot with level-break signals enabled";
+    throw new Error(`No level-break closed trades for training — ${hint}`);
+  }
+
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} level-break trades…`,
+  };
+
+  void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
+    try {
+      await trainLevelBreakRegimeFromTrades(trades, fetchBarsForSfpRegimeTraining, {
+        ...cfg,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadLevelBreakRegimeModel(scope);
+      job.result = {
+        tradesUsed: trades.length,
+        model: getLevelBreakRegimeModelStatus(scope),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(
+        `Level-break regime model training failed (${scope}): ${job.error}`
+      );
+    } finally {
+      job.running = false;
+    }
+  })();
+
+  return { ok: true, started: true, trades: trades.length, scope };
+}
+
+function trainLevelBreakRegimeModelFromHistory(body = {}) {
+  return startLevelBreakRegimeTraining(body);
+}
+
+function refreshLevelBreakRegimeForSymbol(sym, historyBuffers) {
+  if (!levelBreakRegimeMonitor || !paperBot) return;
+  const cfg = paperBot.getPublicState().config;
+  if (!cfg.aiLevelBreakRegimeEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  levelBreakRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
+function refreshLiveLevelBreakRegimeForSymbol(sym, historyBuffers) {
+  if (!liveLevelBreakRegimeMonitor || !liveBot) return;
+  const cfg = liveBot.getConfig?.() ?? {};
+  if (!cfg?.aiLevelBreakRegimeEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  liveLevelBreakRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
+function getLevelBreakRegimeMonitorSnapshot() {
+  if (!levelBreakRegimeMonitor || !paperBot) {
+    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return levelBreakRegimeMonitor.getSnapshot(paperBot.getPublicState().config);
+}
+
+function getLiveLevelBreakRegimeMonitorSnapshot() {
+  if (!liveLevelBreakRegimeMonitor || !liveBot) {
+    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return liveLevelBreakRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
 }
 
 function refreshSfpRegimeForSymbol(sym, historyBuffers) {
@@ -735,6 +837,8 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
   if (barClosed && klineSymbol) {
     refreshSfpRegimeForSymbol(klineSymbol, historyBuffers);
     refreshLiveSfpRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshLevelBreakRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshLiveLevelBreakRegimeForSymbol(klineSymbol, historyBuffers);
   }
 
   let paperChanged = false;
@@ -3111,8 +3215,14 @@ async function main() {
 
   ensureAllDefaultModelsOnDisk();
   ensureAllSfpRegimeModelsOnDisk();
+  ensureAllLevelBreakRegimeModelsOnDisk();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
+    getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
+    modelScope: "paper",
+  });
+
+  levelBreakRegimeMonitor = createLevelBreakRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
     modelScope: "paper",
   });
@@ -3124,6 +3234,7 @@ async function main() {
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
     sfpRegimeMonitor,
+    levelBreakRegimeMonitor,
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
   });
   console.error(
@@ -3138,6 +3249,11 @@ async function main() {
     modelScope: "live",
   });
 
+  liveLevelBreakRegimeMonitor = createLevelBreakRegimeMonitor({
+    getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
+    modelScope: "live",
+  });
+
   liveBot = createLiveBot({
     trader: futuresTrader,
     onTradeClosed: createTradeClosedHandler("Live bot"),
@@ -3146,6 +3262,7 @@ async function main() {
       telegram?.onExitOrdersFailed?.(pos, detail),
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
     sfpRegimeMonitor: liveSfpRegimeMonitor,
+    levelBreakRegimeMonitor: liveLevelBreakRegimeMonitor,
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
@@ -3393,6 +3510,14 @@ async function main() {
             ? getLiveSfpRegimeMonitorSnapshot()
             : getSfpRegimeMonitorSnapshot(),
         trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
+        getLevelBreakRegimeModelStatus: (scope) =>
+          getLevelBreakRegimeModelStatusFull(scope),
+        getLevelBreakRegimeMonitor: (scope) =>
+          normalizeAiModelScope(scope) === "live"
+            ? getLiveLevelBreakRegimeMonitorSnapshot()
+            : getLevelBreakRegimeMonitorSnapshot(),
+        trainLevelBreakRegimeModel: (body) =>
+          trainLevelBreakRegimeModelFromHistory(body),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);
@@ -3750,9 +3875,33 @@ async function main() {
         50
       );
     }
+    if (
+      levelBreakRegimeMonitor &&
+      paperBot?.getPublicState?.().config?.aiLevelBreakRegimeEnabled
+    ) {
+      const syms = [...historyBuffers.keys()];
+      levelBreakRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        paperBot.getPublicState().config,
+        50
+      );
+    }
     if (liveSfpRegimeMonitor && liveBot?.getConfig?.()?.aiSfpRegimeEnabled) {
       const syms = [...historyBuffers.keys()];
       liveSfpRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        liveBot.getConfig(),
+        50
+      );
+    }
+    if (
+      liveLevelBreakRegimeMonitor &&
+      liveBot?.getConfig?.()?.aiLevelBreakRegimeEnabled
+    ) {
+      const syms = [...historyBuffers.keys()];
+      liveLevelBreakRegimeMonitor.refreshBatch(
         syms,
         (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
         liveBot.getConfig(),

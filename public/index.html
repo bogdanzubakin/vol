@@ -1812,6 +1812,39 @@
           </div>
         </details>
         <details class="settings-pane">
+          <summary>AI level-break regime filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiLevelBreakRegimeEnabled" />
+            AI level-break regime filter (paper bot)
+          </label>
+          <div class="hint">Separate bull/bear models — skips level-break entries during choppy or poor symbol regimes (compare vs pure algo)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiLevelBreakRegimeBullThreshold">Bull bad-regime threshold</label>
+          <input type="number" id="paperBotAiLevelBreakRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.76" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiLevelBreakRegimeBearThreshold">Bear bad-regime threshold</label>
+          <input type="number" id="paperBotAiLevelBreakRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.74" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiLevelBreakRegimeThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="paperBotAiLevelBreakRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotLevelBreakRegimeStatus">Monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainLevelBreakRegime">Train level-break regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
           <summary>Blocklist &amp; drawdown</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
@@ -2096,7 +2129,7 @@
             <input type="checkbox" id="liveBotAiEarlyExitEnabled" />
             AI early exit — SFP only (live bot)
           </label>
-          <div class="hint">Uses live model file — trained from live bot closed trades only</div>
+          <div class="hint">Uses live model file — trained from train-bot backtest + live fills</div>
         </div>
         <div class="field">
           <label for="liveBotAiEarlyExitHardThreshold">Hard exit threshold</label>
@@ -2155,6 +2188,39 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="liveBotTrainSfpRegime">Train live regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>AI level-break regime filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiLevelBreakRegimeEnabled" />
+            AI level-break regime filter (live bot)
+          </label>
+          <div class="hint">Separate live bull/bear models — skips level-break entries during poor regimes</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiLevelBreakRegimeBullThreshold">Bull bad-regime threshold</label>
+          <input type="number" id="liveBotAiLevelBreakRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.76" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiLevelBreakRegimeBearThreshold">Bear bad-regime threshold</label>
+          <input type="number" id="liveBotAiLevelBreakRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.74" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiLevelBreakRegimeThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="liveBotAiLevelBreakRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotLevelBreakRegimeStatus">Live monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainLevelBreakRegime">Train live level-break regime model</button>
         </div>
             </div>
           </div>
@@ -3868,6 +3934,18 @@
         aiSfpRegimeThreshold: Number(
           document.getElementById("paperBotAiSfpRegimeThreshold").value
         ),
+        aiLevelBreakRegimeEnabled: document.getElementById(
+          "paperBotAiLevelBreakRegimeEnabled"
+        ).checked,
+        aiLevelBreakRegimeBullThreshold: Number(
+          document.getElementById("paperBotAiLevelBreakRegimeBullThreshold").value
+        ),
+        aiLevelBreakRegimeBearThreshold: Number(
+          document.getElementById("paperBotAiLevelBreakRegimeBearThreshold").value
+        ),
+        aiLevelBreakRegimeThreshold: Number(
+          document.getElementById("paperBotAiLevelBreakRegimeThreshold").value
+        ),
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
         ),
@@ -3999,6 +4077,15 @@
         cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("paperBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
+      document.getElementById("paperBotAiLevelBreakRegimeEnabled").checked = Boolean(
+        cfg.aiLevelBreakRegimeEnabled
+      );
+      document.getElementById("paperBotAiLevelBreakRegimeBullThreshold").value =
+        cfg.aiLevelBreakRegimeBullThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.76;
+      document.getElementById("paperBotAiLevelBreakRegimeBearThreshold").value =
+        cfg.aiLevelBreakRegimeBearThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.74;
+      document.getElementById("paperBotAiLevelBreakRegimeThreshold").value =
+        cfg.aiLevelBreakRegimeThreshold ?? 0.58;
       document.getElementById("paperBotBlockedSymbols").value = (
         cfg.blockedSymbols ?? []
       ).join("\n");
@@ -4387,6 +4474,8 @@
     let sfpRegimeTrainPolling = false;
     let liveEarlyExitTrainPolling = false;
     let liveSfpRegimeTrainPolling = false;
+    let levelBreakRegimeTrainPolling = false;
+    let liveLevelBreakRegimeTrainPolling = false;
 
     function aiModelApiUrl(path, scope) {
       if (!scope) return path;
@@ -4419,6 +4508,21 @@
       }, scope).finally(() => {
         if (scope === "live") liveSfpRegimeTrainPolling = false;
         else sfpRegimeTrainPolling = false;
+      });
+    }
+
+    function resumeLevelBreakRegimeTrainPollIfNeeded(data, scope = "paper") {
+      const polling =
+        scope === "live" ? liveLevelBreakRegimeTrainPolling : levelBreakRegimeTrainPolling;
+      if (!data?.training?.running || polling) return;
+      if (scope === "live") liveLevelBreakRegimeTrainPolling = true;
+      else levelBreakRegimeTrainPolling = true;
+      void pollAiModelTraining("/api/level-break-regime-model", () => {
+        if (scope === "live") void loadLiveLevelBreakRegimeMonitorStatus();
+        else void loadLevelBreakRegimeMonitorStatus();
+      }, scope).finally(() => {
+        if (scope === "live") liveLevelBreakRegimeTrainPolling = false;
+        else levelBreakRegimeTrainPolling = false;
       });
     }
 
@@ -4529,6 +4633,94 @@
       }
     }
 
+    async function loadLevelBreakRegimeMonitorStatus() {
+      const el = document.getElementById("paperBotLevelBreakRegimeStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/level-break-regime-model", "paper"), {
+            cache: "no-store",
+          }),
+          fetch(aiModelApiUrl("/api/level-break-regime-monitor", "paper"), {
+            cache: "no-store",
+          }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null
+            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
+            : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+              ? ` · bad now: ${mon.worst
+                  .slice(0, 5)
+                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                  .join(", ")}`
+              : mon.enabled
+                ? " · no bad regimes flagged"
+                : "";
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        resumeLevelBreakRegimeTrainPollIfNeeded(model, "paper");
+      } catch (e) {
+        el.textContent = `Monitor: ${e.message}`;
+      }
+    }
+
+    async function loadLiveLevelBreakRegimeMonitorStatus() {
+      const el = document.getElementById("liveBotLevelBreakRegimeStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/level-break-regime-model", "live"), {
+            cache: "no-store",
+          }),
+          fetch(aiModelApiUrl("/api/level-break-regime-monitor", "live"), {
+            cache: "no-store",
+          }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null
+            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
+            : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+              ? ` · bad now: ${mon.worst
+                  .slice(0, 5)
+                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                  .join(", ")}`
+              : mon.enabled
+                ? " · no bad regimes flagged"
+                : "";
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        resumeLevelBreakRegimeTrainPollIfNeeded(model, "live");
+      } catch (e) {
+        el.textContent = `Live monitor: ${e.message}`;
+      }
+    }
+
     async function loadEarlyExitModelStatus() {
       const el = document.getElementById("paperBotAiModelStatus");
       if (!el) return;
@@ -4603,6 +4795,7 @@
         renderPaperBot(data, syncForm);
         void loadEarlyExitModelStatus();
         void loadSfpRegimeMonitorStatus();
+        void loadLevelBreakRegimeMonitorStatus();
         if (syncForm) {
           try {
             const sres = await fetch("/api/strategies", { cache: "no-store" });
@@ -4717,6 +4910,51 @@
       }
     });
 
+    document.getElementById("paperBotTrainLevelBreakRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train level-break regime model from level-break closed trades in train-bot + paper history?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("paperBotTrainLevelBreakRegime");
+      try {
+        btn.disabled = true;
+        setPaperBotMsg("Starting level-break regime training…", true);
+        const res = await fetch("/api/level-break-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(
+          `Level-break training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/level-break-regime-model",
+          () => {
+            void loadLevelBreakRegimeMonitorStatus();
+          },
+          "paper"
+        );
+        await loadLevelBreakRegimeMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setPaperBotMsg(
+          `Level-break regime trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadLevelBreakRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById("paperBotCopyToLive")?.addEventListener("click", async () => {
       try {
         await copyPaperBotConfigToLive();
@@ -4809,6 +5047,18 @@
         aiSfpRegimeThreshold: Number(
           document.getElementById("liveBotAiSfpRegimeThreshold").value
         ),
+        aiLevelBreakRegimeEnabled: document.getElementById(
+          "liveBotAiLevelBreakRegimeEnabled"
+        ).checked,
+        aiLevelBreakRegimeBullThreshold: Number(
+          document.getElementById("liveBotAiLevelBreakRegimeBullThreshold").value
+        ),
+        aiLevelBreakRegimeBearThreshold: Number(
+          document.getElementById("liveBotAiLevelBreakRegimeBearThreshold").value
+        ),
+        aiLevelBreakRegimeThreshold: Number(
+          document.getElementById("liveBotAiLevelBreakRegimeThreshold").value
+        ),
       };
     }
 
@@ -4888,6 +5138,15 @@
         cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("liveBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
+      document.getElementById("liveBotAiLevelBreakRegimeEnabled").checked = Boolean(
+        cfg.aiLevelBreakRegimeEnabled
+      );
+      document.getElementById("liveBotAiLevelBreakRegimeBullThreshold").value =
+        cfg.aiLevelBreakRegimeBullThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.76;
+      document.getElementById("liveBotAiLevelBreakRegimeBearThreshold").value =
+        cfg.aiLevelBreakRegimeBearThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.74;
+      document.getElementById("liveBotAiLevelBreakRegimeThreshold").value =
+        cfg.aiLevelBreakRegimeThreshold ?? 0.58;
       updateLiveBotBadges(cfg);
     }
 
@@ -4970,6 +5229,7 @@
         renderLiveBot(data, syncForm);
         void loadLiveEarlyExitModelStatus();
         void loadLiveSfpRegimeMonitorStatus();
+        void loadLiveLevelBreakRegimeMonitorStatus();
         if (!data.busy) {
           setLiveBotMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
         }
@@ -5052,7 +5312,7 @@
     document.getElementById("liveBotTrainAiModel")?.addEventListener("click", async () => {
       if (
         !confirm(
-          "Train live SFP early-exit model from live bot closed trades only? Requires kline cache for bar replay."
+          "Train live SFP early-exit model from train-bot backtest + live closed trades? Requires kline cache for bar replay."
         )
       ) {
         return;
@@ -5090,7 +5350,7 @@
     document.getElementById("liveBotTrainSfpRegime")?.addEventListener("click", async () => {
       if (
         !confirm(
-          "Train live SFP regime model from live bot closed trades only?"
+          "Train live SFP regime model from train-bot backtest + live closed trades?"
         )
       ) {
         return;
@@ -5120,6 +5380,51 @@
       } catch (e) {
         setLiveBotMsg(e.message, false);
         void loadLiveSfpRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveBotTrainLevelBreakRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live level-break regime model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainLevelBreakRegime");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live level-break regime training…", true);
+        const res = await fetch("/api/level-break-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(
+          `Live level-break training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/level-break-regime-model",
+          () => {
+            void loadLiveLevelBreakRegimeMonitorStatus();
+          },
+          "live"
+        );
+        await loadLiveLevelBreakRegimeMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setLiveBotMsg(
+          `Live level-break regime trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadLiveLevelBreakRegimeMonitorStatus();
       } finally {
         btn.disabled = false;
       }
