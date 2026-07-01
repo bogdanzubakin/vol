@@ -344,6 +344,90 @@
       font-weight: 600;
       margin-top: 4px;
     }
+    .ai-report-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin: 0 12px 16px;
+    }
+    .ai-report-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .ai-report-card h3 {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .ai-report-card .model-meta {
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-bottom: 10px;
+    }
+    .ai-report-card .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      font-size: 0.8rem;
+    }
+    .ai-report-card .mini-stats div {
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 6px;
+      padding: 8px;
+    }
+    .ai-report-card .mini-stats .label {
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .ai-report-card .mini-stats .value {
+      font-weight: 600;
+      margin-top: 3px;
+    }
+    .ai-report-badge {
+      font-size: 0.68rem;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .ai-report-badge.on { background: rgba(34, 197, 94, 0.18); color: var(--green); }
+    .ai-report-badge.off { background: rgba(148, 163, 184, 0.15); color: var(--muted); }
+    .ai-report-section {
+      margin: 0 12px 16px;
+    }
+    .ai-report-section h3 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+    }
+    .ai-report-events {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      font-size: 0.8rem;
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .ai-report-events li {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ai-report-events li:last-child { border-bottom: none; }
+    .ai-report-events .sym { font-weight: 600; }
+    .ai-report-events .at { color: var(--muted); font-size: 0.72rem; }
+    .stat-value.pos { color: var(--green); }
+    .stat-value.neg { color: var(--red); }
     .paper-enabled-badge {
       font-size: 0.75rem;
       padding: 3px 8px;
@@ -1046,6 +1130,7 @@
     <button type="button" class="tab" data-tab="strategies" role="tab">Strategies</button>
     <button type="button" class="tab" data-tab="paperbot" role="tab">Paper bot</button>
     <button type="button" class="tab" data-tab="livebot" role="tab">Live bot</button>
+    <button type="button" class="tab" data-tab="liveai" role="tab">Live AI</button>
     <button type="button" class="tab" data-tab="backtest" role="tab">Train bot</button>
     <button type="button" class="tab" data-tab="pairs" role="tab">All pairs</button>
     <button type="button" class="tab" data-tab="history" role="tab">History</button>
@@ -2336,6 +2421,74 @@
     </section>
   </div>
 
+  <div id="panel-liveai" class="tab-panel" role="tabpanel">
+    <section>
+      <h2>
+        Live AI report
+        <span id="liveAiReportBadge" class="paper-enabled-badge off">loading</span>
+      </h2>
+      <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
+        Summary of live-scope AI models: training metadata, runtime monitors, regime skips, and early-exit impact on closed exchange trades.
+        Models train from train-bot backtest + live fills.
+      </p>
+      <div class="bot-settings-actions" style="margin: 0 12px 12px;">
+        <button type="button" class="btn secondary sm" id="liveAiReportRefresh">Refresh</button>
+        <span class="config-msg" id="liveAiReportMsg"></span>
+        <span class="hint" id="liveAiReportUpdated" style="margin-left: 8px;"></span>
+      </div>
+      <div class="paper-summary" id="liveAiImpactSummary">
+        <div><div class="stat-label">Live closed</div><div class="stat-value" id="laiStatClosed">—</div></div>
+        <div><div class="stat-label">Live PnL</div><div class="stat-value" id="laiStatPnl">—</div></div>
+        <div><div class="stat-label">AI early exits</div><div class="stat-value" id="laiStatAiExits">—</div></div>
+        <div><div class="stat-label">AI exit PnL</div><div class="stat-value" id="laiStatAiPnl">—</div></div>
+        <div><div class="stat-label">SFP regime skips</div><div class="stat-value" id="laiStatSfpSkips">—</div></div>
+        <div><div class="stat-label">LVL regime skips</div><div class="stat-value" id="laiStatLbSkips">—</div></div>
+        <div><div class="stat-label">Train-bot SFP rows</div><div class="stat-value" id="laiStatBtSfp">—</div></div>
+        <div><div class="stat-label">Merged train rows</div><div class="stat-value" id="laiStatMergedSfp">—</div></div>
+      </div>
+      <div class="ai-report-grid" id="liveAiModelCards">
+        <div class="ai-report-card"><h3>Loading…</h3></div>
+      </div>
+      <div class="ai-report-section">
+        <h3>Exit reasons (live closed trades)</h3>
+        <div class="table-wrap table-wrap--scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Reason</th>
+                <th>Count</th>
+                <th>PnL</th>
+              </tr>
+            </thead>
+            <tbody id="liveAiExitReasonsBody">
+              <tr><td colspan="3" class="empty">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="ai-report-grid">
+        <div class="ai-report-section">
+          <h3>Recent SFP regime skips</h3>
+          <ul class="ai-report-events" id="liveAiSfpSkipEvents">
+            <li class="empty">—</li>
+          </ul>
+        </div>
+        <div class="ai-report-section">
+          <h3>Recent level-break regime skips</h3>
+          <ul class="ai-report-events" id="liveAiLbSkipEvents">
+            <li class="empty">—</li>
+          </ul>
+        </div>
+        <div class="ai-report-section">
+          <h3>Recent AI early exits</h3>
+          <ul class="ai-report-events" id="liveAiExitEvents">
+            <li class="empty">—</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <div id="panel-backtest" class="tab-panel" role="tabpanel">
     <section>
       <h2>Train bot <span id="backtestStatusBadge" class="paper-enabled-badge off">idle</span></h2>
@@ -2557,6 +2710,7 @@
     let topMoversLoading = false;
     let paperBotPollTimer = null;
     let liveBotPollTimer = null;
+    let liveAiReportPollTimer = null;
     let backtestPollTimer = null;
     let dashboardWs = null;
     let dashboardWsConnected = false;
@@ -2870,6 +3024,14 @@
       }
       if (name === "livebot") {
         loadLiveBot(true);
+      }
+      if (name === "liveai") {
+        loadLiveAiReport();
+        if (!liveAiReportPollTimer) {
+          liveAiReportPollTimer = setInterval(() => {
+            if (activeTab === "liveai") loadLiveAiReport();
+          }, 10000);
+        }
       }
       if (name === "backtest") {
         loadBacktestStatus();
@@ -4787,6 +4949,189 @@
       }
     }
 
+    function laiPnlCls(n) {
+      if (n == null || !Number.isFinite(n) || n === 0) return "";
+      return n > 0 ? "pos" : "neg";
+    }
+
+    function laiFmtAcc(acc) {
+      return acc != null ? `${(acc * 100).toFixed(1)}%` : "—";
+    }
+
+    function renderLiveAiEventList(el, rows, emptyText) {
+      if (!el) return;
+      if (!rows?.length) {
+        el.innerHTML = `<li class="empty">${escapeHtml(emptyText)}</li>`;
+        return;
+      }
+      el.innerHTML = rows
+        .map(
+          (r) =>
+            `<li><span class="at">${escapeHtml(r.at ?? "—")}</span> · <span class="sym">${escapeHtml(r.symbol ?? "—")}</span> — ${escapeHtml(r.detail ?? "")}</li>`
+        )
+        .join("");
+    }
+
+    function renderLiveAiModelCard(title, model) {
+      const m = model ?? {};
+      const metrics = m.metrics ?? {};
+      const mon = m.monitor ?? {};
+      const enabledBadge = `<span class="ai-report-badge ${m.enabled ? "on" : "off"}">${m.enabled ? "enabled" : "disabled"}</span>`;
+      const trainLine = m.training?.running
+        ? `Training: ${escapeHtml(m.training.message ?? m.training.phase ?? "…")}`
+        : m.training?.error
+          ? `Training error: ${escapeHtml(m.training.error)}`
+          : null;
+
+      let metricsHtml = "";
+      if (metrics.hardThreshold != null || metrics.softThreshold != null) {
+        metricsHtml = `
+          <div><div class="label">Hard threshold</div><div class="value">${metrics.hardThreshold ?? "—"}</div></div>
+          <div><div class="label">Soft threshold</div><div class="value">${metrics.softThreshold ?? "—"}</div></div>
+          <div><div class="label">Hard acc (in-sample)</div><div class="value">${laiFmtAcc(metrics.hardAccuracy)} · n=${metrics.hardSamples ?? "—"}</div></div>
+          <div><div class="label">Soft acc (in-sample)</div><div class="value">${laiFmtAcc(metrics.softAccuracy)} · n=${metrics.softSamples ?? "—"}</div></div>
+        `;
+      } else {
+        metricsHtml = `
+          <div><div class="label">Bull threshold</div><div class="value">${metrics.bullThreshold ?? "—"}</div></div>
+          <div><div class="label">Bear threshold</div><div class="value">${metrics.bearThreshold ?? "—"}</div></div>
+          <div><div class="label">Bull acc (in-sample)</div><div class="value">${laiFmtAcc(metrics.bullAccuracy)} · n=${metrics.bullSamples ?? "—"}</div></div>
+          <div><div class="label">Bear acc (in-sample)</div><div class="value">${laiFmtAcc(metrics.bearAccuracy)} · n=${metrics.bearSamples ?? "—"}</div></div>
+        `;
+      }
+
+      const worst =
+        mon.worst?.length > 0
+          ? `<div class="model-meta">Bad now: ${mon.worst
+              .slice(0, 6)
+              .map((r) => `${escapeHtml(r.symbol)} ${((r.probability ?? 0) * 100).toFixed(0)}%`)
+              .join(", ")}</div>`
+          : mon.enabled
+            ? `<div class="model-meta">No bad regimes flagged right now</div>`
+            : "";
+
+      return `
+        <div class="ai-report-card">
+          <h3>${escapeHtml(title)} ${enabledBadge}</h3>
+          <div class="model-meta">
+            ${escapeHtml(m.source ?? "bootstrap")}${m.trainedAt ? ` · trained ${escapeHtml(m.trainedAt)}` : ""}${trainLine ? `<br>${trainLine}` : ""}
+          </div>
+          <div class="mini-stats">
+            ${metricsHtml}
+            <div><div class="label">Monitor tracked</div><div class="value">${mon.tracked ?? 0}</div></div>
+            <div><div class="label">Bad regimes</div><div class="value">${mon.badCount ?? 0}</div></div>
+          </div>
+          ${worst}
+        </div>
+      `;
+    }
+
+    function renderLiveAiReport(data) {
+      const impact = data.impact ?? {};
+      const training = data.trainingData ?? {};
+      const cfg = data.config ?? {};
+      const badge = document.getElementById("liveAiReportBadge");
+      if (badge) {
+        const anyOn =
+          cfg.aiEarlyExitEnabled || cfg.aiSfpRegimeEnabled || cfg.aiLevelBreakRegimeEnabled;
+        badge.textContent = anyOn
+          ? cfg.armed
+            ? "armed · AI on"
+            : "disarmed · AI on"
+          : "AI off";
+        badge.className = `paper-enabled-badge ${anyOn ? "on" : "off"}`;
+      }
+
+      const setStat = (id, text, cls) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.className = "stat-value" + (cls ? ` ${cls}` : "");
+      };
+
+      setStat("laiStatClosed", String(impact.allClosed?.count ?? 0));
+      setStat("laiStatPnl", fmtUsd(impact.allClosed?.pnl), laiPnlCls(impact.allClosed?.pnl));
+      setStat(
+        "laiStatAiExits",
+        `${impact.aiEarlyExit?.all?.count ?? 0} (${impact.aiEarlyExit?.all?.winRate ?? 0}% win)`
+      );
+      setStat(
+        "laiStatAiPnl",
+        fmtUsd(impact.aiEarlyExit?.all?.pnl),
+        laiPnlCls(impact.aiEarlyExit?.all?.pnl)
+      );
+      setStat("laiStatSfpSkips", String(impact.regimeSkips?.sfp ?? 0));
+      setStat("laiStatLbSkips", String(impact.regimeSkips?.levelBreak ?? 0));
+      setStat(
+        "laiStatBtSfp",
+        training.backtestAvailable ? String(training.backtestSfpTrades ?? 0) : "—"
+      );
+      setStat(
+        "laiStatMergedSfp",
+        `${training.mergedForLiveTraining?.sfp ?? 0} SFP / ${training.mergedForLiveTraining?.levelBreak ?? 0} LVL`
+      );
+
+      const cards = document.getElementById("liveAiModelCards");
+      if (cards) {
+        cards.innerHTML =
+          renderLiveAiModelCard("SFP early exit", data.models?.earlyExit) +
+          renderLiveAiModelCard("SFP regime filter", data.models?.sfpRegime) +
+          renderLiveAiModelCard("Level-break regime", data.models?.levelBreakRegime);
+      }
+
+      const reasonsBody = document.getElementById("liveAiExitReasonsBody");
+      const reasons = impact.exitReasons ?? [];
+      if (reasonsBody) {
+        reasonsBody.innerHTML = reasons.length
+          ? reasons
+              .map((r) => {
+                const cls = laiPnlCls(r.pnl);
+                return `<tr><td>${escapeHtml(r.exitReason)}</td><td>${r.count}</td><td class="${cls}">${fmtUsd(r.pnl)}</td></tr>`;
+              })
+              .join("")
+          : `<tr><td colspan="3" class="empty">No closed live trades yet</td></tr>`;
+      }
+
+      renderLiveAiEventList(
+        document.getElementById("liveAiSfpSkipEvents"),
+        data.recentEvents?.sfpRegimeSkips,
+        "No SFP regime skips logged"
+      );
+      renderLiveAiEventList(
+        document.getElementById("liveAiLbSkipEvents"),
+        data.recentEvents?.levelBreakRegimeSkips,
+        "No level-break regime skips logged"
+      );
+      renderLiveAiEventList(
+        document.getElementById("liveAiExitEvents"),
+        data.recentEvents?.aiEarlyExits,
+        "No AI early exits logged"
+      );
+
+      const updated = document.getElementById("liveAiReportUpdated");
+      if (updated) {
+        updated.textContent = data.generatedAt ? `Updated ${data.generatedAt}` : "";
+      }
+    }
+
+    async function loadLiveAiReport() {
+      const msg = document.getElementById("liveAiReportMsg");
+      try {
+        const res = await fetch("/api/live-ai-report", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        renderLiveAiReport(data);
+        if (msg) msg.textContent = "";
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        const badge = document.getElementById("liveAiReportBadge");
+        if (badge) {
+          badge.textContent = "error";
+          badge.className = "paper-enabled-badge off";
+        }
+      }
+    }
+
     async function loadPaperBot(syncForm = false) {
       try {
         const res = await fetch("/api/paper-bot", { cache: "no-store" });
@@ -5308,6 +5653,10 @@
     });
 
     document.getElementById("liveBotRefresh").addEventListener("click", () => loadLiveBot(true));
+
+    document.getElementById("liveAiReportRefresh")?.addEventListener("click", () => {
+      loadLiveAiReport();
+    });
 
     document.getElementById("liveBotTrainAiModel")?.addEventListener("click", async () => {
       if (

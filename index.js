@@ -111,6 +111,7 @@ const {
   writeJsonFile,
 } = require("./lib/data-dir");
 const scannerConfig = require("./lib/scanner-config");
+const { buildLiveAiReport } = require("./lib/live-ai-report");
 
 const REST_BASE = "https://fapi.binance.com";
 // DO NOT CHANGE BASE wss://stream.binance.com:443
@@ -792,6 +793,20 @@ function getLiveSfpRegimeMonitorSnapshot() {
     return { ok: true, enabled: false, tracked: 0, badCount: 0, worst: [], scope: "live" };
   }
   return liveSfpRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
+}
+
+function getLiveAiReport() {
+  return buildLiveAiReport({
+    config: liveBot?.getConfig?.() ?? {},
+    closedTrades: liveBot?.getClosedTrades?.() ?? [],
+    log: liveBot?.getActivityLog?.() ?? [],
+    backtest: loadLastBacktestResult(),
+    earlyExitStatus: getEarlyExitModelStatusFull("live"),
+    sfpRegimeStatus: getSfpRegimeModelStatusFull("live"),
+    sfpRegimeMonitor: getLiveSfpRegimeMonitorSnapshot(),
+    levelBreakRegimeStatus: getLevelBreakRegimeModelStatusFull("live"),
+    levelBreakRegimeMonitor: getLiveLevelBreakRegimeMonitorSnapshot(),
+  });
 }
 
 function getPaperBotBar(sym, historyBuffers) {
@@ -3518,6 +3533,7 @@ async function main() {
             : getLevelBreakRegimeMonitorSnapshot(),
         trainLevelBreakRegimeModel: (body) =>
           trainLevelBreakRegimeModelFromHistory(body),
+        getLiveAiReport: () => getLiveAiReport(),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
           const result = await liveBot.patchConfig(patch);
