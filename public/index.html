@@ -1739,19 +1739,23 @@
           </div>
         </details>
         <details class="settings-pane">
-          <summary>AI early exit</summary>
+          <summary>AI early exit (SFP)</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotAiEarlyExitEnabled" />
-            AI early exit (paper bot)
+            AI early exit — SFP only (paper bot)
           </label>
-          <div class="hint">Lightweight logistic model on Railway — scores each bar for stall / giveback / adverse patterns</div>
+          <div class="hint">Hard cut when recovery to positive PnL is unlikely; soft trim on giveback when recovery is still plausible</div>
         </div>
         <div class="field">
-          <label for="paperBotAiEarlyExitThreshold">Exit probability threshold</label>
-          <input type="number" id="paperBotAiEarlyExitThreshold" step="0.01" min="0.5" max="0.95" value="0.82" required />
+          <label for="paperBotAiEarlyExitHardThreshold">Hard exit threshold</label>
+          <input type="number" id="paperBotAiEarlyExitHardThreshold" step="0.01" min="0.5" max="0.95" value="0.76" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiEarlyExitSoftThreshold">Soft exit threshold</label>
+          <input type="number" id="paperBotAiEarlyExitSoftThreshold" step="0.01" min="0.5" max="0.95" value="0.88" required />
         </div>
         <div class="field">
           <label for="paperBotAiEarlyExitMinBars">Min bars in trade</label>
@@ -1769,7 +1773,7 @@
         </div>
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
-          <button type="button" class="btn secondary sm" id="paperBotTrainAiModel">Train from history</button>
+          <button type="button" class="btn secondary sm" id="paperBotTrainAiModel">Train SFP model</button>
         </div>
             </div>
           </div>
@@ -1783,10 +1787,18 @@
             <input type="checkbox" id="paperBotAiSfpRegimeEnabled" />
             AI SFP regime filter (paper bot)
           </label>
-          <div class="hint">Continuously scores tradable symbols — skips bullish/bearish SFP entries during choppy or historically poor regimes (not manual blocklist)</div>
+          <div class="hint">Separate bull/bear models — skips SFP entries during choppy or poor symbol regimes</div>
         </div>
         <div class="field">
-          <label for="paperBotAiSfpRegimeThreshold">Bad-regime threshold</label>
+          <label for="paperBotAiSfpRegimeBullThreshold">Bull bad-regime threshold</label>
+          <input type="number" id="paperBotAiSfpRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.78" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiSfpRegimeBearThreshold">Bear bad-regime threshold</label>
+          <input type="number" id="paperBotAiSfpRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.72" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiSfpRegimeThreshold">Legacy threshold (fallback)</label>
           <input type="number" id="paperBotAiSfpRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
         </div>
         <div class="field" style="grid-column: 1 / -1;">
@@ -3624,7 +3636,9 @@
       if (reason === "early_stall") return '<span class="near">stall</span>';
       if (reason === "early_adverse") return '<span class="bad">early adv</span>';
       if (reason === "runner_exit") return '<span class="pass">runner</span>';
-      if (reason === "ai_early_exit") return '<span class="near">AI exit</span>';
+      if (reason === "ai_early_exit" || reason === "ai_early_exit_hard")
+        return '<span class="bad">AI hard</span>';
+      if (reason === "ai_early_exit_soft") return '<span class="near">AI soft</span>';
       if (reason === "manual") return '<span class="near">manual</span>';
       return escapeHtml(reason ?? "—");
     }
@@ -3756,8 +3770,14 @@
           document.getElementById("paperBotRunnerReversalSignals").value
         ),
         aiEarlyExitEnabled: document.getElementById("paperBotAiEarlyExitEnabled").checked,
+        aiEarlyExitHardThreshold: Number(
+          document.getElementById("paperBotAiEarlyExitHardThreshold").value
+        ),
+        aiEarlyExitSoftThreshold: Number(
+          document.getElementById("paperBotAiEarlyExitSoftThreshold").value
+        ),
         aiEarlyExitThreshold: Number(
-          document.getElementById("paperBotAiEarlyExitThreshold").value
+          document.getElementById("paperBotAiEarlyExitHardThreshold").value
         ),
         aiEarlyExitMinBars: Number(
           document.getElementById("paperBotAiEarlyExitMinBars").value
@@ -3767,6 +3787,12 @@
         ).checked,
         aiSfpRegimeEnabled: document.getElementById("paperBotAiSfpRegimeEnabled")
           .checked,
+        aiSfpRegimeBullThreshold: Number(
+          document.getElementById("paperBotAiSfpRegimeBullThreshold").value
+        ),
+        aiSfpRegimeBearThreshold: Number(
+          document.getElementById("paperBotAiSfpRegimeBearThreshold").value
+        ),
         aiSfpRegimeThreshold: Number(
           document.getElementById("paperBotAiSfpRegimeThreshold").value
         ),
@@ -3884,8 +3910,10 @@
       document.getElementById("paperBotAiEarlyExitEnabled").checked = Boolean(
         cfg.aiEarlyExitEnabled
       );
-      document.getElementById("paperBotAiEarlyExitThreshold").value =
-        cfg.aiEarlyExitThreshold ?? 0.82;
+      document.getElementById("paperBotAiEarlyExitHardThreshold").value =
+        cfg.aiEarlyExitHardThreshold ?? cfg.aiEarlyExitThreshold ?? 0.76;
+      document.getElementById("paperBotAiEarlyExitSoftThreshold").value =
+        cfg.aiEarlyExitSoftThreshold ?? 0.88;
       document.getElementById("paperBotAiEarlyExitMinBars").value =
         cfg.aiEarlyExitMinBars ?? 9;
       document.getElementById("paperBotAiEarlyExitBarCloseOnly").checked =
@@ -3893,6 +3921,10 @@
       document.getElementById("paperBotAiSfpRegimeEnabled").checked = Boolean(
         cfg.aiSfpRegimeEnabled
       );
+      document.getElementById("paperBotAiSfpRegimeBullThreshold").value =
+        cfg.aiSfpRegimeBullThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.78;
+      document.getElementById("paperBotAiSfpRegimeBearThreshold").value =
+        cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("paperBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
       document.getElementById("paperBotBlockedSymbols").value = (
@@ -4340,10 +4372,14 @@
         const model = await modelRes.json().catch(() => ({}));
         const mon = await monRes.json().catch(() => ({}));
         if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
         const acc =
-          model.metrics?.accuracy != null
-            ? ` · acc ${(model.metrics.accuracy * 100).toFixed(1)}%`
+          bm.accuracy != null
+            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
             : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
         const trainLine = formatAiTrainProgress(model.training);
         const worst =
           model.training?.running
@@ -4358,7 +4394,7 @@
               : "";
         el.textContent = trainLine
           ? `Training: ${trainLine}`
-          : `Model: ${model.source ?? "—"}${acc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumeSfpRegimeTrainPollIfNeeded(model);
       } catch (e) {
         el.textContent = `Monitor: ${e.message}`;
@@ -4378,14 +4414,18 @@
           resumeEarlyExitTrainPollIfNeeded(data);
           return;
         }
-        const m = data.metrics ?? {};
-        const acc =
-          m.accuracy != null ? ` · acc ${(m.accuracy * 100).toFixed(1)}%` : "";
-        const samples = m.samples ? ` · ${m.samples} samples` : "";
+        const hm = data.hardMetrics ?? data.metrics ?? {};
+        const sm = data.softMetrics ?? {};
+        const hardAcc =
+          hm.accuracy != null ? ` · hard acc ${(hm.accuracy * 100).toFixed(1)}%` : "";
+        const softAcc =
+          sm.accuracy != null ? ` · soft acc ${(sm.accuracy * 100).toFixed(1)}%` : "";
+        const samples = hm.samples ? ` · ${hm.samples} hard samples` : "";
         el.textContent =
-          `Model: ${data.source ?? "—"} · threshold ${data.threshold ?? "—"}` +
+          `SFP v${data.version ?? 2}: ${data.source ?? "—"} · hard ${data.hardThreshold ?? data.threshold ?? "—"} · soft ${data.softThreshold ?? "—"}` +
           (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap") +
-          acc +
+          hardAcc +
+          softAcc +
           samples;
       } catch (e) {
         el.textContent = `Model: ${e.message}`;
@@ -4441,7 +4481,7 @@
     document.getElementById("paperBotTrainAiModel")?.addEventListener("click", async () => {
       if (
         !confirm(
-          "Train AI early-exit model from train-bot + paper bot closed trades? Requires kline cache for bar replay."
+          "Train SFP early-exit model from SFP closed trades in train-bot + paper history? Requires kline cache for bar replay."
         )
       ) {
         return;
@@ -4457,7 +4497,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        setPaperBotMsg(`Training started (${data.trades ?? "?"} trades)…`, true);
+        setPaperBotMsg(`SFP training started (${data.trades ?? "?"} trades)…`, true);
         const training = await pollAiModelTraining("/api/early-exit-model", () => {
           void loadEarlyExitModelStatus();
         });
@@ -4465,7 +4505,7 @@
         if (training?.error) throw new Error(training.error);
         const m = training?.result?.model?.metrics ?? {};
         setPaperBotMsg(
-          `Model trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          `SFP model trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
           true
         );
       } catch (e) {

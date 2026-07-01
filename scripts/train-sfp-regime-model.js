@@ -86,8 +86,11 @@ async function main() {
       if (p?.message) console.error(p.message);
     },
   });
+  const status = getModelStatus();
+  const bm = status.bullMetrics ?? status.metrics ?? {};
+  const rm = status.bearMetrics ?? {};
   console.error(
-    `Saved ${getModelStatus().path} · acc ${(model.metrics.accuracy * 100).toFixed(1)}%`
+    `Saved ${status.path} · bull ${status.bullThreshold} acc ${((bm.accuracy ?? 0) * 100).toFixed(1)}% · bear ${status.bearThreshold} acc ${((rm.accuracy ?? 0) * 100).toFixed(1)}%`
   );
 }
 

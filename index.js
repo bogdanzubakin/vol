@@ -431,9 +431,13 @@ function collectEarlyExitTrainingTrades(source = "auto") {
   const mode = String(source || "auto").toLowerCase();
   const backtest = loadLastBacktestResult();
   const paper = paperBot?.getClosedTrades?.() ?? [];
-  if (mode === "paper") return paper;
-  if (mode === "backtest") return backtest?.closedTrades ?? [];
-  const merged = [...(backtest?.closedTrades ?? []), ...paper];
+  const filterSfp = (list) =>
+    (list ?? []).filter(
+      (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
+    );
+  if (mode === "paper") return filterSfp(paper);
+  if (mode === "backtest") return filterSfp(backtest?.closedTrades);
+  const merged = [...filterSfp(backtest?.closedTrades), ...filterSfp(paper)];
   const seen = new Set();
   const out = [];
   for (const t of merged) {
@@ -464,7 +468,7 @@ function startEarlyExitTraining(body = {}) {
     phase: "starting",
     done: 0,
     total: trades.length,
-    message: `Preparing ${trades.length} trades…`,
+    message: `Preparing ${trades.length} SFP trades…`,
   };
 
   const cfg = paperBot.getPublicState().config;

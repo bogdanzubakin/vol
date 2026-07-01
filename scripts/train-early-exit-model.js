@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Train early-exit logistic model from paper bot history and/or last train-bot results.
+ * Train SFP early-exit logistic model from SFP closed trades.
  *
  *   node scripts/train-early-exit-model.js
  *   node scripts/train-early-exit-model.js --source backtest
@@ -10,12 +10,14 @@
 const path = require("path");
 const { readJsonFile } = require("../lib/data-dir");
 const { dataPath } = require("../lib/data-dir");
+const { readSymbolBars } = require("../lib/backtest-kline-cache");
 const { createKlineCacheStore } = require("../lib/kline-cache");
 const { loadLastBacktestResult } = require("../lib/paper-bot-backtest");
 const {
   ensureDefaultModelOnDisk,
   trainFromTrades,
   getModelStatus,
+  isAiEarlyExitReason,
 } = require("../lib/early-exit-model");
 
 const PRIMARY_INTERVAL = "1m";
@@ -47,8 +49,12 @@ function loadPaperTrades() {
 }
 
 function collectTrades(source) {
-  const paper = loadPaperTrades();
-  const backtest = loadLastBacktestResult()?.closedTrades ?? [];
+  const filterSfp = (list) =>
+    (list ?? []).filter(
+      (t) => t.signalKind === "sfp" || t.signalKind === "sfp_bear"
+    );
+  const paper = filterSfp(loadPaperTrades());
+  const backtest = filterSfp(loadLastBacktestResult()?.closedTrades);
   if (source === "paper") return paper;
   if (source === "backtest") return backtest;
   const seen = new Set();
@@ -69,10 +75,12 @@ async function main() {
   let trades;
   if (exportPath) {
     trades = loadExportTrades(exportPath).filter(
-      (t) => t.exitReason !== "ai_early_exit"
+      (t) =>
+        !isAiEarlyExitReason(t.exitReason) &&
+        (t.signalKind === "sfp" || t.signalKind === "sfp_bear")
     );
     console.error(
-      `Loaded ${trades.length} trades from export (excluded ai_early_exit labels).`
+      `Loaded ${trades.length} trades from export (excluded AI exit labels).`
     );
   } else {
     trades = collectTrades(source);
@@ -91,13 +99,17 @@ async function main() {
 
   function fetchBars(symbol, openedAt, closedAt) {
     const sym = String(symbol).toUpperCase();
-    const bars = klineCache.read(sym) ?? [];
+    let bars = klineCache.read(sym) ?? [];
+    if (!bars.length) {
+      bars = readSymbolBars("signal", sym) ?? [];
+    }
+    if (!bars.length) return [];
     const from = openedAt - 120_000;
     const to = closedAt + 120_000;
     return bars.filter((b) => b.closeTime >= from && b.closeTime <= to);
   }
 
-  console.error(`Training from ${trades.length} trades (source=${source})…`);
+  console.error(`Training SFP early-exit from ${trades.length} trades (source=${source})…`);
   const model = await trainFromTrades(trades, fetchBars, {
     source: exportPath ? `export:${path.basename(exportPath)}` : `cli:${source}`,
     minThreshold: 0.78,
@@ -106,8 +118,10 @@ async function main() {
     },
   });
   const status = getModelStatus();
+  const hm = status.hardMetrics ?? status.metrics ?? {};
+  const sm = status.softMetrics ?? {};
   console.error(
-    `Saved ${status.path} · acc ${(model.metrics.accuracy * 100).toFixed(1)}% · ${model.metrics.samples} samples`
+    `Saved ${status.path} · hard ${status.hardThreshold} acc ${((hm.accuracy ?? 0) * 100).toFixed(1)}% · soft ${status.softThreshold} acc ${((sm.accuracy ?? 0) * 100).toFixed(1)}%`
   );
 }
 
