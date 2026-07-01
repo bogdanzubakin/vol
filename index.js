@@ -214,6 +214,26 @@ let backtestJob = {
   chartCfg: null,
 };
 
+/** Bumped on stop/start so stale in-flight backtests cannot clobber state or block REST. */
+let backtestRunEpoch = 0;
+
+function bumpBacktestRunEpoch() {
+  backtestRunEpoch++;
+  return backtestRunEpoch;
+}
+
+function backtestRunActive(epoch) {
+  return !backtestJob.cancelled && backtestRunEpoch === epoch;
+}
+
+function throwIfBacktestAborted(shouldAbort) {
+  if (shouldAbort?.()) {
+    const err = new Error("Backtest cancelled");
+    err.code = "BACKTEST_CANCELLED";
+    throw err;
+  }
+}
+
 let backtestSnapshotJob = {
   running: false,
   cancelled: false,
@@ -808,8 +828,9 @@ function parseBanUntil(text) {
   return m ? Number(m[1]) : null;
 }
 
-async function waitForBan(banUntil) {
+async function waitForBan(banUntil, shouldAbort) {
   while (true) {
+    throwIfBacktestAborted(shouldAbort);
     const waitMs = banUntil - Date.now();
     if (waitMs <= 0) return;
     const sec = Math.ceil(waitMs / 1000);
@@ -831,22 +852,29 @@ restLimiter.schedule = function schedule(fn) {
   return liveRestQueue.schedule(fn);
 };
 
-async function restJsonFetch(pathName, params = {}, attempt = 0, restQueue = liveRestQueue) {
+async function restJsonFetch(
+  pathName,
+  params = {},
+  attempt = 0,
+  restQueue = liveRestQueue,
+  shouldAbort = null
+) {
   return restQueue.schedule(async () => {
+    throwIfBacktestAborted(shouldAbort);
     const q = new URLSearchParams(params).toString();
     const url = `${REST_BASE}${pathName}${q ? `?${q}` : ""}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     const text = await res.text();
 
     if (res.status === 418 || res.status === 429) {
       const banUntil = parseBanUntil(text);
       if (banUntil && banUntil > Date.now()) {
-        await waitForBan(banUntil);
-        return restJsonFetch(pathName, params, attempt, restQueue);
+        await waitForBan(banUntil, shouldAbort);
+        return restJsonFetch(pathName, params, attempt, restQueue, shouldAbort);
       }
       if (attempt < 5) {
         await sleep(cfg.restRetryMs * (attempt + 1));
-        return restJsonFetch(pathName, params, attempt + 1, restQueue);
+        return restJsonFetch(pathName, params, attempt + 1, restQueue, shouldAbort);
       }
       throw new Error(`${pathName} ${res.status} ${text}`);
     }
@@ -965,13 +993,15 @@ async function fetchKlinesInterval(
   interval,
   limit,
   onBatch,
-  restQueue = liveRestQueue
+  restQueue = liveRestQueue,
+  shouldAbort = null
 ) {
   let all = [];
   let endTime;
   let remaining = limit;
 
   while (remaining > 0) {
+    throwIfBacktestAborted(shouldAbort);
     const batch = Math.min(remaining, KLINE_MAX);
     const params = {
       symbol,
@@ -980,7 +1010,13 @@ async function fetchKlinesInterval(
     };
     if (endTime !== undefined) params.endTime = String(endTime);
 
-    const rows = await restJsonFetch("/fapi/v1/klines", params, 0, restQueue);
+    const rows = await restJsonFetch(
+      "/fapi/v1/klines",
+      params,
+      0,
+      restQueue,
+      shouldAbort
+    );
     onBatch?.({ symbol, interval, fetched: all.length, target: limit });
     if (!rows.length) break;
 
@@ -1025,7 +1061,8 @@ async function fetchKlinesGapForInterval(
   startTime,
   endTime,
   onBatch,
-  restQueue = liveRestQueue
+  restQueue = liveRestQueue,
+  shouldAbort = null
 ) {
   if (startTime >= endTime) return [];
   const barMs = intervalBarMs(interval);
@@ -1033,6 +1070,7 @@ async function fetchKlinesGapForInterval(
   let merged = [];
 
   while (cursor < endTime) {
+    throwIfBacktestAborted(shouldAbort);
     const params = {
       symbol,
       interval,
@@ -1040,7 +1078,13 @@ async function fetchKlinesGapForInterval(
       startTime: String(cursor),
       endTime: String(endTime),
     };
-    const rows = await restJsonFetch("/fapi/v1/klines", params, 0, restQueue);
+    const rows = await restJsonFetch(
+      "/fapi/v1/klines",
+      params,
+      0,
+      restQueue,
+      shouldAbort
+    );
     onBatch?.();
     if (!rows.length) break;
 
@@ -1108,14 +1152,20 @@ async function fetchKlinesForBacktest(
   symbol,
   barCount,
   interval = cfg.interval,
-  onHeartbeat
+  onHeartbeat,
+  shouldAbort = null
 ) {
   const touch = () => onHeartbeat?.({ symbol, interval });
   const useSignalCache =
     interval === cfg.interval && signalKlineCache != null;
   const cache = useSignalCache ? signalKlineCache : klineCache;
   const cached = cache?.read(symbol) ?? [];
-  let bars = [...cached];
+
+  if (cached.length >= barCount) {
+    return cached.length > barCount ? cached.slice(-barCount) : cached;
+  }
+
+  let bars = cached.length ? cached.slice() : [];
 
   const slice = () => (bars.length > barCount ? bars.slice(-barCount) : bars);
   const barMs =
@@ -1123,17 +1173,15 @@ async function fetchKlinesForBacktest(
       ? cfg.signalBarMs ?? cfg.barMs
       : intervalBarMs(interval);
 
-  if (bars.length >= barCount) {
-    return slice();
-  }
-
   try {
+    throwIfBacktestAborted(shouldAbort);
     const fetched = await fetchKlinesInterval(
       symbol,
       interval,
       barCount,
       () => touch(),
-      backtestRestQueue
+      backtestRestQueue,
+      shouldAbort
     );
     bars = mergeBarsByOpenTime(bars, fetched);
 
@@ -1147,13 +1195,15 @@ async function fetchKlinesForBacktest(
           lastCached.closeTime + 1,
           firstFetched.openTime - 1,
           () => touch(),
-          backtestRestQueue
+          backtestRestQueue,
+          shouldAbort
         );
         bars = mergeBarsByOpenTime(cached, gap, fetched);
       }
     }
     return slice();
   } catch (e) {
+    if (e.code === "BACKTEST_CANCELLED" || e.code === "QUEUE_RESET") throw e;
     const need = minHistoryBars(cfg);
     if (bars.length >= need) {
       console.error(
@@ -3363,7 +3413,9 @@ async function main() {
         stopAndResetBacktest: () => {
           const wasRunning = backtestJob.running;
           const wasSnapshots = backtestSnapshotJob.running;
+          bumpBacktestRunEpoch();
           backtestJob.cancelled = true;
+          backtestRestQueue.reset();
           cancelBacktestSnapshotJob();
           backtestJob.running = false;
           backtestJob.result = null;
@@ -3396,6 +3448,9 @@ async function main() {
           }
           cancelBacktestSnapshotJob();
           clearBacktestRunArtifacts();
+          bumpBacktestRunEpoch();
+          backtestRestQueue.reset();
+          const runEpoch = backtestRunEpoch;
           const days = Math.max(
             1,
             Math.min(21, Number(body?.days) || DEFAULT_DAYS)
@@ -3421,8 +3476,10 @@ async function main() {
             skip: 0,
             message: `Starting ${symList.length} symbols × ${days}d…`,
           };
+          const shouldAbortBacktest = () =>
+            backtestJob.cancelled || backtestRunEpoch !== runEpoch;
           const heartbeatKlines = (sym) => {
-            if (!backtestJob.running) return;
+            if (shouldAbortBacktest()) return;
             const prev = backtestJob.progress ?? {};
             touchBacktestProgress({
               ...prev,
@@ -3440,18 +3497,27 @@ async function main() {
             botConfig: paperBot.getPublicState().config,
             days,
             fetchKlinesForSymbol: (sym, limit) =>
-              fetchKlinesForBacktest(sym, limit, cfg.interval, () =>
-                heartbeatKlines(sym)
+              fetchKlinesForBacktest(
+                sym,
+                limit,
+                cfg.interval,
+                () => heartbeatKlines(sym),
+                shouldAbortBacktest
               ),
             fetchKlines1mForSymbol: (sym, limit) =>
-              fetchKlinesForBacktest(sym, limit, "1m", () =>
-                heartbeatKlines(sym)
+              fetchKlinesForBacktest(
+                sym,
+                limit,
+                "1m",
+                () => heartbeatKlines(sym),
+                shouldAbortBacktest
               ),
             onProgress: (p) => {
+              if (!backtestRunActive(runEpoch)) return;
               touchBacktestProgress(p);
             },
             restGapMs: Math.max(80, Math.floor(cfg.restMinGapMs / 2)),
-            shouldAbort: () => backtestJob.cancelled,
+            shouldAbort: shouldAbortBacktest,
             runMeta: {
               days,
               symbolMode: mode,
@@ -3461,7 +3527,7 @@ async function main() {
             },
           })
             .then(({ result, barCache, chartCfg }) => {
-              if (backtestJob.cancelled) return;
+              if (!backtestRunActive(runEpoch)) return;
               backtestJob.running = false;
               backtestJob.result = result;
               backtestJob.barCache = barCache ?? null;
@@ -3479,11 +3545,15 @@ async function main() {
               );
             })
             .catch((e) => {
-              if (backtestJob.cancelled || e.code === "BACKTEST_CANCELLED") {
-                backtestJob.running = false;
+              if (backtestRunEpoch !== runEpoch) return;
+              backtestJob.running = false;
+              if (
+                backtestJob.cancelled ||
+                e.code === "BACKTEST_CANCELLED" ||
+                e.code === "QUEUE_RESET"
+              ) {
                 return;
               }
-              backtestJob.running = false;
               backtestJob.error = e.message || String(e);
               console.error(`Paper bot backtest failed: ${backtestJob.error}`);
             });
