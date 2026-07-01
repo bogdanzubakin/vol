@@ -9,6 +9,7 @@
 const path = require("path");
 const { dataPath, readJsonFile } = require("../lib/data-dir");
 const { createKlineCacheStore } = require("../lib/kline-cache");
+const { readSymbolBars } = require("../lib/backtest-kline-cache");
 const { loadLastBacktestResult } = require("../lib/paper-bot-backtest");
 const {
   ensureDefaultModelOnDisk,
@@ -69,12 +70,13 @@ async function main() {
     cacheMaxBars: 5000,
   });
 
-  function fetchBars(symbol, openedAt) {
+  function fetchBars(symbol) {
     const sym = String(symbol).toUpperCase();
-    const bars = klineCache.read(sym) ?? [];
-    const from = openedAt - 120_000;
-    const to = openedAt + 60_000;
-    return bars.filter((b) => b.closeTime >= from && b.closeTime <= to);
+    let bars = klineCache.read(sym) ?? [];
+    if (!bars.length) {
+      bars = readSymbolBars("signal", sym) ?? [];
+    }
+    return bars;
   }
 
   console.error(`Training SFP regime from ${trades.length} trades (source=${source})…`);

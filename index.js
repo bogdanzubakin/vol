@@ -80,7 +80,7 @@ const {
   DEFAULT_DAYS,
   RESULT_FILE,
 } = require("./lib/paper-bot-backtest");
-const { getBacktestKlineCacheInfo } = require("./lib/backtest-kline-cache");
+const { getBacktestKlineCacheInfo, readSymbolBars } = require("./lib/backtest-kline-cache");
 const {
   mergeBarsByOpenTime,
   createKlineCacheStore,
@@ -405,13 +405,26 @@ function evalBars(sym, historyBuffers) {
   );
 }
 
+function loadTrainingBarsForSymbol(sym) {
+  const symbol = String(sym || "").toUpperCase();
+  let bars = signalKlineCache?.read(symbol) ?? klineCache?.read(symbol) ?? [];
+  if (!bars.length) {
+    bars = readSymbolBars("signal", symbol) ?? [];
+  }
+  return bars;
+}
+
 function fetchBarsForEarlyExitTraining(symbol, openedAt, closedAt) {
   const sym = String(symbol || "").toUpperCase();
-  let bars = signalKlineCache?.read(sym) ?? klineCache?.read(sym) ?? [];
+  const bars = loadTrainingBarsForSymbol(sym);
   if (!bars.length) return [];
   const from = openedAt - 120_000;
   const to = closedAt + 120_000;
   return bars.filter((b) => b.closeTime >= from && b.closeTime <= to);
+}
+
+function fetchBarsForSfpRegimeTraining(symbol) {
+  return loadTrainingBarsForSymbol(symbol);
 }
 
 function collectEarlyExitTrainingTrades(source = "auto") {
@@ -537,7 +550,7 @@ function startSfpRegimeTraining(body = {}) {
   const cfg = paperBot.getPublicState().config;
   void (async () => {
     try {
-      await trainSfpRegimeFromTrades(trades, fetchBarsForEarlyExitTraining, {
+      await trainSfpRegimeFromTrades(trades, fetchBarsForSfpRegimeTraining, {
         ...cfg,
         source: `trained:${body.source ?? "auto"}`,
         onProgress: (p) => {
