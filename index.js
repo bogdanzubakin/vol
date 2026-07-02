@@ -68,6 +68,7 @@ const {
   reloadModel: reloadLevelBreakRegimeModel,
 } = require("./lib/level-break-regime-model");
 const { createLevelBreakRegimeMonitor } = require("./lib/level-break-regime-monitor");
+const { BTC_SYMBOL } = require("./lib/btc-regime-context");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
 const { createFuturesTrader } = require("./lib/binance-futures-trade");
@@ -129,28 +130,28 @@ const { createRestQueue, sleep: restSleep } = require("./lib/rest-queue");
 const sleep = restSleep;
 
 const cfg = {
-  interval: "1m",
+  interval: "5m",
   prefetchDays: 3,
-  fastMoveLookbackCandles: 10,
-  minAvgMovePct: 0.5,
+  fastMoveLookbackCandles: 15,
+  minAvgMovePct: 0.4,
   minLinearChangePct: 0.5,
   fastMoveExcludeMult: 3,
-  topMoveMinPct: 5,
+  topMoveMinPct: 15,
   sfpLookbackBars: 30,
-  sfpRangeBars: 60,
+  sfpRangeBars: 45,
   sfpReclaimBars: 5,
-  sfpMinSweepPct: 0.05,
+  sfpMinSweepPct: 0.08,
   pullbackMaBars: 7,
   pullbackTouchLookback: 12,
   pullbackMaxDistancePct: 0.35,
   pullbackMaxAboveMaPct: 1.5,
-  levelBreakPivotBars: 3,
-  levelBreakLookbackBars: 80,
-  levelBreakMinTouches: 2,
+  levelBreakPivotBars: 4,
+  levelBreakLookbackBars: 300,
+  levelBreakMinTouches: 5,
   levelBreakTouchPct: 0.25,
-  levelBreakMinPct: 0.08,
+  levelBreakMinPct: 0.12,
   levelBreakApproachPct: 0.4,
-  levelBreakApproachBars: 12,
+  levelBreakApproachBars: 8,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -837,6 +838,18 @@ function getRecentBarsForBot(sym, historyBuffers, limit = 12) {
     bars = klineCache.read(sym) ?? [];
   }
   return bars?.slice(-limit) ?? [];
+}
+
+function getBtcBarsForRegime(historyBuffers, asOf = null, limit = 800) {
+  let bars = primaryBarSource(BTC_SYMBOL, historyBuffers);
+  if (!bars?.length && klineCache) {
+    bars = klineCache.read(BTC_SYMBOL) ?? [];
+  }
+  if (!bars?.length) return [];
+  if (asOf == null) return bars.slice(-limit);
+  const idx = bars.findIndex((b) => b.closeTime > asOf);
+  const end = idx >= 0 ? idx : bars.length;
+  return bars.slice(Math.max(0, end - limit), end);
 }
 
 function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
@@ -3238,11 +3251,13 @@ async function main() {
   sfpRegimeMonitor = createSfpRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
     modelScope: "paper",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
   levelBreakRegimeMonitor = createLevelBreakRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
     modelScope: "paper",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
   paperBot = createPaperBot({
@@ -3265,11 +3280,13 @@ async function main() {
   liveSfpRegimeMonitor = createSfpRegimeMonitor({
     getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
     modelScope: "live",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
   liveLevelBreakRegimeMonitor = createLevelBreakRegimeMonitor({
     getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
     modelScope: "live",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
   liveBot = createLiveBot({

@@ -104,9 +104,10 @@ async function main() {
 
   const cacheDir = path.join(dataPath(), "klines");
   const klineCache = createKlineCacheStore({
-    cacheDir,
+    dir: cacheDir,
     interval: PRIMARY_INTERVAL,
-    cacheMaxBars: 5000,
+    maxBars: 5000,
+    evalLimit: 5000,
   });
 
   function fetchBars(symbol, openedAt, closedAt) {

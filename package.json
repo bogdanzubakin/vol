@@ -12,7 +12,8 @@
     "telegram:chats": "node scripts/telegram-chats.js",
     "train:early-exit": "node scripts/train-early-exit-model.js",
     "train:sfp-regime": "node scripts/train-sfp-regime-model.js",
-    "train:level-break-regime": "node scripts/train-level-break-regime-model.js"
+    "train:level-break-regime": "node scripts/train-level-break-regime-model.js",
+    "train:early-abort-runner": "node scripts/optimize-early-abort-runner-params.js --days 10 --cache-only --train --apply"
   },
   "engines": {
     "node": ">=18"

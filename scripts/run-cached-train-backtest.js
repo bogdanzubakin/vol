@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+/**
+ * Cache-only train-bot backtest (saves paper-bot-backtest-last.json for regime training).
+ *
+ *   node scripts/run-cached-train-backtest.js --days 10 --cache-only
+ */
+
+const fs = require("fs");
+const path = require("path");
+const { dataPath, readJsonFile } = require("../lib/data-dir");
+const scannerConfig = require("../lib/scanner-config");
+const { applyBarConfig } = require("../lib/signal-metrics");
+const { normalizeConfig } = require("../lib/paper-bot");
+const { readSymbolBars } = require("../lib/backtest-kline-cache");
+const { runPaperBotBacktest } = require("../lib/paper-bot-backtest");
+
+function parseArgs(argv) {
+  let days = 10;
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === "--days" && argv[i + 1]) days = Number(argv[++i]);
+  }
+  return { days: Math.max(1, Math.min(21, Math.round(days) || 10)) };
+}
+
+function loadBotConfig(regimeOn) {
+  const saved = readJsonFile(dataPath("paper-bot-state.json"), {})?.config ?? {};
+  return normalizeConfig({
+    enabled: true,
+    ...saved,
+    earlyAbortEnabled: false,
+    runnerEnabled: false,
+    aiEarlyExitEnabled: false,
+    aiLevelBreakRegimeEnabled: false,
+    aiSfpRegimeEnabled: regimeOn,
+  });
+}
+
+function loadSignalConfig() {
+  const cfg = {
+    interval: "5m",
+    corridorDays: 2,
+    corridorExcludeMinutes: 40,
+    signalCandles: 3,
+    fastMoveLookbackCandles: 15,
+    minAvgMovePct: 0.4,
+    minLinearChangePct: 0.5,
+    fastMoveExcludeMult: 3,
+    topMoveMinPct: 15,
+    sfpLookbackBars: 30,
+    sfpRangeBars: 45,
+    sfpReclaimBars: 5,
+    sfpMinSweepPct: 0.08,
+    pullbackMaBars: 7,
+    pullbackTouchLookback: 12,
+    pullbackMaxDistancePct: 0.35,
+    pullbackMaxAboveMaPct: 1.5,
+    levelBreakPivotBars: 4,
+    levelBreakLookbackBars: 300,
+    levelBreakMinTouches: 5,
+    levelBreakTouchPct: 0.25,
+    levelBreakMinPct: 0.12,
+    levelBreakApproachPct: 0.4,
+    levelBreakApproachBars: 8,
+  };
+  applyBarConfig(cfg);
+  scannerConfig.loadInto(cfg);
+  applyBarConfig(cfg);
+  return cfg;
+}
+
+function cachedSymbolList() {
+  const root = path.join(dataPath(), "backtest-klines", "signal");
+  if (!fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root)
+    .filter((f) => f.endsWith(".json.gz"))
+    .map((f) => f.replace(/\.json\.gz$/, ""))
+    .filter((sym) => readSymbolBars("mover", sym)?.length)
+    .sort();
+}
+
+function createFetchers() {
+  function readCached(sym, kind, barCount) {
+    const bars = readSymbolBars(kind, sym);
+    if (!bars?.length) return null;
+    return bars.length > barCount ? bars.slice(-barCount) : bars;
+  }
+  return {
+    async fetchKlinesForSymbol(sym, barCount) {
+      const symbol = String(sym).toUpperCase();
+      const cached = readCached(symbol, "signal", barCount);
+      if (cached?.length >= 200) return cached;
+      throw new Error(`no signal cache for ${symbol}`);
+    },
+    async fetchKlines1mForSymbol(sym, barCount) {
+      const symbol = String(sym).toUpperCase();
+      const cached = readCached(symbol, "mover", barCount);
+      if (cached?.length >= 200) return cached;
+      throw new Error(`no 1m cache for ${symbol}`);
+    },
+  };
+}
+
+async function main() {
+  const { days } = parseArgs(process.argv);
+  const regimeOn = process.argv.includes("--regime-on");
+  const symbols = cachedSymbolList();
+  if (!symbols.length) {
+    console.error("No cached symbols.");
+    process.exit(1);
+  }
+
+  const botConfig = loadBotConfig(regimeOn);
+  const signalCfg = loadSignalConfig();
+  const { fetchKlinesForSymbol, fetchKlines1mForSymbol } = createFetchers();
+
+  console.error(
+    `Cached backtest: ${symbols.length} symbols × ${days}d · regime ${regimeOn ? "ON" : "OFF"}`
+  );
+
+  let lastSym = "";
+  const { result } = await runPaperBotBacktest({
+    symbols,
+    signalCfg,
+    botConfig,
+    days,
+    fetchKlinesForSymbol,
+    fetchKlines1mForSymbol: signalCfg.interval !== "1m" ? fetchKlines1mForSymbol : null,
+    restGapMs: 0,
+    runMeta: { cli: "cached-train", regimeOn },
+    onProgress: (p) => {
+      if (p.phase === "simulate" && p.symbol && p.symbol !== lastSym) {
+        lastSym = p.symbol;
+        if (p.done % 100 === 0 || p.done + 1 >= symbols.length) {
+          console.error(`[backtest] ${p.done + 1}/${symbols.length} · ${p.symbol}`);
+        }
+      }
+    },
+  });
+
+  const s = result.summary ?? {};
+  console.error(
+    `\nPnL $${(s.realizedPnl ?? 0).toFixed(2)} · ${s.closedCount ?? 0} trades · regime skips ${s.sfpRegimeSkips ?? 0} · ${result.elapsedSec}s`
+  );
+  console.error(`Saved ${dataPath("paper-bot-backtest-last.json")}`);
+}
+
+main().catch((e) => {
+  console.error(e.message || e);
+  process.exit(1);
+});
