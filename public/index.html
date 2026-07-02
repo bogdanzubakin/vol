@@ -1872,7 +1872,12 @@
             <input type="checkbox" id="paperBotAiSfpRegimeEnabled" />
             AI SFP regime filter (paper bot)
           </label>
-          <div class="hint">Separate bull/bear models — skips SFP entries during choppy or poor symbol regimes</div>
+          <div class="hint">Separate bull/bear models — skips SFP entries during choppy or poor symbol regimes; includes BTCUSDT trend over the lookback window</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiRegimeBtcLookbackHours">BTC trend lookback (hours)</label>
+          <input type="number" id="paperBotAiRegimeBtcLookbackHours" step="1" min="1" max="72" value="12" required />
+          <div class="hint">BTCUSDT % change over this period (e.g. 24 = daily trend)</div>
         </div>
         <div class="field">
           <label for="paperBotAiSfpRegimeBullThreshold">Bull bad-regime threshold</label>
@@ -2253,7 +2258,12 @@
             <input type="checkbox" id="liveBotAiSfpRegimeEnabled" />
             AI SFP regime filter (live bot)
           </label>
-          <div class="hint">Separate live bull/bear models — skips SFP entries during poor regimes</div>
+          <div class="hint">Separate live bull/bear models — skips SFP entries during poor regimes; includes BTCUSDT trend over the lookback window</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiRegimeBtcLookbackHours">BTC trend lookback (hours)</label>
+          <input type="number" id="liveBotAiRegimeBtcLookbackHours" step="1" min="1" max="72" value="12" required />
+          <div class="hint">BTCUSDT % change over this period (e.g. 24 = daily trend)</div>
         </div>
         <div class="field">
           <label for="liveBotAiSfpRegimeBullThreshold">Bull bad-regime threshold</label>
@@ -4097,6 +4107,9 @@
         aiSfpRegimeThreshold: Number(
           document.getElementById("paperBotAiSfpRegimeThreshold").value
         ),
+        aiRegimeBtcLookbackHours: Number(
+          document.getElementById("paperBotAiRegimeBtcLookbackHours").value
+        ),
         aiLevelBreakRegimeEnabled: document.getElementById(
           "paperBotAiLevelBreakRegimeEnabled"
         ).checked,
@@ -4240,6 +4253,8 @@
         cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("paperBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
+      document.getElementById("paperBotAiRegimeBtcLookbackHours").value =
+        cfg.aiRegimeBtcLookbackHours ?? 12;
       document.getElementById("paperBotAiLevelBreakRegimeEnabled").checked = Boolean(
         cfg.aiLevelBreakRegimeEnabled
       );
@@ -4716,6 +4731,28 @@
       }
     }
 
+    function formatSfpRegimeBtcStatus(model, mon) {
+      const hrs = mon.btcLookbackHours ?? "—";
+      const trend = mon.btcTrend ? ` · ${mon.btcTrend}` : "";
+      const modelBtc = model.hasBtcFeatures
+        ? model.btcFeaturesActive
+          ? " · model uses BTC"
+          : " · model: BTC weights zero (retrain)"
+        : " · model: no BTC features (retrain)";
+      return `BTC lookback ${hrs}h${trend}${modelBtc}`;
+    }
+
+    function formatSfpRegimeWorstLine(mon) {
+      if (!mon.worst?.length) return "";
+      return mon.worst
+        .slice(0, 5)
+        .map((r) => {
+          const btc = r.btcTrend ? ` ${r.btcTrend}` : "";
+          return `${r.symbol} ${(r.probability * 100).toFixed(0)}%${btc}`;
+        })
+        .join(", ");
+    }
+
     async function loadSfpRegimeMonitorStatus() {
       const el = document.getElementById("paperBotSfpRegimeStatus");
       if (!el) return;
@@ -4736,20 +4773,18 @@
         const bearAcc =
           rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
         const trainLine = formatAiTrainProgress(model.training);
+        const btcLine = formatSfpRegimeBtcStatus(model, mon);
         const worst =
           model.training?.running
             ? ""
             : mon.worst?.length > 0
-            ? ` · bad now: ${mon.worst
-                .slice(0, 5)
-                .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
-                .join(", ")}`
+            ? ` · bad now: ${formatSfpRegimeWorstLine(mon)}`
             : mon.enabled
               ? " · no bad regimes flagged"
               : "";
         el.textContent = trainLine
           ? `Training: ${trainLine}`
-          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumeSfpRegimeTrainPollIfNeeded(model, "paper");
       } catch (e) {
         el.textContent = `Monitor: ${e.message}`;
@@ -4776,20 +4811,18 @@
         const bearAcc =
           rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
         const trainLine = formatAiTrainProgress(model.training);
+        const btcLine = formatSfpRegimeBtcStatus(model, mon);
         const worst =
           model.training?.running
             ? ""
             : mon.worst?.length > 0
-            ? ` · bad now: ${mon.worst
-                .slice(0, 5)
-                .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
-                .join(", ")}`
+            ? ` · bad now: ${formatSfpRegimeWorstLine(mon)}`
             : mon.enabled
               ? " · no bad regimes flagged"
               : "";
         el.textContent = trainLine
           ? `Training: ${trainLine}`
-          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumeSfpRegimeTrainPollIfNeeded(model, "live");
       } catch (e) {
         el.textContent = `Live monitor: ${e.message}`;
@@ -4996,6 +5029,8 @@
         metricsHtml = `
           <div><div class="label">Bull threshold</div><div class="value">${metrics.bullThreshold ?? "—"}</div></div>
           <div><div class="label">Bear threshold</div><div class="value">${metrics.bearThreshold ?? "—"}</div></div>
+          <div><div class="label">BTC lookback</div><div class="value">${mon.btcLookbackHours ?? "—"}h${mon.btcTrend ? ` · ${escapeHtml(mon.btcTrend)}` : ""}</div></div>
+          <div><div class="label">BTC in model</div><div class="value">${m.btcFeaturesActive ? "active" : m.hasBtcFeatures ? "zero weights" : "not trained"}</div></div>
           <div><div class="label">Bull acc (in-sample)</div><div class="value">${laiFmtAcc(metrics.bullAccuracy)} · n=${metrics.bullSamples ?? "—"}</div></div>
           <div><div class="label">Bear acc (in-sample)</div><div class="value">${laiFmtAcc(metrics.bearAccuracy)} · n=${metrics.bearSamples ?? "—"}</div></div>
         `;
@@ -5005,7 +5040,10 @@
         mon.worst?.length > 0
           ? `<div class="model-meta">Bad now: ${mon.worst
               .slice(0, 6)
-              .map((r) => `${escapeHtml(r.symbol)} ${((r.probability ?? 0) * 100).toFixed(0)}%`)
+              .map((r) => {
+                const btc = r.btcTrend ? ` ${escapeHtml(r.btcTrend)}` : "";
+                return `${escapeHtml(r.symbol)} ${((r.probability ?? 0) * 100).toFixed(0)}%${btc}`;
+              })
               .join(", ")}</div>`
           : mon.enabled
             ? `<div class="model-meta">No bad regimes flagged right now</div>`
@@ -5393,6 +5431,9 @@
         aiSfpRegimeThreshold: Number(
           document.getElementById("liveBotAiSfpRegimeThreshold").value
         ),
+        aiRegimeBtcLookbackHours: Number(
+          document.getElementById("liveBotAiRegimeBtcLookbackHours").value
+        ),
         aiLevelBreakRegimeEnabled: document.getElementById(
           "liveBotAiLevelBreakRegimeEnabled"
         ).checked,
@@ -5484,6 +5525,8 @@
         cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("liveBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
+      document.getElementById("liveBotAiRegimeBtcLookbackHours").value =
+        cfg.aiRegimeBtcLookbackHours ?? 12;
       document.getElementById("liveBotAiLevelBreakRegimeEnabled").checked = Boolean(
         cfg.aiLevelBreakRegimeEnabled
       );
