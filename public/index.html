@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SFP scanner</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -2547,10 +2548,12 @@
         Summary of live-scope AI models: training metadata, runtime monitors, regime skips, AI SL/TP levels, and early-exit impact on closed exchange trades.
         Models train from train-bot backtest + live fills.
       </p>
-      <details class="settings-pane" style="margin: 0 12px 12px;">
-        <summary>AI SL/TP levels</summary>
-        <div class="settings-pane-body">
-          <div class="settings-form movers-settings">
+      <div class="ai-report-section" id="liveAiExitLevelsSection" style="margin: 0 12px 16px;">
+        <h3>AI SL/TP levels</h3>
+        <p class="hint" style="margin: 0 0 12px 0;">
+          Scale or replace legacy smart stop / take-profit on live entries. Settings are saved to the live bot.
+        </p>
+        <div class="settings-form movers-settings">
             <div class="field" style="min-width: 220px;">
               <label>
                 <input type="checkbox" id="liveAiExitLevelsEnabled" />
@@ -2600,9 +2603,8 @@
               <label>&nbsp;</label>
               <button type="button" class="btn secondary sm" id="liveAiTrainExitLevels">Train SL/TP model</button>
             </div>
-          </div>
         </div>
-      </details>
+      </div>
       <div class="bot-settings-actions" style="margin: 0 12px 12px;">
         <button type="button" class="btn secondary sm" id="liveAiReportRefresh">Refresh</button>
         <span class="config-msg" id="liveAiReportMsg"></span>
