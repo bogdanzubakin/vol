@@ -19,7 +19,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--days" && argv[i + 1]) days = Number(argv[++i]);
   }
-  return { days: Math.max(1, Math.min(21, Math.round(days) || 10)) };
+  return { days: Math.max(1, Math.min(60, Math.round(days) || 10)) };
 }
 
 function loadBotConfig(regimeOn) {
