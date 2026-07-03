@@ -20,7 +20,7 @@ const KLINE_MAX = 1500;
 
 function parseArgs(argv) {
   let toDays = 30;
-  let restGapMs = 120;
+  let restGapMs = 300;
   let dryRun = false;
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--to-days" && argv[i + 1]) toDays = Number(argv[++i]);
@@ -48,6 +48,24 @@ function parseKlines(rows) {
 }
 
 function createFetcher(interval, restQueue) {
+  async function fetchBatch(url, symbol, iv) {
+    let attempt = 0;
+    while (true) {
+      const res = await fetch(url);
+      const text = await res.text();
+      if (res.status === 429 || res.status === 418) {
+        attempt++;
+        if (attempt > 8) throw new Error(`${symbol} ${iv} ${res.status}`);
+        const wait = Math.min(60_000, 2000 * 2 ** attempt);
+        console.error(`[rate-limit] ${symbol} ${iv} ${res.status} — wait ${wait / 1000}s`);
+        await sleep(wait);
+        continue;
+      }
+      if (!res.ok) throw new Error(`${symbol} ${iv} ${res.status}`);
+      return JSON.parse(text);
+    }
+  }
+
   return async function fetchOlder(symbol, limit, endTime) {
     let all = [];
     let end = endTime;
@@ -63,12 +81,7 @@ function createFetcher(interval, restQueue) {
       };
       const url = new URL("/fapi/v1/klines", REST_BASE);
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-      const rows = await restQueue.schedule(async () => {
-        const res = await fetch(url);
-        const text = await res.text();
-        if (!res.ok) throw new Error(`${symbol} ${interval} ${res.status}`);
-        return JSON.parse(text);
-      });
+      const rows = await restQueue.schedule(() => fetchBatch(url, symbol, interval));
       if (!rows.length) break;
       const parsed = parseKlines(rows);
       all = [...parsed, ...all];
