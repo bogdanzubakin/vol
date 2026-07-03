@@ -48,6 +48,7 @@ const {
 const { createPaperBot } = require("./lib/paper-bot");
 const {
   ensureAllDefaultModelsOnDisk,
+  getModel: getEarlyExitModel,
   getModelStatus,
   trainFromTrades,
   reloadModel,
@@ -56,6 +57,7 @@ const { normalizeAiModelScope } = require("./lib/ai-model-scope");
 const { collectAiTrainingTrades } = require("./lib/ai-training-trades");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllSfpRegimeModelsOnDisk,
+  getModel: getSfpRegimeModel,
   getModelStatus: getSfpRegimeModelStatus,
   trainFromTrades: trainSfpRegimeFromTrades,
   reloadModel: reloadSfpRegimeModel,
@@ -63,6 +65,7 @@ const {
 const { createSfpRegimeMonitor } = require("./lib/sfp-regime-monitor");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllLevelBreakRegimeModelsOnDisk,
+  getModel: getLevelBreakRegimeModel,
   getModelStatus: getLevelBreakRegimeModelStatus,
   trainFromTrades: trainLevelBreakRegimeFromTrades,
   reloadModel: reloadLevelBreakRegimeModel,
@@ -3537,9 +3540,13 @@ async function main() {
         },
         getEarlyExitModelStatus: (scope) =>
           getEarlyExitModelStatusFull(scope),
+        getEarlyExitModelData: (scope) =>
+          getEarlyExitModel(normalizeAiModelScope(scope)),
         trainEarlyExitModel: (body) => trainEarlyExitModelFromHistory(body),
         getSfpRegimeModelStatus: (scope) =>
           getSfpRegimeModelStatusFull(scope),
+        getSfpRegimeModelData: (scope) =>
+          getSfpRegimeModel(normalizeAiModelScope(scope)),
         getSfpRegimeMonitor: (scope) =>
           normalizeAiModelScope(scope) === "live"
             ? getLiveSfpRegimeMonitorSnapshot()
@@ -3547,6 +3554,8 @@ async function main() {
         trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
         getLevelBreakRegimeModelStatus: (scope) =>
           getLevelBreakRegimeModelStatusFull(scope),
+        getLevelBreakRegimeModelData: (scope) =>
+          getLevelBreakRegimeModel(normalizeAiModelScope(scope)),
         getLevelBreakRegimeMonitor: (scope) =>
           normalizeAiModelScope(scope) === "live"
             ? getLiveLevelBreakRegimeMonitorSnapshot()
