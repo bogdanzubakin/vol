@@ -250,6 +250,22 @@ async function main() {
       bot: liveConfig,
       apply: applyEarlyExitThresholds,
     },
+    {
+      label: "AI exit-levels (paper)",
+      path: "/api/ai-exit-levels-model",
+      scope: "paper",
+      file: dataPath("ai-exit-levels.json"),
+      bot: paperConfig,
+      apply: (m) => m,
+    },
+    {
+      label: "AI exit-levels (live)",
+      path: "/api/ai-exit-levels-model",
+      scope: "live",
+      file: dataPath("ai-exit-levels-live.json"),
+      bot: liveConfig,
+      apply: (m) => m,
+    },
   ];
 
   for (const m of models) {

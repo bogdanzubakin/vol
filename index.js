@@ -74,6 +74,13 @@ const {
   saveModel: saveLevelBreakRegimeModel,
 } = require("./lib/level-break-regime-model");
 const { createLevelBreakRegimeMonitor } = require("./lib/level-break-regime-monitor");
+const {
+  ensureAllDefaultModelsOnDisk: ensureAllAiExitLevelsModelsOnDisk,
+  getModel: getAiExitLevelsModel,
+  getModelStatus: getAiExitLevelsModelStatus,
+  reloadModel: reloadAiExitLevelsModel,
+  saveModel: saveAiExitLevelsModel,
+} = require("./lib/ai-exit-levels");
 const { BTC_SYMBOL } = require("./lib/btc-regime-context");
 const { createLiveBot } = require("./lib/live-bot");
 const { formatDrawdownTelegramMessage } = require("./lib/bot-drawdown-guard");
@@ -303,6 +310,10 @@ function getLevelBreakRegimeModelStatusFull(scope = "paper") {
     () => getLevelBreakRegimeModelStatus(normalizeAiModelScope(scope)),
     aiTrainJobFor("level_break_regime", scope)
   );
+}
+
+function getAiExitLevelsModelStatusFull(scope = "paper") {
+  return getAiExitLevelsModelStatus(normalizeAiModelScope(scope));
 }
 
 function modelStatusWithTraining(getStatus, job) {
@@ -728,6 +739,28 @@ function importEarlyExitModelFromBody(body = {}) {
   return {
     scope,
     status: getEarlyExitModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
+function importAiExitLevelsModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = saveAiExitLevelsModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadAiExitLevelsModel(scope);
+  return {
+    scope,
+    status: getAiExitLevelsModelStatusFull(scope),
     featureCount: model.featureNames?.length ?? null,
   };
 }
@@ -3319,6 +3352,7 @@ async function main() {
   ensureAllDefaultModelsOnDisk();
   ensureAllSfpRegimeModelsOnDisk();
   ensureAllLevelBreakRegimeModelsOnDisk();
+  ensureAllAiExitLevelsModelsOnDisk();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
@@ -3629,6 +3663,12 @@ async function main() {
           getLevelBreakRegimeModel(normalizeAiModelScope(scope)),
         importLevelBreakRegimeModel: (body) =>
           importLevelBreakRegimeModelFromBody(body),
+        getAiExitLevelsModelStatus: (scope) =>
+          getAiExitLevelsModelStatusFull(scope),
+        getAiExitLevelsModelData: (scope) =>
+          getAiExitLevelsModel(normalizeAiModelScope(scope)),
+        importAiExitLevelsModel: (body) =>
+          importAiExitLevelsModelFromBody(body),
         getLevelBreakRegimeMonitor: (scope) =>
           normalizeAiModelScope(scope) === "live"
             ? getLiveLevelBreakRegimeMonitorSnapshot()
