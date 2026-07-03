@@ -75,6 +75,14 @@ const {
 } = require("./lib/level-break-regime-model");
 const { createLevelBreakRegimeMonitor } = require("./lib/level-break-regime-monitor");
 const {
+  ensureAllDefaultModelsOnDisk: ensureAllLevelBreakSignalModelsOnDisk,
+  getModel: getLevelBreakSignalModel,
+  getModelStatus: getLevelBreakSignalModelStatus,
+  trainFromTrades: trainLevelBreakSignalFromTrades,
+  reloadModel: reloadLevelBreakSignalModel,
+  saveModel: saveLevelBreakSignalModel,
+} = require("./lib/level-break-signal-model");
+const {
   ensureAllDefaultModelsOnDisk: ensureAllAiExitLevelsModelsOnDisk,
   getModel: getAiExitLevelsModel,
   getModelStatus: getAiExitLevelsModelStatus,
@@ -277,12 +285,14 @@ const aiTrainJob = {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
     level_break_regime: freshAiTrainJob(),
+    level_break_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
   },
   live: {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
     level_break_regime: freshAiTrainJob(),
+    level_break_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
   },
 };
@@ -291,6 +301,7 @@ function aiTrainJobFor(model, scope = "paper") {
   const key = normalizeAiModelScope(scope);
   if (model === "sfp_regime") return aiTrainJob[key].sfp_regime;
   if (model === "level_break_regime") return aiTrainJob[key].level_break_regime;
+  if (model === "level_break_signal") return aiTrainJob[key].level_break_signal;
   if (model === "ai_exit_levels") return aiTrainJob[key].ai_exit_levels;
   return aiTrainJob[key].early_exit;
 }
@@ -313,6 +324,13 @@ function getLevelBreakRegimeModelStatusFull(scope = "paper") {
   return modelStatusWithTraining(
     () => getLevelBreakRegimeModelStatus(normalizeAiModelScope(scope)),
     aiTrainJobFor("level_break_regime", scope)
+  );
+}
+
+function getLevelBreakSignalModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getLevelBreakSignalModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("level_break_signal", scope)
   );
 }
 
@@ -728,6 +746,28 @@ function importLevelBreakRegimeModelFromBody(body = {}) {
   };
 }
 
+function importLevelBreakSignalModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = saveLevelBreakSignalModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadLevelBreakSignalModel(scope);
+  return {
+    scope,
+    status: getLevelBreakSignalModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
 function importEarlyExitModelFromBody(body = {}) {
   const scope = normalizeAiModelScope(body.scope);
   if (!body.model || typeof body.model !== "object") {
@@ -898,6 +938,83 @@ function startLevelBreakRegimeTraining(body = {}) {
 
 function trainLevelBreakRegimeModelFromHistory(body = {}) {
   return startLevelBreakRegimeTraining(body);
+}
+
+function collectLevelBreakSignalTrainingTrades(source = "auto", scope = "paper") {
+  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
+    (list ?? []).filter(
+      (t) => t.signalKind === "level_break" || t.signalKind === "level_break_bear"
+    )
+  );
+}
+
+function startLevelBreakSignalTraining(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("level_break_signal", scope);
+  if (job.running) {
+    throw new Error("Level-break signal model training already running");
+  }
+  const trades = collectLevelBreakSignalTrainingTrades(body.source, scope);
+  if (trades.length < 12) {
+    const hint =
+      scope === "live"
+        ? "run train bot with level-break signals enabled (live fills merged when available)"
+        : "run train bot with level-break signals enabled";
+    throw new Error(
+      `Need at least 12 level-break closed trades for training (got ${trades.length}) — ${hint}`
+    );
+  }
+
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} level-break trades…`,
+  };
+
+  void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
+    try {
+      await trainLevelBreakSignalFromTrades(trades, fetchBarsForSfpRegimeTraining, {
+        ...cfg,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadLevelBreakSignalModel(scope);
+      job.result = {
+        tradesUsed: trades.length,
+        model: getLevelBreakSignalModelStatus(scope),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(
+        `Level-break signal model training failed (${scope}): ${job.error}`
+      );
+    } finally {
+      job.running = false;
+    }
+  })();
+
+  return { ok: true, started: true, trades: trades.length, scope };
+}
+
+function trainLevelBreakSignalModelFromHistory(body = {}) {
+  return startLevelBreakSignalTraining(body);
 }
 
 function refreshLevelBreakRegimeForSymbol(sym, historyBuffers) {
@@ -3413,6 +3530,7 @@ async function main() {
   ensureAllDefaultModelsOnDisk();
   ensureAllSfpRegimeModelsOnDisk();
   ensureAllLevelBreakRegimeModelsOnDisk();
+  ensureAllLevelBreakSignalModelsOnDisk();
   ensureAllAiExitLevelsModelsOnDisk();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
@@ -3468,6 +3586,7 @@ async function main() {
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+    getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
   void liveBot.getPublicState().then((st) => {
     console.error(
@@ -3737,6 +3856,14 @@ async function main() {
             : getLevelBreakRegimeMonitorSnapshot(),
         trainLevelBreakRegimeModel: (body) =>
           trainLevelBreakRegimeModelFromHistory(body),
+        getLevelBreakSignalModelStatus: (scope) =>
+          getLevelBreakSignalModelStatusFull(scope),
+        getLevelBreakSignalModelData: (scope) =>
+          getLevelBreakSignalModel(normalizeAiModelScope(scope)),
+        importLevelBreakSignalModel: (body) =>
+          importLevelBreakSignalModelFromBody(body),
+        trainLevelBreakSignalModel: (body) =>
+          trainLevelBreakSignalModelFromHistory(body),
         getLiveAiReport: () => getLiveAiReport(),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {

@@ -120,6 +120,17 @@ function applyLevelBreakThresholds(model, botConfig) {
   return m;
 }
 
+function applyLevelBreakSignalThresholds(model, botConfig) {
+  const m = { ...model };
+  if (m.bull && botConfig?.aiLevelBreakSignalBullThreshold != null) {
+    m.bull = { ...m.bull, threshold: botConfig.aiLevelBreakSignalBullThreshold };
+  }
+  if (m.bear && botConfig?.aiLevelBreakSignalBearThreshold != null) {
+    m.bear = { ...m.bear, threshold: botConfig.aiLevelBreakSignalBearThreshold };
+  }
+  return m;
+}
+
 function applyEarlyExitThresholds(model, botConfig) {
   const m = { ...model };
   if (m.hard && botConfig?.aiEarlyExitHardThreshold != null) {
@@ -233,6 +244,22 @@ async function main() {
       file: dataPath("level-break-regime-model-live.json"),
       bot: liveConfig,
       apply: applyLevelBreakThresholds,
+    },
+    {
+      label: "Level-break signal (paper)",
+      path: "/api/level-break-signal-model",
+      scope: "paper",
+      file: dataPath("level-break-signal-model.json"),
+      bot: paperConfig,
+      apply: applyLevelBreakSignalThresholds,
+    },
+    {
+      label: "Level-break signal (live)",
+      path: "/api/level-break-signal-model",
+      scope: "live",
+      file: dataPath("level-break-signal-model-live.json"),
+      bot: liveConfig,
+      apply: applyLevelBreakSignalThresholds,
     },
     {
       label: "Early exit (paper)",
