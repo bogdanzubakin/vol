@@ -1755,8 +1755,14 @@
         </div>
         <div class="field" style="min-width: 200px;">
           <label>
-            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" />
-            Trade fast-mover pullback
+            <input type="checkbox" id="paperBotTradePullback" name="tradePullbackSignals" checked />
+            Trade fast-mover pullback (LONG)
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradePullbackBear" name="tradeBearishPullbackSignals" checked />
+            Trade bearish pullback (SHORT)
           </label>
         </div>
         <div class="field" style="min-width: 260px;">
@@ -1985,6 +1991,39 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="paperBotTrainLevelBreakRegime">Train level-break regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>AI pullback regime filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiPullbackRegimeEnabled" checked />
+            AI pullback regime filter (paper bot)
+          </label>
+          <div class="hint">Separate bull/bear models with BTCUSDT context — skips pullback entries during poor regimes (best: 0.84 / 0.82 on 10d cache)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackRegimeBullThreshold">Bull bad-regime threshold</label>
+          <input type="number" id="paperBotAiPullbackRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.84" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackRegimeBearThreshold">Bear bad-regime threshold</label>
+          <input type="number" id="paperBotAiPullbackRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.82" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackRegimeThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="paperBotAiPullbackRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotPullbackRegimeStatus">Monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainPullbackRegime">Train pullback regime model</button>
         </div>
             </div>
           </div>
@@ -2261,7 +2300,10 @@
           <label><input type="checkbox" id="liveBotTradeSfpBear" checked /> Trade bearish SFP (SHORT)</label>
         </div>
         <div class="field" style="min-width: 200px;">
-          <label><input type="checkbox" id="liveBotTradePullback" /> Trade pullback</label>
+          <label><input type="checkbox" id="liveBotTradePullback" checked /> Trade pullback (LONG)</label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label><input type="checkbox" id="liveBotTradePullbackBear" checked /> Trade bearish pullback (SHORT)</label>
         </div>
         <div class="field" style="min-width: 260px;">
           <label>
@@ -2423,6 +2465,39 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="liveBotTrainLevelBreakRegime">Train live level-break regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>AI pullback regime filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiPullbackRegimeEnabled" checked />
+            AI pullback regime filter (live bot)
+          </label>
+          <div class="hint">Separate bull/bear models with BTCUSDT context — skips pullback entries during poor regimes (best: 0.84 / 0.82 on 10d cache)</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackRegimeBullThreshold">Bull bad-regime threshold</label>
+          <input type="number" id="liveBotAiPullbackRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.84" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackRegimeBearThreshold">Bear bad-regime threshold</label>
+          <input type="number" id="liveBotAiPullbackRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.82" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackRegimeThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="liveBotAiPullbackRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotPullbackRegimeStatus">Live monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainPullbackRegime">Train live pullback regime model</button>
         </div>
             </div>
           </div>
@@ -2605,6 +2680,40 @@
             </div>
         </div>
       </div>
+      <div class="ai-report-section" id="liveAiPullbackRegimeSection" style="margin: 0 12px 16px;">
+        <h3>Pullback regime filter</h3>
+        <p class="hint" style="margin: 0 0 12px 0;">
+          Skip pullback entries during poor bull/bear regimes. Settings are saved to the live bot.
+        </p>
+        <div class="settings-form movers-settings">
+            <div class="field" style="min-width: 220px;">
+              <label>
+                <input type="checkbox" id="liveAiPullbackRegimeEnabled" checked />
+                AI pullback regime filter
+              </label>
+              <div class="hint">Optimized thresholds 0.84 / 0.82 on 10d cache (+$396 vs baseline). Signal AI left off.</div>
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackRegimeBullThreshold">Bull bad-regime threshold</label>
+              <input type="number" id="liveAiPullbackRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.84" required />
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackRegimeBearThreshold">Bear bad-regime threshold</label>
+              <input type="number" id="liveAiPullbackRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.82" required />
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <div class="hint" id="liveAiPullbackRegimeStatus">Model: loading…</div>
+            </div>
+            <div class="field" style="align-self: end;">
+              <label>&nbsp;</label>
+              <button type="button" class="btn secondary sm" id="liveAiPullbackRegimeSave">Save to live bot</button>
+            </div>
+            <div class="field" style="align-self: end;">
+              <label>&nbsp;</label>
+              <button type="button" class="btn secondary sm" id="liveAiTrainPullbackRegime">Train pullback regime model</button>
+            </div>
+        </div>
+      </div>
       <div class="bot-settings-actions" style="margin: 0 12px 12px;">
         <button type="button" class="btn secondary sm" id="liveAiReportRefresh">Refresh</button>
         <span class="config-msg" id="liveAiReportMsg"></span>
@@ -2617,6 +2726,7 @@
         <div><div class="stat-label">AI exit PnL</div><div class="stat-value" id="laiStatAiPnl">—</div></div>
         <div><div class="stat-label">SFP regime skips</div><div class="stat-value" id="laiStatSfpSkips">—</div></div>
         <div><div class="stat-label">LVL regime skips</div><div class="stat-value" id="laiStatLbSkips">—</div></div>
+        <div><div class="stat-label">PB regime skips</div><div class="stat-value" id="laiStatPbSkips">—</div></div>
         <div><div class="stat-label">AI SL/TP entries</div><div class="stat-value" id="laiStatAiLevels">—</div></div>
         <div><div class="stat-label">Train-bot SFP rows</div><div class="stat-value" id="laiStatBtSfp">—</div></div>
         <div><div class="stat-label">Merged train rows</div><div class="stat-value" id="laiStatMergedSfp">—</div></div>
@@ -2651,6 +2761,12 @@
         <div class="ai-report-section">
           <h3>Recent level-break regime skips</h3>
           <ul class="ai-report-events" id="liveAiLbSkipEvents">
+            <li class="empty">—</li>
+          </ul>
+        </div>
+        <div class="ai-report-section">
+          <h3>Recent pullback regime skips</h3>
+          <ul class="ai-report-events" id="liveAiPbSkipEvents">
             <li class="empty">—</li>
           </ul>
         </div>
@@ -4215,6 +4331,7 @@
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradeBearishSfpSignals: document.getElementById("paperBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
+        tradeBearishPullbackSignals: document.getElementById("paperBotTradePullbackBear").checked,
         tradeLevelBreakSignals: document.getElementById("paperBotTradeLevelBreak").checked,
         tradeLevelBreakBearSignals: document.getElementById("paperBotTradeLevelBreakBear").checked,
         extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
@@ -4286,6 +4403,18 @@
         ),
         aiLevelBreakRegimeThreshold: Number(
           document.getElementById("paperBotAiLevelBreakRegimeThreshold").value
+        ),
+        aiPullbackRegimeEnabled: document.getElementById(
+          "paperBotAiPullbackRegimeEnabled"
+        ).checked,
+        aiPullbackRegimeBullThreshold: Number(
+          document.getElementById("paperBotAiPullbackRegimeBullThreshold").value
+        ),
+        aiPullbackRegimeBearThreshold: Number(
+          document.getElementById("paperBotAiPullbackRegimeBearThreshold").value
+        ),
+        aiPullbackRegimeThreshold: Number(
+          document.getElementById("paperBotAiPullbackRegimeThreshold").value
         ),
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
@@ -4367,6 +4496,8 @@
         cfg.tradeBearishSfpSignals !== false;
       document.getElementById("paperBotTradePullback").checked =
         Boolean(cfg.tradePullbackSignals);
+      document.getElementById("paperBotTradePullbackBear").checked =
+        cfg.tradeBearishPullbackSignals !== false;
       document.getElementById("paperBotTradeLevelBreak").checked =
         cfg.tradeLevelBreakSignals !== false;
       document.getElementById("paperBotTradeLevelBreakBear").checked =
@@ -4430,6 +4561,15 @@
         cfg.aiLevelBreakRegimeBearThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.74;
       document.getElementById("paperBotAiLevelBreakRegimeThreshold").value =
         cfg.aiLevelBreakRegimeThreshold ?? 0.58;
+      document.getElementById("paperBotAiPullbackRegimeEnabled").checked = Boolean(
+        cfg.aiPullbackRegimeEnabled
+      );
+      document.getElementById("paperBotAiPullbackRegimeBullThreshold").value =
+        cfg.aiPullbackRegimeBullThreshold ?? cfg.aiPullbackRegimeThreshold ?? 0.84;
+      document.getElementById("paperBotAiPullbackRegimeBearThreshold").value =
+        cfg.aiPullbackRegimeBearThreshold ?? cfg.aiPullbackRegimeThreshold ?? 0.82;
+      document.getElementById("paperBotAiPullbackRegimeThreshold").value =
+        cfg.aiPullbackRegimeThreshold ?? 0.58;
       document.getElementById("paperBotBlockedSymbols").value = (
         cfg.blockedSymbols ?? []
       ).join("\n");
@@ -4440,6 +4580,7 @@
       document.getElementById("paperBotDrawdownStopPct").value =
         cfg.drawdownStopPct ?? 4;
       fillAiExitLevelsForm("paper", cfg);
+      fillPullbackRegimeForm("paper", cfg);
       updatePaperBotBadges(cfg);
     }
 
@@ -4510,6 +4651,55 @@
       set("tpClampMin", cfg.aiExitLevelsTpClampMin ?? 1);
       set("tpClampMax", cfg.aiExitLevelsTpClampMax ?? 15);
       updateAiExitLevelsModeFields(kind);
+    }
+
+    function pullbackRegimeConfigFromForm(kind) {
+      const prefix =
+        kind === "liveAi"
+          ? "liveAiPullbackRegime"
+          : kind === "live"
+            ? "liveBotAiPullbackRegime"
+            : "paperBotAiPullbackRegime";
+      return {
+        aiPullbackRegimeEnabled: document.getElementById(`${prefix}Enabled`).checked,
+        aiPullbackRegimeBullThreshold: Number(
+          document.getElementById(`${prefix}BullThreshold`).value
+        ),
+        aiPullbackRegimeBearThreshold: Number(
+          document.getElementById(`${prefix}BearThreshold`).value
+        ),
+        ...(kind === "paper" || kind === "live"
+          ? {
+              aiPullbackRegimeThreshold: Number(
+                document.getElementById(`${prefix}Threshold`).value
+              ),
+            }
+          : {}),
+      };
+    }
+
+    function fillPullbackRegimeForm(kind, cfg) {
+      if (!cfg) return;
+      const prefix =
+        kind === "liveAi"
+          ? "liveAiPullbackRegime"
+          : kind === "live"
+            ? "liveBotAiPullbackRegime"
+            : "paperBotAiPullbackRegime";
+      const enabledEl = document.getElementById(`${prefix}Enabled`);
+      if (enabledEl) enabledEl.checked = Boolean(cfg.aiPullbackRegimeEnabled);
+      const bullEl = document.getElementById(`${prefix}BullThreshold`);
+      if (bullEl) {
+        bullEl.value =
+          cfg.aiPullbackRegimeBullThreshold ?? cfg.aiPullbackRegimeThreshold ?? 0.84;
+      }
+      const bearEl = document.getElementById(`${prefix}BearThreshold`);
+      if (bearEl) {
+        bearEl.value =
+          cfg.aiPullbackRegimeBearThreshold ?? cfg.aiPullbackRegimeThreshold ?? 0.82;
+      }
+      const legacyEl = document.getElementById(`${prefix}Threshold`);
+      if (legacyEl) legacyEl.value = cfg.aiPullbackRegimeThreshold ?? 0.58;
     }
 
     function updateAiExitLevelsModeFields(bot) {
@@ -4915,6 +5105,8 @@
     let liveSfpRegimeTrainPolling = false;
     let levelBreakRegimeTrainPolling = false;
     let liveLevelBreakRegimeTrainPolling = false;
+    let pullbackRegimeTrainPolling = false;
+    let livePullbackRegimeTrainPolling = false;
 
     function aiModelApiUrl(path, scope) {
       if (!scope) return path;
@@ -4947,6 +5139,21 @@
       }, scope).finally(() => {
         if (scope === "live") liveSfpRegimeTrainPolling = false;
         else sfpRegimeTrainPolling = false;
+      });
+    }
+
+    function resumePullbackRegimeTrainPollIfNeeded(data, scope = "paper") {
+      const polling =
+        scope === "live" ? livePullbackRegimeTrainPolling : pullbackRegimeTrainPolling;
+      if (!data?.training?.running || polling) return;
+      if (scope === "live") livePullbackRegimeTrainPolling = true;
+      else pullbackRegimeTrainPolling = true;
+      void pollAiModelTraining("/api/pullback-regime-model", () => {
+        if (scope === "live") void loadLivePullbackRegimeMonitorStatus();
+        else void loadPullbackRegimeMonitorStatus();
+      }, scope).finally(() => {
+        if (scope === "live") livePullbackRegimeTrainPolling = false;
+        else pullbackRegimeTrainPolling = false;
       });
     }
 
@@ -5087,6 +5294,100 @@
         resumeSfpRegimeTrainPollIfNeeded(model, "live");
       } catch (e) {
         el.textContent = `Live monitor: ${e.message}`;
+      }
+    }
+
+    async function loadPullbackRegimeMonitorStatus() {
+      const el = document.getElementById("paperBotPullbackRegimeStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/pullback-regime-model", "paper"), {
+            cache: "no-store",
+          }),
+          fetch(aiModelApiUrl("/api/pullback-regime-monitor", "paper"), {
+            cache: "no-store",
+          }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null
+            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
+            : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+              ? ` · bad now: ${mon.worst
+                  .slice(0, 5)
+                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                  .join(", ")}`
+              : mon.enabled
+                ? " · no bad regimes flagged"
+                : "";
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        resumePullbackRegimeTrainPollIfNeeded(model, "paper");
+      } catch (e) {
+        el.textContent = `Monitor: ${e.message}`;
+      }
+    }
+
+    async function loadLivePullbackRegimeMonitorStatus() {
+      const ids = ["liveBotPullbackRegimeStatus", "liveAiPullbackRegimeStatus"];
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/pullback-regime-model", "live"), {
+            cache: "no-store",
+          }),
+          fetch(aiModelApiUrl("/api/pullback-regime-monitor", "live"), {
+            cache: "no-store",
+          }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null
+            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
+            : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+              ? ` · bad now: ${mon.worst
+                  .slice(0, 5)
+                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                  .join(", ")}`
+              : mon.enabled
+                ? " · no bad regimes flagged"
+                : "";
+        const text = trainLine
+          ? `Training: ${trainLine}`
+          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (el) el.textContent = text;
+        }
+        resumePullbackRegimeTrainPollIfNeeded(model, "live");
+      } catch (e) {
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (el) el.textContent = `Live monitor: ${e.message}`;
+        }
       }
     }
 
@@ -5407,6 +5708,7 @@
           cfg.aiEarlyExitEnabled ||
           cfg.aiSfpRegimeEnabled ||
           cfg.aiLevelBreakRegimeEnabled ||
+          cfg.aiPullbackRegimeEnabled ||
           cfg.aiExitLevelsEnabled;
         badge.textContent = anyOn
           ? cfg.armed
@@ -5436,6 +5738,7 @@
       );
       setStat("laiStatSfpSkips", String(impact.regimeSkips?.sfp ?? 0));
       setStat("laiStatLbSkips", String(impact.regimeSkips?.levelBreak ?? 0));
+      setStat("laiStatPbSkips", String(impact.regimeSkips?.pullback ?? 0));
       setStat(
         "laiStatAiLevels",
         `${impact.aiExitLevels?.count ?? 0} (${impact.aiExitLevels?.winRate ?? 0}% win)`
@@ -5455,11 +5758,14 @@
           renderLiveAiModelCard("SFP early exit", data.models?.earlyExit) +
           renderLiveAiModelCard("SFP regime filter", data.models?.sfpRegime) +
           renderLiveAiModelCard("Level-break regime", data.models?.levelBreakRegime) +
+          renderLiveAiModelCard("Pullback regime", data.models?.pullbackRegime) +
           renderLiveAiExitLevelsCard(data.models?.exitLevels);
       }
 
       fillAiExitLevelsForm("liveAi", cfg);
+      fillPullbackRegimeForm("liveAi", cfg);
       void loadAiExitLevelsModelStatus("liveAi");
+      void loadLivePullbackRegimeMonitorStatus();
 
       const reasonsBody = document.getElementById("liveAiExitReasonsBody");
       const reasons = impact.exitReasons ?? [];
@@ -5483,6 +5789,11 @@
         document.getElementById("liveAiLbSkipEvents"),
         data.recentEvents?.levelBreakRegimeSkips,
         "No level-break regime skips logged"
+      );
+      renderLiveAiEventList(
+        document.getElementById("liveAiPbSkipEvents"),
+        data.recentEvents?.pullbackRegimeSkips,
+        "No pullback regime skips logged"
       );
       renderLiveAiEventList(
         document.getElementById("liveAiExitEvents"),
@@ -5523,6 +5834,7 @@
         void loadEarlyExitModelStatus();
         void loadSfpRegimeMonitorStatus();
         void loadLevelBreakRegimeMonitorStatus();
+        void loadPullbackRegimeMonitorStatus();
         void loadAiExitLevelsModelStatus("paper");
         if (syncForm) {
           try {
@@ -5724,6 +6036,51 @@
       }
     });
 
+    document.getElementById("paperBotTrainPullbackRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train pullback regime model from pullback closed trades in train-bot + paper history?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("paperBotTrainPullbackRegime");
+      try {
+        btn.disabled = true;
+        setPaperBotMsg("Starting pullback regime training…", true);
+        const res = await fetch("/api/pullback-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(
+          `Pullback training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/pullback-regime-model",
+          () => {
+            void loadPullbackRegimeMonitorStatus();
+          },
+          "paper"
+        );
+        await loadPullbackRegimeMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setPaperBotMsg(
+          `Pullback regime trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadPullbackRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById("paperBotCopyToLive")?.addEventListener("click", async () => {
       try {
         await copyPaperBotConfigToLive();
@@ -5772,6 +6129,7 @@
         tradeSfpSignals: document.getElementById("liveBotTradeSfp").checked,
         tradeBearishSfpSignals: document.getElementById("liveBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
+        tradeBearishPullbackSignals: document.getElementById("liveBotTradePullbackBear").checked,
         extremalSpikeGateEnabled: document.getElementById("liveBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
         addOnMarginUsdt: Number(document.getElementById("liveBotAddOnMarginUsdt").value),
@@ -5832,6 +6190,7 @@
         aiLevelBreakRegimeThreshold: Number(
           document.getElementById("liveBotAiLevelBreakRegimeThreshold").value
         ),
+        ...pullbackRegimeConfigFromForm("live"),
       };
     }
 
@@ -5871,6 +6230,8 @@
       document.getElementById("liveBotTradeSfpBear").checked =
         cfg.tradeBearishSfpSignals !== false;
       document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
+      document.getElementById("liveBotTradePullbackBear").checked =
+        cfg.tradeBearishPullbackSignals !== false;
       document.getElementById("liveBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
@@ -5924,6 +6285,8 @@
         cfg.aiLevelBreakRegimeBearThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.74;
       document.getElementById("liveBotAiLevelBreakRegimeThreshold").value =
         cfg.aiLevelBreakRegimeThreshold ?? 0.58;
+      fillPullbackRegimeForm("live", cfg);
+      fillPullbackRegimeForm("liveAi", cfg);
       updateLiveBotBadges(cfg);
     }
 
@@ -6007,6 +6370,7 @@
         void loadLiveEarlyExitModelStatus();
         void loadLiveSfpRegimeMonitorStatus();
         void loadLiveLevelBreakRegimeMonitorStatus();
+        void loadLivePullbackRegimeMonitorStatus();
         void loadAiExitLevelsModelStatus("live");
         if (!data.busy) {
           setLiveBotMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
@@ -6149,6 +6513,66 @@
       } catch (e) {
         if (msg) msg.textContent = e.message;
         void loadAiExitLevelsModelStatus("liveAi");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveAiPullbackRegimeSave")?.addEventListener("click", async () => {
+      const msg = document.getElementById("liveAiReportMsg");
+      try {
+        const res = await fetch("/api/live-bot/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patch: pullbackRegimeConfigFromForm("liveAi") }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        fillPullbackRegimeForm("live", data.config ?? data);
+        fillPullbackRegimeForm("liveAi", data.config ?? data);
+        if (msg) msg.textContent = "Pullback regime settings saved to live bot";
+        void loadLiveAiReport();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+      }
+    });
+
+    document.getElementById("liveAiTrainPullbackRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live pullback regime model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveAiTrainPullbackRegime");
+      const msg = document.getElementById("liveAiReportMsg");
+      try {
+        btn.disabled = true;
+        if (msg) msg.textContent = "Starting live pullback regime training…";
+        const res = await fetch("/api/pullback-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const training = await pollAiModelTraining(
+          "/api/pullback-regime-model",
+          () => {
+            void loadLivePullbackRegimeMonitorStatus();
+          },
+          "live"
+        );
+        await loadLivePullbackRegimeMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        if (msg) {
+          msg.textContent = `Live pullback regime trained (${training?.result?.tradesUsed ?? data.trades} trades)`;
+        }
+        void loadLiveAiReport();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        void loadLivePullbackRegimeMonitorStatus();
       } finally {
         btn.disabled = false;
       }
@@ -6311,6 +6735,51 @@
       } catch (e) {
         setLiveBotMsg(e.message, false);
         void loadLiveLevelBreakRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveBotTrainPullbackRegime")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live pullback regime model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainPullbackRegime");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live pullback regime training…", true);
+        const res = await fetch("/api/pullback-regime-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(
+          `Live pullback training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/pullback-regime-model",
+          () => {
+            void loadLivePullbackRegimeMonitorStatus();
+          },
+          "live"
+        );
+        await loadLivePullbackRegimeMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setLiveBotMsg(
+          `Live pullback regime trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadLivePullbackRegimeMonitorStatus();
       } finally {
         btn.disabled = false;
       }

@@ -131,6 +131,28 @@ function applyLevelBreakSignalThresholds(model, botConfig) {
   return m;
 }
 
+function applyPullbackRegimeThresholds(model, botConfig) {
+  const m = { ...model };
+  if (m.bull && botConfig?.aiPullbackRegimeBullThreshold != null) {
+    m.bull = { ...m.bull, threshold: botConfig.aiPullbackRegimeBullThreshold };
+  }
+  if (m.bear && botConfig?.aiPullbackRegimeBearThreshold != null) {
+    m.bear = { ...m.bear, threshold: botConfig.aiPullbackRegimeBearThreshold };
+  }
+  return m;
+}
+
+function applyPullbackSignalThresholds(model, botConfig) {
+  const m = { ...model };
+  if (m.bull && botConfig?.aiPullbackSignalBullThreshold != null) {
+    m.bull = { ...m.bull, threshold: botConfig.aiPullbackSignalBullThreshold };
+  }
+  if (m.bear && botConfig?.aiPullbackSignalBearThreshold != null) {
+    m.bear = { ...m.bear, threshold: botConfig.aiPullbackSignalBearThreshold };
+  }
+  return m;
+}
+
 function applyEarlyExitThresholds(model, botConfig) {
   const m = { ...model };
   if (m.hard && botConfig?.aiEarlyExitHardThreshold != null) {
@@ -260,6 +282,38 @@ async function main() {
       file: dataPath("level-break-signal-model-live.json"),
       bot: liveConfig,
       apply: applyLevelBreakSignalThresholds,
+    },
+    {
+      label: "Pullback regime (paper)",
+      path: "/api/pullback-regime-model",
+      scope: "paper",
+      file: dataPath("pullback-regime-model.json"),
+      bot: paperConfig,
+      apply: applyPullbackRegimeThresholds,
+    },
+    {
+      label: "Pullback regime (live)",
+      path: "/api/pullback-regime-model",
+      scope: "live",
+      file: dataPath("pullback-regime-model-live.json"),
+      bot: liveConfig,
+      apply: applyPullbackRegimeThresholds,
+    },
+    {
+      label: "Pullback signal (paper)",
+      path: "/api/pullback-signal-model",
+      scope: "paper",
+      file: dataPath("pullback-signal-model.json"),
+      bot: paperConfig,
+      apply: applyPullbackSignalThresholds,
+    },
+    {
+      label: "Pullback signal (live)",
+      path: "/api/pullback-signal-model",
+      scope: "live",
+      file: dataPath("pullback-signal-model-live.json"),
+      bot: liveConfig,
+      apply: applyPullbackSignalThresholds,
     },
     {
       label: "Early exit (paper)",

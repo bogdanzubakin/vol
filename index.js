@@ -28,6 +28,7 @@ const {
   analyzeLevelBreakUp,
   analyzeLevelBreakDown,
   fastMoverPullbackMetrics,
+  fastMoverPullbackBearMetrics,
   analyzePullback,
   fastMoverOptsFromCfg,
   fastMoverLookbackFor1m,
@@ -82,6 +83,23 @@ const {
   reloadModel: reloadLevelBreakSignalModel,
   saveModel: saveLevelBreakSignalModel,
 } = require("./lib/level-break-signal-model");
+const {
+  ensureAllDefaultModelsOnDisk: ensureAllPullbackRegimeModelsOnDisk,
+  getModel: getPullbackRegimeModel,
+  getModelStatus: getPullbackRegimeModelStatus,
+  trainFromTrades: trainPullbackRegimeFromTrades,
+  reloadModel: reloadPullbackRegimeModel,
+  saveModel: savePullbackRegimeModel,
+} = require("./lib/pullback-regime-model");
+const { createPullbackRegimeMonitor } = require("./lib/pullback-regime-monitor");
+const {
+  ensureAllDefaultModelsOnDisk: ensureAllPullbackSignalModelsOnDisk,
+  getModel: getPullbackSignalModel,
+  getModelStatus: getPullbackSignalModelStatus,
+  trainFromTrades: trainPullbackSignalFromTrades,
+  reloadModel: reloadPullbackSignalModel,
+  saveModel: savePullbackSignalModel,
+} = require("./lib/pullback-signal-model");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllAiExitLevelsModelsOnDisk,
   getModel: getAiExitLevelsModel,
@@ -167,6 +185,7 @@ const cfg = {
   pullbackTouchLookback: 12,
   pullbackMaxDistancePct: 0.35,
   pullbackMaxAboveMaPct: 1.5,
+  pullbackMaxBelowMaPct: 1.5,
   levelBreakPivotBars: 4,
   levelBreakLookbackBars: 300,
   levelBreakMinTouches: 5,
@@ -224,6 +243,8 @@ let sfpRegimeMonitor = null;
 let liveSfpRegimeMonitor = null;
 let levelBreakRegimeMonitor = null;
 let liveLevelBreakRegimeMonitor = null;
+let pullbackRegimeMonitor = null;
+let livePullbackRegimeMonitor = null;
 let liveBot = null;
 let futuresTrader = null;
 let dashboardWs = null;
@@ -286,6 +307,8 @@ const aiTrainJob = {
     sfp_regime: freshAiTrainJob(),
     level_break_regime: freshAiTrainJob(),
     level_break_signal: freshAiTrainJob(),
+    pullback_regime: freshAiTrainJob(),
+    pullback_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
   },
   live: {
@@ -293,6 +316,8 @@ const aiTrainJob = {
     sfp_regime: freshAiTrainJob(),
     level_break_regime: freshAiTrainJob(),
     level_break_signal: freshAiTrainJob(),
+    pullback_regime: freshAiTrainJob(),
+    pullback_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
   },
 };
@@ -302,6 +327,8 @@ function aiTrainJobFor(model, scope = "paper") {
   if (model === "sfp_regime") return aiTrainJob[key].sfp_regime;
   if (model === "level_break_regime") return aiTrainJob[key].level_break_regime;
   if (model === "level_break_signal") return aiTrainJob[key].level_break_signal;
+  if (model === "pullback_regime") return aiTrainJob[key].pullback_regime;
+  if (model === "pullback_signal") return aiTrainJob[key].pullback_signal;
   if (model === "ai_exit_levels") return aiTrainJob[key].ai_exit_levels;
   return aiTrainJob[key].early_exit;
 }
@@ -331,6 +358,20 @@ function getLevelBreakSignalModelStatusFull(scope = "paper") {
   return modelStatusWithTraining(
     () => getLevelBreakSignalModelStatus(normalizeAiModelScope(scope)),
     aiTrainJobFor("level_break_signal", scope)
+  );
+}
+
+function getPullbackRegimeModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getPullbackRegimeModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("pullback_regime", scope)
+  );
+}
+
+function getPullbackSignalModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getPullbackSignalModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("pullback_signal", scope)
   );
 }
 
@@ -768,6 +809,50 @@ function importLevelBreakSignalModelFromBody(body = {}) {
   };
 }
 
+function importPullbackRegimeModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = savePullbackRegimeModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadPullbackRegimeModel(scope);
+  return {
+    scope,
+    status: getPullbackRegimeModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
+function importPullbackSignalModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = savePullbackSignalModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadPullbackSignalModel(scope);
+  return {
+    scope,
+    status: getPullbackSignalModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
 function importEarlyExitModelFromBody(body = {}) {
   const scope = normalizeAiModelScope(body.scope);
   if (!body.model || typeof body.model !== "object") {
@@ -1017,6 +1102,134 @@ function trainLevelBreakSignalModelFromHistory(body = {}) {
   return startLevelBreakSignalTraining(body);
 }
 
+function collectPullbackTrainingTrades(source = "auto", scope = "paper") {
+  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
+    (list ?? []).filter(
+      (t) => t.signalKind === "pullback" || t.signalKind === "pullback_bear"
+    )
+  );
+}
+
+function startPullbackRegimeTraining(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("pullback_regime", scope);
+  if (job.running) {
+    throw new Error("Pullback regime model training already running");
+  }
+  const trades = collectPullbackTrainingTrades(body.source, scope);
+  if (trades.length < 12) {
+    throw new Error(
+      `Need at least 12 pullback closed trades for training (got ${trades.length})`
+    );
+  }
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} pullback trades…`,
+  };
+  void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
+    try {
+      await trainPullbackRegimeFromTrades(trades, fetchBarsForSfpRegimeTraining, {
+        ...cfg,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadPullbackRegimeModel(scope);
+      job.result = {
+        tradesUsed: trades.length,
+        model: getPullbackRegimeModelStatus(scope),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(`Pullback regime model training failed (${scope}): ${job.error}`);
+    } finally {
+      job.running = false;
+    }
+  })();
+  return { ok: true, started: true, trades: trades.length, scope };
+}
+
+function startPullbackSignalTraining(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("pullback_signal", scope);
+  if (job.running) {
+    throw new Error("Pullback signal model training already running");
+  }
+  const trades = collectPullbackTrainingTrades(body.source, scope);
+  if (trades.length < 12) {
+    throw new Error(
+      `Need at least 12 pullback closed trades for training (got ${trades.length})`
+    );
+  }
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} pullback trades…`,
+  };
+  void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
+    try {
+      await trainPullbackSignalFromTrades(trades, fetchBarsForSfpRegimeTraining, {
+        ...cfg,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadPullbackSignalModel(scope);
+      job.result = {
+        tradesUsed: trades.length,
+        model: getPullbackSignalModelStatus(scope),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(`Pullback signal model training failed (${scope}): ${job.error}`);
+    } finally {
+      job.running = false;
+    }
+  })();
+  return { ok: true, started: true, trades: trades.length, scope };
+}
+
+function trainPullbackRegimeModelFromHistory(body = {}) {
+  return startPullbackRegimeTraining(body);
+}
+
+function trainPullbackSignalModelFromHistory(body = {}) {
+  return startPullbackSignalTraining(body);
+}
+
 function refreshLevelBreakRegimeForSymbol(sym, historyBuffers) {
   if (!levelBreakRegimeMonitor || !paperBot) return;
   const cfg = paperBot.getPublicState().config;
@@ -1047,6 +1260,38 @@ function getLiveLevelBreakRegimeMonitorSnapshot() {
     return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
   }
   return liveLevelBreakRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
+}
+
+function refreshPullbackRegimeForSymbol(sym, historyBuffers) {
+  if (!pullbackRegimeMonitor || !paperBot) return;
+  const cfg = paperBot.getPublicState().config;
+  if (!cfg.aiPullbackRegimeEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  pullbackRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
+function refreshLivePullbackRegimeForSymbol(sym, historyBuffers) {
+  if (!livePullbackRegimeMonitor || !liveBot) return;
+  const cfg = liveBot.getConfig?.() ?? {};
+  if (!cfg?.aiPullbackRegimeEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  livePullbackRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
+function getPullbackRegimeMonitorSnapshot() {
+  if (!pullbackRegimeMonitor || !paperBot) {
+    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return pullbackRegimeMonitor.getSnapshot(paperBot.getPublicState().config);
+}
+
+function getLivePullbackRegimeMonitorSnapshot() {
+  if (!livePullbackRegimeMonitor || !liveBot) {
+    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return livePullbackRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
 }
 
 function refreshSfpRegimeForSymbol(sym, historyBuffers) {
@@ -1092,6 +1337,8 @@ function getLiveAiReport() {
     sfpRegimeMonitor: getLiveSfpRegimeMonitorSnapshot(),
     levelBreakRegimeStatus: getLevelBreakRegimeModelStatusFull("live"),
     levelBreakRegimeMonitor: getLiveLevelBreakRegimeMonitorSnapshot(),
+    pullbackRegimeStatus: getPullbackRegimeModelStatusFull("live"),
+    pullbackRegimeMonitor: getLivePullbackRegimeMonitorSnapshot(),
     exitLevelsStatus: getAiExitLevelsModelStatusFull("live"),
   });
 }
@@ -1153,6 +1400,8 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
     refreshLiveSfpRegimeForSymbol(klineSymbol, historyBuffers);
     refreshLevelBreakRegimeForSymbol(klineSymbol, historyBuffers);
     refreshLiveLevelBreakRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshPullbackRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshLivePullbackRegimeForSymbol(klineSymbol, historyBuffers);
   }
 
   let paperChanged = false;
@@ -1930,6 +2179,42 @@ function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
   lastPb.set(sym, pass);
 }
 
+function applyPullbackBearSignal(sym, pb, qv, pbBearActive, pbBearHistory, lastPbBear) {
+  const pass = Boolean(pb?.passes);
+  const prev = lastPbBear.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass) {
+    const existing = pbBearHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        pbBearActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...pb,
+      signalKind: "pullback_bear",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    pbBearActive.set(sym, row);
+    pbBearHistory.set(sym, row);
+    if (!prev) {
+      const detail = `MA${pb.maBars} ${pb.ma} · ${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
+      dashboard?.pushEvent("NEW_PB_BEAR", sym, detail);
+      paperBot?.onPullbackBearSignal(sym, pb);
+      liveBot?.onPullbackBearSignal(sym, pb);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", pb);
+    dashboard?.pushEvent("END_PB_BEAR", sym);
+  }
+
+  lastPbBear.set(sym, pass);
+}
+
 function applyLevelBreakSignal(
   sym,
   analysis,
@@ -2030,6 +2315,8 @@ function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
     sfpBearHistory,
     pbActive,
     pbHistory,
+    pbBearActive,
+    pbBearHistory,
     levelBreakActive,
     levelBreakHistory,
     levelBreakBearActive,
@@ -2037,6 +2324,7 @@ function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastPbBear,
     lastLevelBreak,
     lastLevelBreakBear,
   } = maps;
@@ -2048,12 +2336,16 @@ function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
   const pb = signalBars
     ? fastMoverPullbackMetrics(signalBars, cfg, fmOpts, priceBars)
     : null;
+  const pbBear = signalBars
+    ? fastMoverPullbackBearMetrics(signalBars, cfg, fmOpts, priceBars)
+    : null;
   const levelBreak = signalBars ? analyzeLevelBreakUp(signalBars, cfg) : null;
   const levelBreakBear = signalBars ? analyzeLevelBreakDown(signalBars, cfg) : null;
 
   applySfpSignal(sym, sfp, qv, sfpActive, sfpHistory, lastSfp);
   applySfpBearSignal(sym, sfpBear, qv, sfpBearActive, sfpBearHistory, lastSfpBear);
   applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
+  applyPullbackBearSignal(sym, pbBear, qv, pbBearActive, pbBearHistory, lastPbBear);
   applyLevelBreakSignal(
     sym,
     levelBreak,
@@ -2071,7 +2363,7 @@ function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
     lastLevelBreakBear
   );
 
-  return { sfp, sfpBear, pb, levelBreak, levelBreakBear };
+  return { sfp, sfpBear, pb, pbBear, levelBreak, levelBreakBear };
 }
 
 function reevaluateAllSymbols(
@@ -2088,6 +2380,8 @@ function reevaluateAllSymbols(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    pbBearActive,
+    pbBearHistory,
     levelBreakActive,
     levelBreakHistory,
     levelBreakBearActive,
@@ -2095,6 +2389,7 @@ function reevaluateAllSymbols(
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastPbBear,
     lastLevelBreak,
     lastLevelBreakBear,
   } = maps;
@@ -2111,6 +2406,9 @@ function reevaluateAllSymbols(
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
+      if (lastPbBear.get(sym)) {
+        markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", null);
+      }
       if (lastLevelBreak.get(sym)) {
         markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
       }
@@ -2126,6 +2424,7 @@ function reevaluateAllSymbols(
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
+      lastPbBear.set(sym, false);
       lastLevelBreak.set(sym, false);
       lastLevelBreakBear.set(sym, false);
       continue;
@@ -2152,6 +2451,8 @@ function createWsShards(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    pbBearActive,
+    pbBearHistory,
     levelBreakActive,
     levelBreakHistory,
     levelBreakBearActive,
@@ -2159,6 +2460,7 @@ function createWsShards(
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastPbBear,
     lastLevelBreak,
     lastLevelBreakBear,
   } = maps;
@@ -2184,6 +2486,9 @@ function createWsShards(
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
+      if (lastPbBear.get(sym)) {
+        markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", null);
+      }
       if (lastLevelBreak.get(sym)) {
         markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
       }
@@ -2199,6 +2504,7 @@ function createWsShards(
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
+      lastPbBear.set(sym, false);
       lastLevelBreak.set(sym, false);
       lastLevelBreakBear.set(sym, false);
       return;
@@ -2364,6 +2670,8 @@ function createSignalWsShards(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    pbBearActive,
+    pbBearHistory,
     levelBreakActive,
     levelBreakHistory,
     levelBreakBearActive,
@@ -2371,6 +2679,7 @@ function createSignalWsShards(
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastPbBear,
     lastLevelBreak,
     lastLevelBreakBear,
   } = maps;
@@ -2393,6 +2702,9 @@ function createSignalWsShards(
       if (lastPb.get(sym)) {
         markKindSignalEnded(sym, pbActive, pbHistory, "pullback", null);
       }
+      if (lastPbBear.get(sym)) {
+        markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", null);
+      }
       if (lastLevelBreak.get(sym)) {
         markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
       }
@@ -2408,6 +2720,7 @@ function createSignalWsShards(
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
+      lastPbBear.set(sym, false);
       lastLevelBreak.set(sym, false);
       lastLevelBreakBear.set(sym, false);
       return;
@@ -2532,6 +2845,8 @@ function startStaleSymbolRefresh(
     sfpBearHistory,
     pbActive,
     pbHistory,
+    pbBearActive,
+    pbBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
@@ -2870,6 +3185,8 @@ async function main() {
   const sfpBearHistory = new Map();
   const pbActive = new Map();
   const pbHistory = new Map();
+  const pbBearActive = new Map();
+  const pbBearHistory = new Map();
   const levelBreakActive = new Map();
   const levelBreakHistory = new Map();
   const levelBreakBearActive = new Map();
@@ -2877,6 +3194,7 @@ async function main() {
   const lastSfp = new Map();
   const lastSfpBear = new Map();
   const lastPb = new Map();
+  const lastPbBear = new Map();
   const lastLevelBreak = new Map();
   const lastLevelBreakBear = new Map();
 
@@ -2887,6 +3205,8 @@ async function main() {
     sfpBearHistory,
     pbActive,
     pbHistory,
+    pbBearActive,
+    pbBearHistory,
     levelBreakActive,
     levelBreakHistory,
     levelBreakBearActive,
@@ -2894,6 +3214,7 @@ async function main() {
     lastSfp,
     lastSfpBear,
     lastPb,
+    lastPbBear,
     lastLevelBreak,
     lastLevelBreakBear,
   });
@@ -3531,6 +3852,8 @@ async function main() {
   ensureAllSfpRegimeModelsOnDisk();
   ensureAllLevelBreakRegimeModelsOnDisk();
   ensureAllLevelBreakSignalModelsOnDisk();
+  ensureAllPullbackRegimeModelsOnDisk();
+  ensureAllPullbackSignalModelsOnDisk();
   ensureAllAiExitLevelsModelsOnDisk();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
@@ -3545,6 +3868,12 @@ async function main() {
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
+  pullbackRegimeMonitor = createPullbackRegimeMonitor({
+    getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
+    modelScope: "paper",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+  });
+
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
@@ -3553,7 +3882,9 @@ async function main() {
       getRecentBarsForBot(sym, historyBuffers, limit),
     sfpRegimeMonitor,
     levelBreakRegimeMonitor,
+    pullbackRegimeMonitor,
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+    getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -3574,6 +3905,12 @@ async function main() {
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
+  livePullbackRegimeMonitor = createPullbackRegimeMonitor({
+    getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
+    modelScope: "live",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+  });
+
   liveBot = createLiveBot({
     trader: futuresTrader,
     onTradeClosed: createTradeClosedHandler("Live bot"),
@@ -3583,6 +3920,7 @@ async function main() {
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
     sfpRegimeMonitor: liveSfpRegimeMonitor,
     levelBreakRegimeMonitor: liveLevelBreakRegimeMonitor,
+    pullbackRegimeMonitor: livePullbackRegimeMonitor,
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
@@ -3864,6 +4202,26 @@ async function main() {
           importLevelBreakSignalModelFromBody(body),
         trainLevelBreakSignalModel: (body) =>
           trainLevelBreakSignalModelFromHistory(body),
+        getPullbackRegimeModelStatus: (scope) =>
+          getPullbackRegimeModelStatusFull(scope),
+        getPullbackRegimeModelData: (scope) =>
+          getPullbackRegimeModel(normalizeAiModelScope(scope)),
+        importPullbackRegimeModel: (body) =>
+          importPullbackRegimeModelFromBody(body),
+        trainPullbackRegimeModel: (body) =>
+          trainPullbackRegimeModelFromHistory(body),
+        getPullbackRegimeMonitor: (scope) =>
+          normalizeAiModelScope(scope) === "live"
+            ? getLivePullbackRegimeMonitorSnapshot()
+            : getPullbackRegimeMonitorSnapshot(),
+        getPullbackSignalModelStatus: (scope) =>
+          getPullbackSignalModelStatusFull(scope),
+        getPullbackSignalModelData: (scope) =>
+          getPullbackSignalModel(normalizeAiModelScope(scope)),
+        importPullbackSignalModel: (body) =>
+          importPullbackSignalModelFromBody(body),
+        trainPullbackSignalModel: (body) =>
+          trainPullbackSignalModelFromHistory(body),
         getLiveAiReport: () => getLiveAiReport(),
         getLiveBot: () => liveBot.getPublicState(),
         patchLiveBotConfig: async (patch) => {
@@ -4234,6 +4592,18 @@ async function main() {
         50
       );
     }
+    if (
+      pullbackRegimeMonitor &&
+      paperBot?.getPublicState?.().config?.aiPullbackRegimeEnabled
+    ) {
+      const syms = [...historyBuffers.keys()];
+      pullbackRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        paperBot.getPublicState().config,
+        50
+      );
+    }
     if (liveSfpRegimeMonitor && liveBot?.getConfig?.()?.aiSfpRegimeEnabled) {
       const syms = [...historyBuffers.keys()];
       liveSfpRegimeMonitor.refreshBatch(
@@ -4249,6 +4619,18 @@ async function main() {
     ) {
       const syms = [...historyBuffers.keys()];
       liveLevelBreakRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        liveBot.getConfig(),
+        50
+      );
+    }
+    if (
+      livePullbackRegimeMonitor &&
+      liveBot?.getConfig?.()?.aiPullbackRegimeEnabled
+    ) {
+      const syms = [...historyBuffers.keys()];
+      livePullbackRegimeMonitor.refreshBatch(
         syms,
         (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
         liveBot.getConfig(),
