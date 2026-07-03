@@ -80,6 +80,7 @@ const {
   getModelStatus: getAiExitLevelsModelStatus,
   reloadModel: reloadAiExitLevelsModel,
   saveModel: saveAiExitLevelsModel,
+  trainFromTrades: trainAiExitLevelsFromTrades,
 } = require("./lib/ai-exit-levels");
 const { BTC_SYMBOL } = require("./lib/btc-regime-context");
 const { createLiveBot } = require("./lib/live-bot");
@@ -276,11 +277,13 @@ const aiTrainJob = {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
     level_break_regime: freshAiTrainJob(),
+    ai_exit_levels: freshAiTrainJob(),
   },
   live: {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
     level_break_regime: freshAiTrainJob(),
+    ai_exit_levels: freshAiTrainJob(),
   },
 };
 
@@ -288,6 +291,7 @@ function aiTrainJobFor(model, scope = "paper") {
   const key = normalizeAiModelScope(scope);
   if (model === "sfp_regime") return aiTrainJob[key].sfp_regime;
   if (model === "level_break_regime") return aiTrainJob[key].level_break_regime;
+  if (model === "ai_exit_levels") return aiTrainJob[key].ai_exit_levels;
   return aiTrainJob[key].early_exit;
 }
 
@@ -313,7 +317,10 @@ function getLevelBreakRegimeModelStatusFull(scope = "paper") {
 }
 
 function getAiExitLevelsModelStatusFull(scope = "paper") {
-  return getAiExitLevelsModelStatus(normalizeAiModelScope(scope));
+  return modelStatusWithTraining(
+    () => getAiExitLevelsModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("ai_exit_levels", scope)
+  );
 }
 
 function modelStatusWithTraining(getStatus, job) {
@@ -763,6 +770,59 @@ function importAiExitLevelsModelFromBody(body = {}) {
     status: getAiExitLevelsModelStatusFull(scope),
     featureCount: model.featureNames?.length ?? null,
   };
+}
+
+function startAiExitLevelsTraining(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("ai_exit_levels", scope);
+  if (job.running) {
+    throw new Error("AI exit-levels model training already running");
+  }
+  const trades = collectEarlyExitTrainingTrades(body.source ?? "auto", scope);
+  if (trades.length < 12) {
+    throw new Error(
+      `Need at least 12 SFP closed trades for training (got ${trades.length}) — run train bot first`
+    );
+  }
+
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = { phase: "starting", message: `Training from ${trades.length} trades…` };
+
+  const botCfg = paperBot?.getPublicState?.()?.config ?? {};
+  trainAiExitLevelsFromTrades(trades, fetchBarsForEarlyExitTraining, {
+    botConfig: botCfg,
+    scope,
+    source: body.source ?? "ui:train",
+    onProgress: (p) => {
+      job.progress = p;
+    },
+  })
+    .then((model) => {
+      if (scope === "paper") {
+        saveAiExitLevelsModel(
+          { ...model, source: "train:cached-backtest:live" },
+          "live"
+        );
+        reloadAiExitLevelsModel("live");
+      }
+      job.result = {
+        tradesUsed: trades.length,
+        model,
+        status: getAiExitLevelsModelStatusFull(scope),
+      };
+      job.progress = { phase: "done", message: "Complete" };
+    })
+    .catch((e) => {
+      job.error = e.message || String(e);
+      job.progress = { phase: "error", message: job.error };
+    })
+    .finally(() => {
+      job.running = false;
+    });
+
+  return { scope, trades: trades.length, training: true };
 }
 
 function collectLevelBreakRegimeTrainingTrades(source = "auto", scope = "paper") {
@@ -3669,6 +3729,7 @@ async function main() {
           getAiExitLevelsModel(normalizeAiModelScope(scope)),
         importAiExitLevelsModel: (body) =>
           importAiExitLevelsModelFromBody(body),
+        trainAiExitLevelsModel: (body) => startAiExitLevelsTraining(body),
         getLevelBreakRegimeMonitor: (scope) =>
           normalizeAiModelScope(scope) === "live"
             ? getLiveLevelBreakRegimeMonitorSnapshot()

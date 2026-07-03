@@ -1683,6 +1683,60 @@
           </div>
         </details>
         <details class="settings-pane">
+          <summary>AI SL/TP levels</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiExitLevelsEnabled" />
+            AI SL/TP levels
+          </label>
+          <div class="hint">Adjust initial stop and take-profit from trained model. <strong>legacy_scale</strong> multiplies smart SL/TP distances (recommended). <strong>predict</strong> replaces legacy rules entirely.</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiExitLevelsMode">Mode</label>
+          <select id="paperBotAiExitLevelsMode">
+            <option value="legacy_scale">legacy_scale — scale smart SL/TP</option>
+            <option value="predict">predict — model SL/TP % only</option>
+          </select>
+        </div>
+        <div class="field paper-ai-exit-scale-field">
+          <label for="paperBotAiExitLevelsSlScale">SL scale</label>
+          <input type="number" id="paperBotAiExitLevelsSlScale" step="0.05" min="0.5" max="2" value="1.15" required />
+          <div class="hint">Multiply legacy SL distance (e.g. 1.15 = +15% wider stop)</div>
+        </div>
+        <div class="field paper-ai-exit-scale-field">
+          <label for="paperBotAiExitLevelsTpScale">TP scale</label>
+          <input type="number" id="paperBotAiExitLevelsTpScale" step="0.05" min="0.5" max="2" value="1.15" required />
+          <div class="hint">Multiply legacy TP distance</div>
+        </div>
+        <div class="field paper-ai-exit-predict-field">
+          <label for="paperBotAiExitLevelsSlClampMin">SL clamp min %</label>
+          <input type="number" id="paperBotAiExitLevelsSlClampMin" step="0.1" min="0.2" max="20" value="0.5" required />
+        </div>
+        <div class="field paper-ai-exit-predict-field">
+          <label for="paperBotAiExitLevelsSlClampMax">SL clamp max %</label>
+          <input type="number" id="paperBotAiExitLevelsSlClampMax" step="0.1" min="0.5" max="30" value="8" required />
+        </div>
+        <div class="field paper-ai-exit-predict-field">
+          <label for="paperBotAiExitLevelsTpClampMin">TP clamp min %</label>
+          <input type="number" id="paperBotAiExitLevelsTpClampMin" step="0.1" min="0.5" max="30" value="1" required />
+        </div>
+        <div class="field paper-ai-exit-predict-field">
+          <label for="paperBotAiExitLevelsTpClampMax">TP clamp max %</label>
+          <input type="number" id="paperBotAiExitLevelsTpClampMax" step="0.1" min="1" max="50" value="15" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotAiExitLevelsStatus">Model: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainAiExitLevels">Train SL/TP model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
           <summary>Signal types</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
@@ -2139,6 +2193,58 @@
         <div class="field">
           <label for="liveBotSfpTp">SFP take profit cap %</label>
           <input type="number" id="liveBotSfpTp" step="0.1" min="0.1" max="200" value="1.5" required />
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane">
+          <summary>AI SL/TP levels</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiExitLevelsEnabled" />
+            AI SL/TP levels
+          </label>
+          <div class="hint">Scale or replace legacy smart SL/TP. Best on cache: legacy_scale 1.15×</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiExitLevelsMode">Mode</label>
+          <select id="liveBotAiExitLevelsMode">
+            <option value="legacy_scale">legacy_scale — scale smart SL/TP</option>
+            <option value="predict">predict — model SL/TP % only</option>
+          </select>
+        </div>
+        <div class="field live-ai-exit-scale-field">
+          <label for="liveBotAiExitLevelsSlScale">SL scale</label>
+          <input type="number" id="liveBotAiExitLevelsSlScale" step="0.05" min="0.5" max="2" value="1.15" required />
+        </div>
+        <div class="field live-ai-exit-scale-field">
+          <label for="liveBotAiExitLevelsTpScale">TP scale</label>
+          <input type="number" id="liveBotAiExitLevelsTpScale" step="0.05" min="0.5" max="2" value="1.15" required />
+        </div>
+        <div class="field live-ai-exit-predict-field">
+          <label for="liveBotAiExitLevelsSlClampMin">SL clamp min %</label>
+          <input type="number" id="liveBotAiExitLevelsSlClampMin" step="0.1" min="0.2" max="20" value="0.5" required />
+        </div>
+        <div class="field live-ai-exit-predict-field">
+          <label for="liveBotAiExitLevelsSlClampMax">SL clamp max %</label>
+          <input type="number" id="liveBotAiExitLevelsSlClampMax" step="0.1" min="0.5" max="30" value="8" required />
+        </div>
+        <div class="field live-ai-exit-predict-field">
+          <label for="liveBotAiExitLevelsTpClampMin">TP clamp min %</label>
+          <input type="number" id="liveBotAiExitLevelsTpClampMin" step="0.1" min="0.5" max="30" value="1" required />
+        </div>
+        <div class="field live-ai-exit-predict-field">
+          <label for="liveBotAiExitLevelsTpClampMax">TP clamp max %</label>
+          <input type="number" id="liveBotAiExitLevelsTpClampMax" step="0.1" min="1" max="50" value="15" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotAiExitLevelsStatus">Model: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainAiExitLevels">Train SL/TP model</button>
         </div>
             </div>
           </div>
@@ -4130,6 +4236,22 @@
         ),
         drawdownStopEnabled: document.getElementById("paperBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("paperBotDrawdownStopPct").value),
+        aiExitLevelsEnabled: document.getElementById("paperBotAiExitLevelsEnabled").checked,
+        aiExitLevelsMode: document.getElementById("paperBotAiExitLevelsMode").value,
+        aiExitLevelsSlScale: Number(document.getElementById("paperBotAiExitLevelsSlScale").value),
+        aiExitLevelsTpScale: Number(document.getElementById("paperBotAiExitLevelsTpScale").value),
+        aiExitLevelsSlClampMin: Number(
+          document.getElementById("paperBotAiExitLevelsSlClampMin").value
+        ),
+        aiExitLevelsSlClampMax: Number(
+          document.getElementById("paperBotAiExitLevelsSlClampMax").value
+        ),
+        aiExitLevelsTpClampMin: Number(
+          document.getElementById("paperBotAiExitLevelsTpClampMin").value
+        ),
+        aiExitLevelsTpClampMax: Number(
+          document.getElementById("paperBotAiExitLevelsTpClampMax").value
+        ),
       };
     }
 
@@ -4273,7 +4395,41 @@
         cfg.drawdownStopEnabled !== false;
       document.getElementById("paperBotDrawdownStopPct").value =
         cfg.drawdownStopPct ?? 4;
+      document.getElementById("paperBotAiExitLevelsEnabled").checked = Boolean(
+        cfg.aiExitLevelsEnabled
+      );
+      document.getElementById("paperBotAiExitLevelsMode").value =
+        cfg.aiExitLevelsMode === "predict" ? "predict" : "legacy_scale";
+      document.getElementById("paperBotAiExitLevelsSlScale").value =
+        cfg.aiExitLevelsSlScale ?? 1.15;
+      document.getElementById("paperBotAiExitLevelsTpScale").value =
+        cfg.aiExitLevelsTpScale ?? 1.15;
+      document.getElementById("paperBotAiExitLevelsSlClampMin").value =
+        cfg.aiExitLevelsSlClampMin ?? 0.5;
+      document.getElementById("paperBotAiExitLevelsSlClampMax").value =
+        cfg.aiExitLevelsSlClampMax ?? 8;
+      document.getElementById("paperBotAiExitLevelsTpClampMin").value =
+        cfg.aiExitLevelsTpClampMin ?? 1;
+      document.getElementById("paperBotAiExitLevelsTpClampMax").value =
+        cfg.aiExitLevelsTpClampMax ?? 15;
+      updateAiExitLevelsModeFields("paper");
       updatePaperBotBadges(cfg);
+    }
+
+    function updateAiExitLevelsModeFields(bot) {
+      const mode =
+        document.getElementById(
+          bot === "live" ? "liveBotAiExitLevelsMode" : "paperBotAiExitLevelsMode"
+        )?.value ?? "legacy_scale";
+      const scaleCls = bot === "live" ? "live-ai-exit-scale-field" : "paper-ai-exit-scale-field";
+      const predictCls = bot === "live" ? "live-ai-exit-predict-field" : "paper-ai-exit-predict-field";
+      const showScale = mode === "legacy_scale";
+      document.querySelectorAll(`.${scaleCls}`).forEach((el) => {
+        el.style.display = showScale ? "" : "none";
+      });
+      document.querySelectorAll(`.${predictCls}`).forEach((el) => {
+        el.style.display = showScale ? "none" : "";
+      });
     }
 
     function fmtUsd(n) {
@@ -4917,6 +5073,44 @@
       }
     }
 
+    async function loadAiExitLevelsModelStatus(scope = "paper") {
+      const el = document.getElementById(
+        scope === "live" ? "liveBotAiExitLevelsStatus" : "paperBotAiExitLevelsStatus"
+      );
+      if (!el) return;
+      try {
+        const res = await fetch(aiModelApiUrl("/api/ai-exit-levels-model", scope), {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const trainLine = formatAiTrainProgress(data.training);
+        if (trainLine) {
+          el.textContent = `Training: ${trainLine}`;
+          resumeAiExitLevelsTrainPollIfNeeded(data, scope);
+          return;
+        }
+        const bull = data.bull ?? {};
+        const bear = data.bear ?? {};
+        el.textContent =
+          `${scope} model: ${data.source ?? "—"} · bull slMAE ${bull.slMae ?? "—"} tpMAE ${bull.tpMae ?? "—"} · bear slMAE ${bear.slMae ?? "—"} tpMAE ${bear.tpMae ?? "—"}` +
+          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap");
+      } catch (e) {
+        el.textContent = `Model: ${e.message}`;
+      }
+    }
+
+    function resumeAiExitLevelsTrainPollIfNeeded(data, scope) {
+      if (!data?.training?.running) return;
+      void pollAiModelTraining(
+        "/api/ai-exit-levels-model",
+        () => {
+          void loadAiExitLevelsModelStatus(scope);
+        },
+        scope
+      );
+    }
+
     async function loadEarlyExitModelStatus() {
       const el = document.getElementById("paperBotAiModelStatus");
       if (!el) return;
@@ -5180,6 +5374,7 @@
         void loadEarlyExitModelStatus();
         void loadSfpRegimeMonitorStatus();
         void loadLevelBreakRegimeMonitorStatus();
+        void loadAiExitLevelsModelStatus("paper");
         if (syncForm) {
           try {
             const sres = await fetch("/api/strategies", { cache: "no-store" });
@@ -5251,6 +5446,47 @@
       } catch (e) {
         setPaperBotMsg(e.message, false);
         void loadEarlyExitModelStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("paperBotAiExitLevelsMode")?.addEventListener("change", () => {
+      updateAiExitLevelsModeFields("paper");
+    });
+
+    document.getElementById("paperBotTrainAiExitLevels")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train AI SL/TP model from SFP trades in train-bot backtest + paper history?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("paperBotTrainAiExitLevels");
+      try {
+        btn.disabled = true;
+        setPaperBotMsg("Starting AI SL/TP training…", true);
+        const res = await fetch("/api/ai-exit-levels-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(`AI SL/TP training started (${data.trades ?? "?"} trades)…`, true);
+        const training = await pollAiModelTraining("/api/ai-exit-levels-model", () => {
+          void loadAiExitLevelsModelStatus("paper");
+        }, "paper");
+        await loadAiExitLevelsModelStatus("paper");
+        if (training?.error) throw new Error(training.error);
+        setPaperBotMsg(
+          `AI SL/TP trained (${training?.result?.tradesUsed ?? data.trades} trades)`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadAiExitLevelsModelStatus("paper");
       } finally {
         btn.disabled = false;
       }
@@ -5405,6 +5641,22 @@
         ),
         drawdownStopEnabled: document.getElementById("liveBotDrawdownStopEnabled").checked,
         drawdownStopPct: Number(document.getElementById("liveBotDrawdownStopPct").value),
+        aiExitLevelsEnabled: document.getElementById("liveBotAiExitLevelsEnabled").checked,
+        aiExitLevelsMode: document.getElementById("liveBotAiExitLevelsMode").value,
+        aiExitLevelsSlScale: Number(document.getElementById("liveBotAiExitLevelsSlScale").value),
+        aiExitLevelsTpScale: Number(document.getElementById("liveBotAiExitLevelsTpScale").value),
+        aiExitLevelsSlClampMin: Number(
+          document.getElementById("liveBotAiExitLevelsSlClampMin").value
+        ),
+        aiExitLevelsSlClampMax: Number(
+          document.getElementById("liveBotAiExitLevelsSlClampMax").value
+        ),
+        aiExitLevelsTpClampMin: Number(
+          document.getElementById("liveBotAiExitLevelsTpClampMin").value
+        ),
+        aiExitLevelsTpClampMax: Number(
+          document.getElementById("liveBotAiExitLevelsTpClampMax").value
+        ),
         aiEarlyExitEnabled: document.getElementById("liveBotAiEarlyExitEnabled").checked,
         aiEarlyExitHardThreshold: Number(
           document.getElementById("liveBotAiEarlyExitHardThreshold").value
@@ -5505,6 +5757,24 @@
       document.getElementById("liveBotDrawdownStopEnabled").checked =
         cfg.drawdownStopEnabled !== false;
       document.getElementById("liveBotDrawdownStopPct").value = cfg.drawdownStopPct ?? 4;
+      document.getElementById("liveBotAiExitLevelsEnabled").checked = Boolean(
+        cfg.aiExitLevelsEnabled
+      );
+      document.getElementById("liveBotAiExitLevelsMode").value =
+        cfg.aiExitLevelsMode === "predict" ? "predict" : "legacy_scale";
+      document.getElementById("liveBotAiExitLevelsSlScale").value =
+        cfg.aiExitLevelsSlScale ?? 1.15;
+      document.getElementById("liveBotAiExitLevelsTpScale").value =
+        cfg.aiExitLevelsTpScale ?? 1.15;
+      document.getElementById("liveBotAiExitLevelsSlClampMin").value =
+        cfg.aiExitLevelsSlClampMin ?? 0.5;
+      document.getElementById("liveBotAiExitLevelsSlClampMax").value =
+        cfg.aiExitLevelsSlClampMax ?? 8;
+      document.getElementById("liveBotAiExitLevelsTpClampMin").value =
+        cfg.aiExitLevelsTpClampMin ?? 1;
+      document.getElementById("liveBotAiExitLevelsTpClampMax").value =
+        cfg.aiExitLevelsTpClampMax ?? 15;
+      updateAiExitLevelsModeFields("live");
       document.getElementById("liveBotAiEarlyExitEnabled").checked = Boolean(
         cfg.aiEarlyExitEnabled
       );
@@ -5619,6 +5889,7 @@
         void loadLiveEarlyExitModelStatus();
         void loadLiveSfpRegimeMonitorStatus();
         void loadLiveLevelBreakRegimeMonitorStatus();
+        void loadAiExitLevelsModelStatus("live");
         if (!data.busy) {
           setLiveBotMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
         }
@@ -5735,6 +6006,47 @@
       } catch (e) {
         setLiveBotMsg(e.message, false);
         void loadLiveEarlyExitModelStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveBotAiExitLevelsMode")?.addEventListener("change", () => {
+      updateAiExitLevelsModeFields("live");
+    });
+
+    document.getElementById("liveBotTrainAiExitLevels")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live AI SL/TP model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainAiExitLevels");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live AI SL/TP training…", true);
+        const res = await fetch("/api/ai-exit-levels-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(`Live AI SL/TP training started (${data.trades ?? "?"} trades)…`, true);
+        const training = await pollAiModelTraining("/api/ai-exit-levels-model", () => {
+          void loadAiExitLevelsModelStatus("live");
+        }, "live");
+        await loadAiExitLevelsModelStatus("live");
+        if (training?.error) throw new Error(training.error);
+        setLiveBotMsg(
+          `Live AI SL/TP trained (${training?.result?.tradesUsed ?? data.trades} trades)`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadAiExitLevelsModelStatus("live");
       } finally {
         btn.disabled = false;
       }
@@ -7272,6 +7584,8 @@
         bindUiSettingsPersistence();
         loadStorageInfo();
         initCalcStartAmount();
+        updateAiExitLevelsModeFields("paper");
+        updateAiExitLevelsModeFields("live");
         if (
           document.getElementById("historyFromDate") &&
           !document.getElementById("historyFromDate").value
