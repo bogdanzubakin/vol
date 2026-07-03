@@ -975,6 +975,7 @@ function getLiveAiReport() {
     sfpRegimeMonitor: getLiveSfpRegimeMonitorSnapshot(),
     levelBreakRegimeStatus: getLevelBreakRegimeModelStatusFull("live"),
     levelBreakRegimeMonitor: getLiveLevelBreakRegimeMonitorSnapshot(),
+    exitLevelsStatus: getAiExitLevelsModelStatusFull("live"),
   });
 }
 
