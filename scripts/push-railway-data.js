@@ -109,28 +109,6 @@ function applySfpThresholds(model, botConfig) {
   return m;
 }
 
-function applyLevelBreakThresholds(model, botConfig) {
-  const m = { ...model };
-  if (m.bull && botConfig?.aiLevelBreakRegimeBullThreshold != null) {
-    m.bull = { ...m.bull, threshold: botConfig.aiLevelBreakRegimeBullThreshold };
-  }
-  if (m.bear && botConfig?.aiLevelBreakRegimeBearThreshold != null) {
-    m.bear = { ...m.bear, threshold: botConfig.aiLevelBreakRegimeBearThreshold };
-  }
-  return m;
-}
-
-function applyLevelBreakSignalThresholds(model, botConfig) {
-  const m = { ...model };
-  if (m.bull && botConfig?.aiLevelBreakSignalBullThreshold != null) {
-    m.bull = { ...m.bull, threshold: botConfig.aiLevelBreakSignalBullThreshold };
-  }
-  if (m.bear && botConfig?.aiLevelBreakSignalBearThreshold != null) {
-    m.bear = { ...m.bear, threshold: botConfig.aiLevelBreakSignalBearThreshold };
-  }
-  return m;
-}
-
 function applyPullbackRegimeThresholds(model, botConfig) {
   const m = { ...model };
   if (m.bull && botConfig?.aiPullbackRegimeBullThreshold != null) {
@@ -250,38 +228,6 @@ async function main() {
       file: dataPath("sfp-regime-model-live.json"),
       bot: liveConfig,
       apply: applySfpThresholds,
-    },
-    {
-      label: "Level-break regime (paper)",
-      path: "/api/level-break-regime-model",
-      scope: "paper",
-      file: dataPath("level-break-regime-model.json"),
-      bot: paperConfig,
-      apply: applyLevelBreakThresholds,
-    },
-    {
-      label: "Level-break regime (live)",
-      path: "/api/level-break-regime-model",
-      scope: "live",
-      file: dataPath("level-break-regime-model-live.json"),
-      bot: liveConfig,
-      apply: applyLevelBreakThresholds,
-    },
-    {
-      label: "Level-break signal (paper)",
-      path: "/api/level-break-signal-model",
-      scope: "paper",
-      file: dataPath("level-break-signal-model.json"),
-      bot: paperConfig,
-      apply: applyLevelBreakSignalThresholds,
-    },
-    {
-      label: "Level-break signal (live)",
-      path: "/api/level-break-signal-model",
-      scope: "live",
-      file: dataPath("level-break-signal-model-live.json"),
-      bot: liveConfig,
-      apply: applyLevelBreakSignalThresholds,
     },
     {
       label: "Pullback regime (paper)",

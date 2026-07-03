@@ -1364,14 +1364,12 @@
     <section>
       <h2>Strategy monitor <span id="strategiesLiveCount"></span></h2>
       <p class="sub" style="margin: 12px 0 8px 12px; font-size: 0.8rem">
-        Tune SFP, bearish SFP, pullback, and level-break scanner detection. Level-break bot toggles are on the Paper bot tab. Saves to live scanner config.
+        Tune SFP, bearish SFP, and pullback scanner detection. Saves to live scanner config.
       </p>
       <div class="strategy-monitor" id="strategyMonitor">
         <div><div class="stat-label">Active SFP (long)</div><div class="stat-value" id="stratSfpActive">0</div></div>
         <div><div class="stat-label">Active SFP↓ (short)</div><div class="stat-value" id="stratSfpBearActive">0</div></div>
         <div><div class="stat-label">Active pullback</div><div class="stat-value" id="stratPbActive">0</div></div>
-        <div><div class="stat-label">Active LVL↑ (long)</div><div class="stat-value" id="stratLevelBreakActive">0</div></div>
-        <div><div class="stat-label">Active LVL↓ (short)</div><div class="stat-value" id="stratLevelBreakBearActive">0</div></div>
       </div>
       <form class="settings-form movers-settings" id="strategiesConfigForm">
         <details class="settings-pane">
@@ -1416,44 +1414,6 @@
         <div class="field">
           <label for="stratPullbackMaxAboveMaPct">Max % above MA at entry</label>
           <input type="number" id="stratPullbackMaxAboveMaPct" step="0.1" min="0.1" max="20" value="1.5" required />
-        </div>
-            </div>
-          </div>
-        </details>
-        <details class="settings-pane" open>
-          <summary>Level break detection</summary>
-          <div class="settings-pane-body">
-            <p class="sub" style="margin: 0 0 8px 0; font-size: 0.8rem">
-              Same fields as Paper bot → Level break. Changes here or on Paper bot save update the scanner.
-            </p>
-            <div class="settings-form movers-settings">
-        <div class="field">
-          <label for="stratLevelBreakPivotBars">Pivot bars (fractal half-width)</label>
-          <input type="number" id="stratLevelBreakPivotBars" step="1" min="1" max="12" value="3" required />
-        </div>
-        <div class="field">
-          <label for="stratLevelBreakLookbackBars">Lookback bars</label>
-          <input type="number" id="stratLevelBreakLookbackBars" step="1" min="20" max="300" value="80" required />
-        </div>
-        <div class="field">
-          <label for="stratLevelBreakMinTouches">Min touches at level</label>
-          <input type="number" id="stratLevelBreakMinTouches" step="1" min="1" max="20" value="2" required />
-        </div>
-        <div class="field">
-          <label for="stratLevelBreakTouchPct">Level touch tolerance %</label>
-          <input type="number" id="stratLevelBreakTouchPct" step="0.05" min="0.05" max="2" value="0.25" required />
-        </div>
-        <div class="field">
-          <label for="stratLevelBreakMinPct">Min break beyond level %</label>
-          <input type="number" id="stratLevelBreakMinPct" step="0.01" min="0.01" max="2" value="0.08" required />
-        </div>
-        <div class="field">
-          <label for="stratLevelBreakApproachPct">Approach within % of level</label>
-          <input type="number" id="stratLevelBreakApproachPct" step="0.05" min="0.05" max="3" value="0.4" required />
-        </div>
-        <div class="field">
-          <label for="stratLevelBreakApproachBars">Approach lookback bars</label>
-          <input type="number" id="stratLevelBreakApproachBars" step="1" min="3" max="60" value="12" required />
         </div>
             </div>
           </div>
@@ -1535,10 +1495,8 @@
       </h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Simulated Binance futures LONG/SHORT on <span class="status-tag sfp">SFP</span>,
-        <span class="status-tag sfp-bear">SFP↓</span>,
-        <span class="status-tag pb">PULLBACK</span>,
-        <span class="status-tag sfp">LVL↑</span>, and
-        <span class="status-tag sfp-bear">LVL↓</span> signals. No real orders — settings and state are separate from the live bot.
+        <span class="status-tag sfp-bear">SFP↓</span>, and
+        <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
       <form class="bot-settings-form" id="paperBotConfigForm">
         <details class="settings-pane">
@@ -1569,66 +1527,6 @@
             </div>
           </div>
         </details>
-        <details class="settings-pane" open>
-          <summary>Level break</summary>
-          <div class="settings-pane-body">
-            <div class="settings-form movers-settings">
-        <p class="sub" style="margin: 0 0 8px 0; font-size: 0.8rem">
-          Strong pivot support/resistance with multiple touches — enter after confirmed break (also updates scanner detection on save).
-        </p>
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="paperBotTradeLevelBreak" name="tradeLevelBreakSignals" checked />
-            Trade level break (LONG)
-          </label>
-        </div>
-        <div class="field" style="min-width: 200px;">
-          <label>
-            <input type="checkbox" id="paperBotTradeLevelBreakBear" name="tradeLevelBreakBearSignals" checked />
-            Trade level break bear (SHORT)
-          </label>
-        </div>
-        <div class="field">
-          <label for="paperBotMaxLevelBreakCorridor">Max corridor width %</label>
-          <input type="number" id="paperBotMaxLevelBreakCorridor" step="1" min="0" max="100" value="20" required />
-          <div class="hint">0 = off. Skip when local range is too wide/choppy</div>
-        </div>
-        <div class="field">
-          <label for="paperBotLevelBreakTp">Level break take profit cap %</label>
-          <input type="number" id="paperBotLevelBreakTp" step="0.1" min="0" max="200" value="0" required />
-          <div class="hint">0 = use main take profit %. Smart exits cap TP when set</div>
-        </div>
-        <div class="field">
-          <label for="paperLbPivotBars">Pivot bars (fractal half-width)</label>
-          <input type="number" id="paperLbPivotBars" step="1" min="1" max="12" value="3" required />
-        </div>
-        <div class="field">
-          <label for="paperLbLookbackBars">Lookback bars</label>
-          <input type="number" id="paperLbLookbackBars" step="1" min="20" max="300" value="80" required />
-        </div>
-        <div class="field">
-          <label for="paperLbMinTouches">Min touches at level</label>
-          <input type="number" id="paperLbMinTouches" step="1" min="1" max="20" value="2" required />
-        </div>
-        <div class="field">
-          <label for="paperLbTouchPct">Touch tolerance %</label>
-          <input type="number" id="paperLbTouchPct" step="0.05" min="0.05" max="2" value="0.25" required />
-        </div>
-        <div class="field">
-          <label for="paperLbMinPct">Min break beyond level %</label>
-          <input type="number" id="paperLbMinPct" step="0.01" min="0.01" max="2" value="0.08" required />
-        </div>
-        <div class="field">
-          <label for="paperLbApproachPct">Approach within % of level</label>
-          <input type="number" id="paperLbApproachPct" step="0.05" min="0.05" max="3" value="0.4" required />
-        </div>
-        <div class="field">
-          <label for="paperLbApproachBars">Approach lookback bars</label>
-          <input type="number" id="paperLbApproachBars" step="1" min="3" max="60" value="12" required />
-        </div>
-            </div>
-          </div>
-        </details>
         <details class="settings-pane">
           <summary>Stop loss &amp; take profit</summary>
           <div class="settings-pane-body">
@@ -1646,12 +1544,12 @@
         <div class="field">
           <label for="paperBotTpPct">Take profit %</label>
           <input type="number" id="paperBotTpPct" step="0.1" min="0.1" max="200" value="3" required />
-          <div class="hint">Default: entry × (1 + %). Smart mode uses this as max cap for SFP, pullback &amp; level break</div>
+          <div class="hint">Default: entry × (1 + %). Smart mode uses this as max cap for SFP and pullback</div>
         </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotSmartExits" name="smartExitLevelsEnabled" checked />
-            Smart SL/TP (SFP, pullback &amp; level break)
+            Smart SL/TP (SFP &amp; pullback)
           </label>
           <div class="hint">Off = range-high SL + fixed TP %. On = sweep/MA-based exits</div>
         </div>
@@ -1962,40 +1860,7 @@
             </div>
           </div>
         </details>
-        <details class="settings-pane">
-          <summary>AI level-break regime filter</summary>
-          <div class="settings-pane-body">
-            <div class="settings-form movers-settings">
-        <div class="field" style="min-width: 220px;">
-          <label>
-            <input type="checkbox" id="paperBotAiLevelBreakRegimeEnabled" />
-            AI level-break regime filter (paper bot)
-          </label>
-          <div class="hint">Separate bull/bear models — skips level-break entries during choppy or poor symbol regimes (compare vs pure algo)</div>
-        </div>
-        <div class="field">
-          <label for="paperBotAiLevelBreakRegimeBullThreshold">Bull bad-regime threshold</label>
-          <input type="number" id="paperBotAiLevelBreakRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.76" required />
-        </div>
-        <div class="field">
-          <label for="paperBotAiLevelBreakRegimeBearThreshold">Bear bad-regime threshold</label>
-          <input type="number" id="paperBotAiLevelBreakRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.74" required />
-        </div>
-        <div class="field">
-          <label for="paperBotAiLevelBreakRegimeThreshold">Legacy threshold (fallback)</label>
-          <input type="number" id="paperBotAiLevelBreakRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
-        </div>
-        <div class="field" style="grid-column: 1 / -1;">
-          <div class="hint" id="paperBotLevelBreakRegimeStatus">Monitor: loading…</div>
-        </div>
-        <div class="field" style="align-self: end;">
-          <label>&nbsp;</label>
-          <button type="button" class="btn secondary sm" id="paperBotTrainLevelBreakRegime">Train level-break regime model</button>
-        </div>
-            </div>
-          </div>
-        </details>
-        <details class="settings-pane">
+        <details class="settings-pane" open>
           <summary>AI pullback regime filter</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
@@ -2004,7 +1869,7 @@
             <input type="checkbox" id="paperBotAiPullbackRegimeEnabled" checked />
             AI pullback regime filter (paper bot)
           </label>
-          <div class="hint">Separate bull/bear models with BTCUSDT context — skips pullback entries during poor regimes (best: 0.84 / 0.82 on 10d cache)</div>
+          <div class="hint">Separate bull/bear models with BTCUSDT context — skips pullback entries during poor regimes (best: 0.84 / 0.82 on 10d cache). BTC lookback uses the SFP regime field above.</div>
         </div>
         <div class="field">
           <label for="paperBotAiPullbackRegimeBullThreshold">Bull bad-regime threshold</label>
@@ -2024,6 +1889,39 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="paperBotTrainPullbackRegime">Train pullback regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane" open>
+          <summary>AI pullback signal filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiPullbackSignalEnabled" />
+            AI pullback signal filter (paper bot)
+          </label>
+          <div class="hint">Entry-quality gate — skips weak pullback setups before open (off by default; regime filter above is recommended)</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackSignalBtcLookbackHours">BTC trend lookback (hours)</label>
+          <input type="number" id="paperBotAiPullbackSignalBtcLookbackHours" step="1" min="1" max="72" value="12" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackSignalBullThreshold">Bull pass threshold</label>
+          <input type="number" id="paperBotAiPullbackSignalBullThreshold" step="0.01" min="0.35" max="0.9" value="0.5" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackSignalBearThreshold">Bear pass threshold</label>
+          <input type="number" id="paperBotAiPullbackSignalBearThreshold" step="0.01" min="0.35" max="0.9" value="0.54" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotPullbackSignalStatus">Model: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainPullbackSignal">Train pullback signal model</button>
         </div>
             </div>
           </div>
@@ -2436,40 +2334,7 @@
             </div>
           </div>
         </details>
-        <details class="settings-pane">
-          <summary>AI level-break regime filter</summary>
-          <div class="settings-pane-body">
-            <div class="settings-form movers-settings">
-        <div class="field" style="min-width: 220px;">
-          <label>
-            <input type="checkbox" id="liveBotAiLevelBreakRegimeEnabled" />
-            AI level-break regime filter (live bot)
-          </label>
-          <div class="hint">Separate live bull/bear models — skips level-break entries during poor regimes</div>
-        </div>
-        <div class="field">
-          <label for="liveBotAiLevelBreakRegimeBullThreshold">Bull bad-regime threshold</label>
-          <input type="number" id="liveBotAiLevelBreakRegimeBullThreshold" step="0.01" min="0.5" max="0.95" value="0.76" required />
-        </div>
-        <div class="field">
-          <label for="liveBotAiLevelBreakRegimeBearThreshold">Bear bad-regime threshold</label>
-          <input type="number" id="liveBotAiLevelBreakRegimeBearThreshold" step="0.01" min="0.5" max="0.95" value="0.74" required />
-        </div>
-        <div class="field">
-          <label for="liveBotAiLevelBreakRegimeThreshold">Legacy threshold (fallback)</label>
-          <input type="number" id="liveBotAiLevelBreakRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
-        </div>
-        <div class="field" style="grid-column: 1 / -1;">
-          <div class="hint" id="liveBotLevelBreakRegimeStatus">Live monitor: loading…</div>
-        </div>
-        <div class="field" style="align-self: end;">
-          <label>&nbsp;</label>
-          <button type="button" class="btn secondary sm" id="liveBotTrainLevelBreakRegime">Train live level-break regime model</button>
-        </div>
-            </div>
-          </div>
-        </details>
-        <details class="settings-pane">
+        <details class="settings-pane" open>
           <summary>AI pullback regime filter</summary>
           <div class="settings-pane-body">
             <div class="settings-form movers-settings">
@@ -2478,7 +2343,7 @@
             <input type="checkbox" id="liveBotAiPullbackRegimeEnabled" checked />
             AI pullback regime filter (live bot)
           </label>
-          <div class="hint">Separate bull/bear models with BTCUSDT context — skips pullback entries during poor regimes (best: 0.84 / 0.82 on 10d cache)</div>
+          <div class="hint">Separate bull/bear models with BTCUSDT context — skips pullback entries during poor regimes (best: 0.84 / 0.82 on 10d cache). BTC lookback uses the SFP regime field above.</div>
         </div>
         <div class="field">
           <label for="liveBotAiPullbackRegimeBullThreshold">Bull bad-regime threshold</label>
@@ -2498,6 +2363,39 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="liveBotTrainPullbackRegime">Train live pullback regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane" open>
+          <summary>AI pullback signal filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiPullbackSignalEnabled" />
+            AI pullback signal filter (live bot)
+          </label>
+          <div class="hint">Entry-quality gate — skips weak pullback setups before open (off by default; regime filter above is recommended)</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackSignalBtcLookbackHours">BTC trend lookback (hours)</label>
+          <input type="number" id="liveBotAiPullbackSignalBtcLookbackHours" step="1" min="1" max="72" value="12" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackSignalBullThreshold">Bull pass threshold</label>
+          <input type="number" id="liveBotAiPullbackSignalBullThreshold" step="0.01" min="0.35" max="0.9" value="0.5" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackSignalBearThreshold">Bear pass threshold</label>
+          <input type="number" id="liveBotAiPullbackSignalBearThreshold" step="0.01" min="0.35" max="0.9" value="0.54" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotPullbackSignalStatus">Model: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainPullbackSignal">Train live pullback signal model</button>
         </div>
             </div>
           </div>
@@ -2714,6 +2612,44 @@
             </div>
         </div>
       </div>
+      <div class="ai-report-section" id="liveAiPullbackSignalSection" style="margin: 0 12px 16px;">
+        <h3>Pullback signal filter</h3>
+        <p class="hint" style="margin: 0 0 12px 0;">
+          Entry-quality gate for pullback setups. Settings are saved to the live bot.
+        </p>
+        <div class="settings-form movers-settings">
+            <div class="field" style="min-width: 220px;">
+              <label>
+                <input type="checkbox" id="liveAiPullbackSignalEnabled" />
+                AI pullback signal filter
+              </label>
+              <div class="hint">Off by default — regime filter above is recommended on 10d cache.</div>
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackSignalBtcLookbackHours">BTC trend lookback (hours)</label>
+              <input type="number" id="liveAiPullbackSignalBtcLookbackHours" step="1" min="1" max="72" value="12" required />
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackSignalBullThreshold">Bull pass threshold</label>
+              <input type="number" id="liveAiPullbackSignalBullThreshold" step="0.01" min="0.35" max="0.9" value="0.5" required />
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackSignalBearThreshold">Bear pass threshold</label>
+              <input type="number" id="liveAiPullbackSignalBearThreshold" step="0.01" min="0.35" max="0.9" value="0.54" required />
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <div class="hint" id="liveAiPullbackSignalStatus">Model: loading…</div>
+            </div>
+            <div class="field" style="align-self: end;">
+              <label>&nbsp;</label>
+              <button type="button" class="btn secondary sm" id="liveAiPullbackSignalSave">Save to live bot</button>
+            </div>
+            <div class="field" style="align-self: end;">
+              <label>&nbsp;</label>
+              <button type="button" class="btn secondary sm" id="liveAiTrainPullbackSignal">Train pullback signal model</button>
+            </div>
+        </div>
+      </div>
       <div class="bot-settings-actions" style="margin: 0 12px 12px;">
         <button type="button" class="btn secondary sm" id="liveAiReportRefresh">Refresh</button>
         <span class="config-msg" id="liveAiReportMsg"></span>
@@ -2725,7 +2661,6 @@
         <div><div class="stat-label">AI early exits</div><div class="stat-value" id="laiStatAiExits">—</div></div>
         <div><div class="stat-label">AI exit PnL</div><div class="stat-value" id="laiStatAiPnl">—</div></div>
         <div><div class="stat-label">SFP regime skips</div><div class="stat-value" id="laiStatSfpSkips">—</div></div>
-        <div><div class="stat-label">LVL regime skips</div><div class="stat-value" id="laiStatLbSkips">—</div></div>
         <div><div class="stat-label">PB regime skips</div><div class="stat-value" id="laiStatPbSkips">—</div></div>
         <div><div class="stat-label">AI SL/TP entries</div><div class="stat-value" id="laiStatAiLevels">—</div></div>
         <div><div class="stat-label">Train-bot SFP rows</div><div class="stat-value" id="laiStatBtSfp">—</div></div>
@@ -2755,12 +2690,6 @@
         <div class="ai-report-section">
           <h3>Recent SFP regime skips</h3>
           <ul class="ai-report-events" id="liveAiSfpSkipEvents">
-            <li class="empty">—</li>
-          </ul>
-        </div>
-        <div class="ai-report-section">
-          <h3>Recent level-break regime skips</h3>
-          <ul class="ai-report-events" id="liveAiLbSkipEvents">
             <li class="empty">—</li>
           </ul>
         </div>
@@ -3825,13 +3754,6 @@
       "pullbackTouchLookback",
       "pullbackMaxDistancePct",
       "pullbackMaxAboveMaPct",
-      "levelBreakPivotBars",
-      "levelBreakLookbackBars",
-      "levelBreakMinTouches",
-      "levelBreakTouchPct",
-      "levelBreakMinPct",
-      "levelBreakApproachPct",
-      "levelBreakApproachBars",
     ];
 
     const STRATEGY_FORM_MAP = {
@@ -3843,49 +3765,7 @@
       pullbackTouchLookback: "stratPullbackTouchLookback",
       pullbackMaxDistancePct: "stratPullbackMaxDistancePct",
       pullbackMaxAboveMaPct: "stratPullbackMaxAboveMaPct",
-      levelBreakPivotBars: "stratLevelBreakPivotBars",
-      levelBreakLookbackBars: "stratLevelBreakLookbackBars",
-      levelBreakMinTouches: "stratLevelBreakMinTouches",
-      levelBreakTouchPct: "stratLevelBreakTouchPct",
-      levelBreakMinPct: "stratLevelBreakMinPct",
-      levelBreakApproachPct: "stratLevelBreakApproachPct",
-      levelBreakApproachBars: "stratLevelBreakApproachBars",
     };
-
-    const PAPER_LEVEL_BREAK_FORM_MAP = {
-      levelBreakPivotBars: "paperLbPivotBars",
-      levelBreakLookbackBars: "paperLbLookbackBars",
-      levelBreakMinTouches: "paperLbMinTouches",
-      levelBreakTouchPct: "paperLbTouchPct",
-      levelBreakMinPct: "paperLbMinPct",
-      levelBreakApproachPct: "paperLbApproachPct",
-      levelBreakApproachBars: "paperLbApproachBars",
-    };
-
-    function fillLevelBreakDetectionForm(config) {
-      if (!config) return;
-      for (const k of STRATEGY_CONFIG_KEYS) {
-        if (!k.startsWith("levelBreak")) continue;
-        const v = config[k];
-        if (v == null) continue;
-        const stratId = STRATEGY_FORM_MAP[k];
-        const paperId = PAPER_LEVEL_BREAK_FORM_MAP[k];
-        const stratEl = stratId ? document.getElementById(stratId) : null;
-        const paperEl = paperId ? document.getElementById(paperId) : null;
-        if (stratEl) stratEl.value = v;
-        if (paperEl) paperEl.value = v;
-      }
-    }
-
-    function levelBreakScannerPatchFromPaperForm() {
-      const patch = {};
-      for (const [key, elId] of Object.entries(PAPER_LEVEL_BREAK_FORM_MAP)) {
-        const el = document.getElementById(elId);
-        if (!el) continue;
-        patch[key] = Number(el.value);
-      }
-      return patch;
-    }
 
     function strategyPatchFromForm() {
       const patch = {};
@@ -3907,7 +3787,6 @@
         if (el.type === "checkbox") el.checked = Boolean(state[k]);
         else el.value = state[k];
       }
-      fillLevelBreakDetectionForm(state);
     }
 
     function setStrategiesMsg(text, ok) {
@@ -3926,14 +3805,10 @@
       setCount("stratSfpActive", counts.sfpActive);
       setCount("stratSfpBearActive", counts.sfpBearActive);
       setCount("stratPbActive", counts.pullbackActive);
-      setCount("stratLevelBreakActive", counts.levelBreakActive);
-      setCount("stratLevelBreakBearActive", counts.levelBreakBearActive);
       const liveN =
         (counts.sfpActive ?? 0) +
         (counts.sfpBearActive ?? 0) +
-        (counts.pullbackActive ?? 0) +
-        (counts.levelBreakActive ?? 0) +
-        (counts.levelBreakBearActive ?? 0);
+        (counts.pullbackActive ?? 0);
       const countEl = document.getElementById("strategiesLiveCount");
       if (countEl) countEl.textContent = liveN ? `(${liveN} live)` : "";
     }
@@ -4000,7 +3875,6 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderStrategyMonitor(data);
-        fillLevelBreakDetectionForm(data.config);
       } catch {
         /* optional */
       }
@@ -4239,8 +4113,6 @@
       if (kind === "sfp") return '<span class="status-tag sfp">SFP</span>';
       if (kind === "sfp_bear") return '<span class="status-tag sfp-bear">SFP↓</span>';
       if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
-      if (kind === "level_break") return '<span class="status-tag sfp">LVL↑</span>';
-      if (kind === "level_break_bear") return '<span class="status-tag sfp-bear">LVL↓</span>';
       return '<span class="status-tag muted">—</span>';
     }
 
@@ -4320,20 +4192,12 @@
         maxPullbackCorridorWidthPct: Number(
           document.getElementById("paperBotMaxPullbackCorridor").value
         ),
-        maxLevelBreakCorridorWidthPct: Number(
-          document.getElementById("paperBotMaxLevelBreakCorridor").value
-        ),
         sfpTakeProfitPct: Number(document.getElementById("paperBotSfpTp").value),
-        levelBreakTakeProfitPct: Number(
-          document.getElementById("paperBotLevelBreakTp").value
-        ),
         smartExitLevelsEnabled: document.getElementById("paperBotSmartExits").checked,
         tradeSfpSignals: document.getElementById("paperBotTradeSfp").checked,
         tradeBearishSfpSignals: document.getElementById("paperBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
         tradeBearishPullbackSignals: document.getElementById("paperBotTradePullbackBear").checked,
-        tradeLevelBreakSignals: document.getElementById("paperBotTradeLevelBreak").checked,
-        tradeLevelBreakBearSignals: document.getElementById("paperBotTradeLevelBreakBear").checked,
         extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
         addOnMarginUsdt: Number(document.getElementById("paperBotAddOnMarginUsdt").value),
@@ -4392,30 +4256,8 @@
         aiRegimeBtcLookbackHours: Number(
           document.getElementById("paperBotAiRegimeBtcLookbackHours").value
         ),
-        aiLevelBreakRegimeEnabled: document.getElementById(
-          "paperBotAiLevelBreakRegimeEnabled"
-        ).checked,
-        aiLevelBreakRegimeBullThreshold: Number(
-          document.getElementById("paperBotAiLevelBreakRegimeBullThreshold").value
-        ),
-        aiLevelBreakRegimeBearThreshold: Number(
-          document.getElementById("paperBotAiLevelBreakRegimeBearThreshold").value
-        ),
-        aiLevelBreakRegimeThreshold: Number(
-          document.getElementById("paperBotAiLevelBreakRegimeThreshold").value
-        ),
-        aiPullbackRegimeEnabled: document.getElementById(
-          "paperBotAiPullbackRegimeEnabled"
-        ).checked,
-        aiPullbackRegimeBullThreshold: Number(
-          document.getElementById("paperBotAiPullbackRegimeBullThreshold").value
-        ),
-        aiPullbackRegimeBearThreshold: Number(
-          document.getElementById("paperBotAiPullbackRegimeBearThreshold").value
-        ),
-        aiPullbackRegimeThreshold: Number(
-          document.getElementById("paperBotAiPullbackRegimeThreshold").value
-        ),
+        ...pullbackRegimeConfigFromForm("paper"),
+        ...pullbackSignalConfigFromForm("paper"),
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
         ),
@@ -4478,11 +4320,7 @@
       document.getElementById("paperBotMaxSfpCorridor").value = cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("paperBotMaxPullbackCorridor").value =
         cfg.maxPullbackCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
-      document.getElementById("paperBotMaxLevelBreakCorridor").value =
-        cfg.maxLevelBreakCorridorWidthPct ?? cfg.maxSfpCorridorWidthPct ?? 20;
       document.getElementById("paperBotSfpTp").value = cfg.sfpTakeProfitPct ?? 1.5;
-      const lbTpEl = document.getElementById("paperBotLevelBreakTp");
-      if (lbTpEl) lbTpEl.value = cfg.levelBreakTakeProfitPct ?? 0;
       document.getElementById("paperBotSmartExits").checked =
         cfg.smartExitLevelsEnabled !== false;
       const paperTpMinField = document.getElementById("paperBotTpMinField");
@@ -4498,10 +4336,6 @@
         Boolean(cfg.tradePullbackSignals);
       document.getElementById("paperBotTradePullbackBear").checked =
         cfg.tradeBearishPullbackSignals !== false;
-      document.getElementById("paperBotTradeLevelBreak").checked =
-        cfg.tradeLevelBreakSignals !== false;
-      document.getElementById("paperBotTradeLevelBreakBear").checked =
-        cfg.tradeLevelBreakBearSignals !== false;
       document.getElementById("paperBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled !== false;
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
@@ -4552,24 +4386,6 @@
         cfg.aiSfpRegimeThreshold ?? 0.58;
       document.getElementById("paperBotAiRegimeBtcLookbackHours").value =
         cfg.aiRegimeBtcLookbackHours ?? 12;
-      document.getElementById("paperBotAiLevelBreakRegimeEnabled").checked = Boolean(
-        cfg.aiLevelBreakRegimeEnabled
-      );
-      document.getElementById("paperBotAiLevelBreakRegimeBullThreshold").value =
-        cfg.aiLevelBreakRegimeBullThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.76;
-      document.getElementById("paperBotAiLevelBreakRegimeBearThreshold").value =
-        cfg.aiLevelBreakRegimeBearThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.74;
-      document.getElementById("paperBotAiLevelBreakRegimeThreshold").value =
-        cfg.aiLevelBreakRegimeThreshold ?? 0.58;
-      document.getElementById("paperBotAiPullbackRegimeEnabled").checked = Boolean(
-        cfg.aiPullbackRegimeEnabled
-      );
-      document.getElementById("paperBotAiPullbackRegimeBullThreshold").value =
-        cfg.aiPullbackRegimeBullThreshold ?? cfg.aiPullbackRegimeThreshold ?? 0.84;
-      document.getElementById("paperBotAiPullbackRegimeBearThreshold").value =
-        cfg.aiPullbackRegimeBearThreshold ?? cfg.aiPullbackRegimeThreshold ?? 0.82;
-      document.getElementById("paperBotAiPullbackRegimeThreshold").value =
-        cfg.aiPullbackRegimeThreshold ?? 0.58;
       document.getElementById("paperBotBlockedSymbols").value = (
         cfg.blockedSymbols ?? []
       ).join("\n");
@@ -4581,6 +4397,7 @@
         cfg.drawdownStopPct ?? 4;
       fillAiExitLevelsForm("paper", cfg);
       fillPullbackRegimeForm("paper", cfg);
+      fillPullbackSignalForm("paper", cfg);
       updatePaperBotBadges(cfg);
     }
 
@@ -4700,6 +4517,51 @@
       }
       const legacyEl = document.getElementById(`${prefix}Threshold`);
       if (legacyEl) legacyEl.value = cfg.aiPullbackRegimeThreshold ?? 0.58;
+    }
+
+    function pullbackSignalConfigFromForm(kind) {
+      const prefix =
+        kind === "liveAi"
+          ? "liveAiPullbackSignal"
+          : kind === "live"
+            ? "liveBotAiPullbackSignal"
+            : "paperBotAiPullbackSignal";
+      return {
+        aiPullbackSignalEnabled: document.getElementById(`${prefix}Enabled`).checked,
+        aiPullbackSignalBullThreshold: Number(
+          document.getElementById(`${prefix}BullThreshold`).value
+        ),
+        aiPullbackSignalBearThreshold: Number(
+          document.getElementById(`${prefix}BearThreshold`).value
+        ),
+        aiPullbackSignalBtcLookbackHours: Number(
+          document.getElementById(`${prefix}BtcLookbackHours`).value
+        ),
+      };
+    }
+
+    function fillPullbackSignalForm(kind, cfg) {
+      if (!cfg) return;
+      const prefix =
+        kind === "liveAi"
+          ? "liveAiPullbackSignal"
+          : kind === "live"
+            ? "liveBotAiPullbackSignal"
+            : "paperBotAiPullbackSignal";
+      const enabledEl = document.getElementById(`${prefix}Enabled`);
+      if (enabledEl) enabledEl.checked = Boolean(cfg.aiPullbackSignalEnabled);
+      const bullEl = document.getElementById(`${prefix}BullThreshold`);
+      if (bullEl) {
+        bullEl.value =
+          cfg.aiPullbackSignalBullThreshold ?? cfg.aiPullbackSignalThreshold ?? 0.5;
+      }
+      const bearEl = document.getElementById(`${prefix}BearThreshold`);
+      if (bearEl) {
+        bearEl.value =
+          cfg.aiPullbackSignalBearThreshold ?? cfg.aiPullbackSignalThreshold ?? 0.54;
+      }
+      const btcEl = document.getElementById(`${prefix}BtcLookbackHours`);
+      if (btcEl) btcEl.value = cfg.aiPullbackSignalBtcLookbackHours ?? 12;
     }
 
     function updateAiExitLevelsModeFields(bot) {
@@ -5103,10 +4965,10 @@
     let sfpRegimeTrainPolling = false;
     let liveEarlyExitTrainPolling = false;
     let liveSfpRegimeTrainPolling = false;
-    let levelBreakRegimeTrainPolling = false;
-    let liveLevelBreakRegimeTrainPolling = false;
     let pullbackRegimeTrainPolling = false;
     let livePullbackRegimeTrainPolling = false;
+    let pullbackSignalTrainPolling = false;
+    let livePullbackSignalTrainPolling = false;
 
     function aiModelApiUrl(path, scope) {
       if (!scope) return path;
@@ -5157,18 +5019,18 @@
       });
     }
 
-    function resumeLevelBreakRegimeTrainPollIfNeeded(data, scope = "paper") {
+    function resumePullbackSignalTrainPollIfNeeded(data, scope = "paper") {
       const polling =
-        scope === "live" ? liveLevelBreakRegimeTrainPolling : levelBreakRegimeTrainPolling;
+        scope === "live" ? livePullbackSignalTrainPolling : pullbackSignalTrainPolling;
       if (!data?.training?.running || polling) return;
-      if (scope === "live") liveLevelBreakRegimeTrainPolling = true;
-      else levelBreakRegimeTrainPolling = true;
-      void pollAiModelTraining("/api/level-break-regime-model", () => {
-        if (scope === "live") void loadLiveLevelBreakRegimeMonitorStatus();
-        else void loadLevelBreakRegimeMonitorStatus();
+      if (scope === "live") livePullbackSignalTrainPolling = true;
+      else pullbackSignalTrainPolling = true;
+      void pollAiModelTraining("/api/pullback-signal-model", () => {
+        if (scope === "live") void loadLivePullbackSignalModelStatus();
+        else void loadPullbackSignalModelStatus();
       }, scope).finally(() => {
-        if (scope === "live") liveLevelBreakRegimeTrainPolling = false;
-        else levelBreakRegimeTrainPolling = false;
+        if (scope === "live") livePullbackSignalTrainPolling = false;
+        else pullbackSignalTrainPolling = false;
       });
     }
 
@@ -5391,91 +5253,65 @@
       }
     }
 
-    async function loadLevelBreakRegimeMonitorStatus() {
-      const el = document.getElementById("paperBotLevelBreakRegimeStatus");
+    async function loadPullbackSignalModelStatus() {
+      const el = document.getElementById("paperBotPullbackSignalStatus");
       if (!el) return;
       try {
-        const [modelRes, monRes] = await Promise.all([
-          fetch(aiModelApiUrl("/api/level-break-regime-model", "paper"), {
-            cache: "no-store",
-          }),
-          fetch(aiModelApiUrl("/api/level-break-regime-monitor", "paper"), {
-            cache: "no-store",
-          }),
-        ]);
-        const model = await modelRes.json().catch(() => ({}));
-        const mon = await monRes.json().catch(() => ({}));
-        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
-        const bm = model.bullMetrics ?? model.metrics ?? {};
-        const rm = model.bearMetrics ?? {};
+        const res = await fetch(aiModelApiUrl("/api/pullback-signal-model", "paper"), {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const trainLine = formatAiTrainProgress(data.training);
+        if (trainLine) {
+          el.textContent = `Training: ${trainLine}`;
+          resumePullbackSignalTrainPollIfNeeded(data, "paper");
+          return;
+        }
+        const bm = data.bullMetrics ?? data.metrics ?? {};
+        const rm = data.bearMetrics ?? {};
         const acc =
-          bm.accuracy != null
-            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
-            : "";
+          bm.accuracy != null ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%` : "";
         const bearAcc =
           rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
-        const trainLine = formatAiTrainProgress(model.training);
-        const worst =
-          model.training?.running
-            ? ""
-            : mon.worst?.length > 0
-              ? ` · bad now: ${mon.worst
-                  .slice(0, 5)
-                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
-                  .join(", ")}`
-              : mon.enabled
-                ? " · no bad regimes flagged"
-                : "";
-        el.textContent = trainLine
-          ? `Training: ${trainLine}`
-          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
-        resumeLevelBreakRegimeTrainPollIfNeeded(model, "paper");
+        el.textContent =
+          `Model v${data.version ?? 2}: ${data.source ?? "—"}${acc}${bearAcc}` +
+          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap");
+        resumePullbackSignalTrainPollIfNeeded(data, "paper");
       } catch (e) {
-        el.textContent = `Monitor: ${e.message}`;
+        el.textContent = `Model: ${e.message}`;
       }
     }
 
-    async function loadLiveLevelBreakRegimeMonitorStatus() {
-      const el = document.getElementById("liveBotLevelBreakRegimeStatus");
-      if (!el) return;
+    async function loadLivePullbackSignalModelStatus() {
+      const ids = ["liveBotPullbackSignalStatus", "liveAiPullbackSignalStatus"];
       try {
-        const [modelRes, monRes] = await Promise.all([
-          fetch(aiModelApiUrl("/api/level-break-regime-model", "live"), {
-            cache: "no-store",
-          }),
-          fetch(aiModelApiUrl("/api/level-break-regime-monitor", "live"), {
-            cache: "no-store",
-          }),
-        ]);
-        const model = await modelRes.json().catch(() => ({}));
-        const mon = await monRes.json().catch(() => ({}));
-        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
-        const bm = model.bullMetrics ?? model.metrics ?? {};
-        const rm = model.bearMetrics ?? {};
+        const res = await fetch(aiModelApiUrl("/api/pullback-signal-model", "live"), {
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const trainLine = formatAiTrainProgress(data.training);
+        const bm = data.bullMetrics ?? data.metrics ?? {};
+        const rm = data.bearMetrics ?? {};
         const acc =
-          bm.accuracy != null
-            ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%`
-            : "";
+          bm.accuracy != null ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%` : "";
         const bearAcc =
           rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
-        const trainLine = formatAiTrainProgress(model.training);
-        const worst =
-          model.training?.running
-            ? ""
-            : mon.worst?.length > 0
-              ? ` · bad now: ${mon.worst
-                  .slice(0, 5)
-                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
-                  .join(", ")}`
-              : mon.enabled
-                ? " · no bad regimes flagged"
-                : "";
-        el.textContent = trainLine
+        const text = trainLine
           ? `Training: ${trainLine}`
-          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
-        resumeLevelBreakRegimeTrainPollIfNeeded(model, "live");
+          : `Live v${data.version ?? 2}: ${data.source ?? "—"}${acc}${bearAcc}` +
+            (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap");
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (el) el.textContent = text;
+        }
+        resumePullbackSignalTrainPollIfNeeded(data, "live");
       } catch (e) {
-        el.textContent = `Live monitor: ${e.message}`;
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (el) el.textContent = `Model: ${e.message}`;
+        }
       }
     }
 
@@ -5707,8 +5543,8 @@
         const anyOn =
           cfg.aiEarlyExitEnabled ||
           cfg.aiSfpRegimeEnabled ||
-          cfg.aiLevelBreakRegimeEnabled ||
           cfg.aiPullbackRegimeEnabled ||
+          cfg.aiPullbackSignalEnabled ||
           cfg.aiExitLevelsEnabled;
         badge.textContent = anyOn
           ? cfg.armed
@@ -5737,7 +5573,6 @@
         laiPnlCls(impact.aiEarlyExit?.all?.pnl)
       );
       setStat("laiStatSfpSkips", String(impact.regimeSkips?.sfp ?? 0));
-      setStat("laiStatLbSkips", String(impact.regimeSkips?.levelBreak ?? 0));
       setStat("laiStatPbSkips", String(impact.regimeSkips?.pullback ?? 0));
       setStat(
         "laiStatAiLevels",
@@ -5749,7 +5584,7 @@
       );
       setStat(
         "laiStatMergedSfp",
-        `${training.mergedForLiveTraining?.sfp ?? 0} SFP / ${training.mergedForLiveTraining?.levelBreak ?? 0} LVL`
+        String(training.mergedForLiveTraining?.sfp ?? 0)
       );
 
       const cards = document.getElementById("liveAiModelCards");
@@ -5757,15 +5592,16 @@
         cards.innerHTML =
           renderLiveAiModelCard("SFP early exit", data.models?.earlyExit) +
           renderLiveAiModelCard("SFP regime filter", data.models?.sfpRegime) +
-          renderLiveAiModelCard("Level-break regime", data.models?.levelBreakRegime) +
           renderLiveAiModelCard("Pullback regime", data.models?.pullbackRegime) +
           renderLiveAiExitLevelsCard(data.models?.exitLevels);
       }
 
       fillAiExitLevelsForm("liveAi", cfg);
       fillPullbackRegimeForm("liveAi", cfg);
+      fillPullbackSignalForm("liveAi", cfg);
       void loadAiExitLevelsModelStatus("liveAi");
       void loadLivePullbackRegimeMonitorStatus();
+      void loadLivePullbackSignalModelStatus();
 
       const reasonsBody = document.getElementById("liveAiExitReasonsBody");
       const reasons = impact.exitReasons ?? [];
@@ -5784,11 +5620,6 @@
         document.getElementById("liveAiSfpSkipEvents"),
         data.recentEvents?.sfpRegimeSkips,
         "No SFP regime skips logged"
-      );
-      renderLiveAiEventList(
-        document.getElementById("liveAiLbSkipEvents"),
-        data.recentEvents?.levelBreakRegimeSkips,
-        "No level-break regime skips logged"
       );
       renderLiveAiEventList(
         document.getElementById("liveAiPbSkipEvents"),
@@ -5833,18 +5664,9 @@
         renderPaperBot(data, syncForm);
         void loadEarlyExitModelStatus();
         void loadSfpRegimeMonitorStatus();
-        void loadLevelBreakRegimeMonitorStatus();
         void loadPullbackRegimeMonitorStatus();
+        void loadPullbackSignalModelStatus();
         void loadAiExitLevelsModelStatus("paper");
-        if (syncForm) {
-          try {
-            const sres = await fetch("/api/strategies", { cache: "no-store" });
-            const sdata = await sres.json();
-            if (sres.ok) fillLevelBreakDetectionForm(sdata.config);
-          } catch {
-            /* optional */
-          }
-        }
         setPaperBotMsg(
           `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`,
           true
@@ -5864,9 +5686,8 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-        await applyLivePatch(levelBreakScannerPatchFromPaperForm()).catch(() => {});
         renderPaperBot(data, false);
-        setPaperBotMsg("Settings saved (incl. level-break scanner)", true);
+        setPaperBotMsg("Settings saved", true);
       } catch (err) {
         setPaperBotMsg(err.message, false);
       }
@@ -5991,51 +5812,6 @@
       }
     });
 
-    document.getElementById("paperBotTrainLevelBreakRegime")?.addEventListener("click", async () => {
-      if (
-        !confirm(
-          "Train level-break regime model from level-break closed trades in train-bot + paper history?"
-        )
-      ) {
-        return;
-      }
-      const btn = document.getElementById("paperBotTrainLevelBreakRegime");
-      try {
-        btn.disabled = true;
-        setPaperBotMsg("Starting level-break regime training…", true);
-        const res = await fetch("/api/level-break-regime-model/train", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: "auto", scope: "paper" }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || res.statusText);
-        setPaperBotMsg(
-          `Level-break training started (${data.trades ?? "?"} trades)…`,
-          true
-        );
-        const training = await pollAiModelTraining(
-          "/api/level-break-regime-model",
-          () => {
-            void loadLevelBreakRegimeMonitorStatus();
-          },
-          "paper"
-        );
-        await loadLevelBreakRegimeMonitorStatus();
-        if (training?.error) throw new Error(training.error);
-        const m = training?.result?.model?.metrics ?? {};
-        setPaperBotMsg(
-          `Level-break regime trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
-          true
-        );
-      } catch (e) {
-        setPaperBotMsg(e.message, false);
-        void loadLevelBreakRegimeMonitorStatus();
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
     document.getElementById("paperBotTrainPullbackRegime")?.addEventListener("click", async () => {
       if (
         !confirm(
@@ -6076,6 +5852,51 @@
       } catch (e) {
         setPaperBotMsg(e.message, false);
         void loadPullbackRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("paperBotTrainPullbackSignal")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train pullback signal model from pullback closed trades in train-bot + paper history?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("paperBotTrainPullbackSignal");
+      try {
+        btn.disabled = true;
+        setPaperBotMsg("Starting pullback signal training…", true);
+        const res = await fetch("/api/pullback-signal-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(
+          `Pullback signal training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/pullback-signal-model",
+          () => {
+            void loadPullbackSignalModelStatus();
+          },
+          "paper"
+        );
+        await loadPullbackSignalModelStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setPaperBotMsg(
+          `Pullback signal trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadPullbackSignalModelStatus();
       } finally {
         btn.disabled = false;
       }
@@ -6178,19 +5999,8 @@
         aiRegimeBtcLookbackHours: Number(
           document.getElementById("liveBotAiRegimeBtcLookbackHours").value
         ),
-        aiLevelBreakRegimeEnabled: document.getElementById(
-          "liveBotAiLevelBreakRegimeEnabled"
-        ).checked,
-        aiLevelBreakRegimeBullThreshold: Number(
-          document.getElementById("liveBotAiLevelBreakRegimeBullThreshold").value
-        ),
-        aiLevelBreakRegimeBearThreshold: Number(
-          document.getElementById("liveBotAiLevelBreakRegimeBearThreshold").value
-        ),
-        aiLevelBreakRegimeThreshold: Number(
-          document.getElementById("liveBotAiLevelBreakRegimeThreshold").value
-        ),
         ...pullbackRegimeConfigFromForm("live"),
+        ...pullbackSignalConfigFromForm("live"),
       };
     }
 
@@ -6276,17 +6086,10 @@
         cfg.aiSfpRegimeThreshold ?? 0.58;
       document.getElementById("liveBotAiRegimeBtcLookbackHours").value =
         cfg.aiRegimeBtcLookbackHours ?? 12;
-      document.getElementById("liveBotAiLevelBreakRegimeEnabled").checked = Boolean(
-        cfg.aiLevelBreakRegimeEnabled
-      );
-      document.getElementById("liveBotAiLevelBreakRegimeBullThreshold").value =
-        cfg.aiLevelBreakRegimeBullThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.76;
-      document.getElementById("liveBotAiLevelBreakRegimeBearThreshold").value =
-        cfg.aiLevelBreakRegimeBearThreshold ?? cfg.aiLevelBreakRegimeThreshold ?? 0.74;
-      document.getElementById("liveBotAiLevelBreakRegimeThreshold").value =
-        cfg.aiLevelBreakRegimeThreshold ?? 0.58;
       fillPullbackRegimeForm("live", cfg);
       fillPullbackRegimeForm("liveAi", cfg);
+      fillPullbackSignalForm("live", cfg);
+      fillPullbackSignalForm("liveAi", cfg);
       updateLiveBotBadges(cfg);
     }
 
@@ -6369,8 +6172,8 @@
         renderLiveBot(data, syncForm);
         void loadLiveEarlyExitModelStatus();
         void loadLiveSfpRegimeMonitorStatus();
-        void loadLiveLevelBreakRegimeMonitorStatus();
         void loadLivePullbackRegimeMonitorStatus();
+        void loadLivePullbackSignalModelStatus();
         void loadAiExitLevelsModelStatus("live");
         if (!data.busy) {
           setLiveBotMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
@@ -6578,6 +6381,66 @@
       }
     });
 
+    document.getElementById("liveAiPullbackSignalSave")?.addEventListener("click", async () => {
+      const msg = document.getElementById("liveAiReportMsg");
+      try {
+        const res = await fetch("/api/live-bot/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patch: pullbackSignalConfigFromForm("liveAi") }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        fillPullbackSignalForm("live", data.config ?? data);
+        fillPullbackSignalForm("liveAi", data.config ?? data);
+        if (msg) msg.textContent = "Pullback signal settings saved to live bot";
+        void loadLiveAiReport();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+      }
+    });
+
+    document.getElementById("liveAiTrainPullbackSignal")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live pullback signal model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveAiTrainPullbackSignal");
+      const msg = document.getElementById("liveAiReportMsg");
+      try {
+        btn.disabled = true;
+        if (msg) msg.textContent = "Starting live pullback signal training…";
+        const res = await fetch("/api/pullback-signal-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const training = await pollAiModelTraining(
+          "/api/pullback-signal-model",
+          () => {
+            void loadLivePullbackSignalModelStatus();
+          },
+          "live"
+        );
+        await loadLivePullbackSignalModelStatus();
+        if (training?.error) throw new Error(training.error);
+        if (msg) {
+          msg.textContent = `Live pullback signal trained (${training?.result?.tradesUsed ?? data.trades} trades)`;
+        }
+        void loadLiveAiReport();
+      } catch (e) {
+        if (msg) msg.textContent = e.message;
+        void loadLivePullbackSignalModelStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById("liveBotTrainAiModel")?.addEventListener("click", async () => {
       if (
         !confirm(
@@ -6695,51 +6558,6 @@
       }
     });
 
-    document.getElementById("liveBotTrainLevelBreakRegime")?.addEventListener("click", async () => {
-      if (
-        !confirm(
-          "Train live level-break regime model from train-bot backtest + live closed trades?"
-        )
-      ) {
-        return;
-      }
-      const btn = document.getElementById("liveBotTrainLevelBreakRegime");
-      try {
-        btn.disabled = true;
-        setLiveBotMsg("Starting live level-break regime training…", true);
-        const res = await fetch("/api/level-break-regime-model/train", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scope: "live" }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || res.statusText);
-        setLiveBotMsg(
-          `Live level-break training started (${data.trades ?? "?"} trades)…`,
-          true
-        );
-        const training = await pollAiModelTraining(
-          "/api/level-break-regime-model",
-          () => {
-            void loadLiveLevelBreakRegimeMonitorStatus();
-          },
-          "live"
-        );
-        await loadLiveLevelBreakRegimeMonitorStatus();
-        if (training?.error) throw new Error(training.error);
-        const m = training?.result?.model?.metrics ?? {};
-        setLiveBotMsg(
-          `Live level-break regime trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
-          true
-        );
-      } catch (e) {
-        setLiveBotMsg(e.message, false);
-        void loadLiveLevelBreakRegimeMonitorStatus();
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
     document.getElementById("liveBotTrainPullbackRegime")?.addEventListener("click", async () => {
       if (
         !confirm(
@@ -6780,6 +6598,51 @@
       } catch (e) {
         setLiveBotMsg(e.message, false);
         void loadLivePullbackRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveBotTrainPullbackSignal")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live pullback signal model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainPullbackSignal");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live pullback signal training…", true);
+        const res = await fetch("/api/pullback-signal-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(
+          `Live pullback signal training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/pullback-signal-model",
+          () => {
+            void loadLivePullbackSignalModelStatus();
+          },
+          "live"
+        );
+        await loadLivePullbackSignalModelStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setLiveBotMsg(
+          `Live pullback signal trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadLivePullbackSignalModelStatus();
       } finally {
         btn.disabled = false;
       }

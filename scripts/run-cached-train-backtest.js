@@ -22,7 +22,7 @@ function parseArgs(argv) {
   return { days: Math.max(1, Math.min(60, Math.round(days) || 10)) };
 }
 
-function loadBotConfig(regimeOn) {
+function loadBotConfig() {
   const saved = readJsonFile(dataPath("paper-bot-state.json"), {})?.config ?? {};
   return normalizeConfig({
     enabled: true,
@@ -30,8 +30,7 @@ function loadBotConfig(regimeOn) {
     earlyAbortEnabled: false,
     runnerEnabled: false,
     aiEarlyExitEnabled: false,
-    aiLevelBreakRegimeEnabled: false,
-    aiSfpRegimeEnabled: regimeOn,
+    aiPullbackSignalEnabled: false,
   });
 }
 
@@ -54,13 +53,6 @@ function loadSignalConfig() {
     pullbackTouchLookback: 12,
     pullbackMaxDistancePct: 0.35,
     pullbackMaxAboveMaPct: 1.5,
-    levelBreakPivotBars: 4,
-    levelBreakLookbackBars: 300,
-    levelBreakMinTouches: 5,
-    levelBreakTouchPct: 0.25,
-    levelBreakMinPct: 0.12,
-    levelBreakApproachPct: 0.4,
-    levelBreakApproachBars: 8,
   };
   applyBarConfig(cfg);
   scannerConfig.loadInto(cfg);
@@ -103,19 +95,18 @@ function createFetchers() {
 
 async function main() {
   const { days } = parseArgs(process.argv);
-  const regimeOn = process.argv.includes("--regime-on");
   const symbols = cachedSymbolList();
   if (!symbols.length) {
     console.error("No cached symbols.");
     process.exit(1);
   }
 
-  const botConfig = loadBotConfig(regimeOn);
+  const botConfig = loadBotConfig();
   const signalCfg = loadSignalConfig();
   const { fetchKlinesForSymbol, fetchKlines1mForSymbol } = createFetchers();
 
   console.error(
-    `Cached backtest: ${symbols.length} symbols × ${days}d · regime ${regimeOn ? "ON" : "OFF"}`
+    `Cached backtest: ${symbols.length} symbols × ${days}d · SFP ${botConfig.tradeSfpSignals ? "on" : "off"} (regime ${botConfig.aiSfpRegimeEnabled ? "on" : "off"}) · PB ${botConfig.tradePullbackSignals ? "on" : "off"} (regime ${botConfig.aiPullbackRegimeEnabled ? "on" : "off"})`
   );
 
   let lastSym = "";
@@ -127,7 +118,11 @@ async function main() {
     fetchKlinesForSymbol,
     fetchKlines1mForSymbol: signalCfg.interval !== "1m" ? fetchKlines1mForSymbol : null,
     restGapMs: 0,
-    runMeta: { cli: "cached-train", regimeOn },
+    runMeta: {
+      cli: "cached-train",
+      sfpRegime: botConfig.aiSfpRegimeEnabled,
+      pullbackRegime: botConfig.aiPullbackRegimeEnabled,
+    },
     onProgress: (p) => {
       if (p.phase === "simulate" && p.symbol && p.symbol !== lastSym) {
         lastSym = p.symbol;
@@ -140,7 +135,13 @@ async function main() {
 
   const s = result.summary ?? {};
   console.error(
-    `\nPnL $${(s.realizedPnl ?? 0).toFixed(2)} · ${s.closedCount ?? 0} trades · regime skips ${s.sfpRegimeSkips ?? 0} · ${result.elapsedSec}s`
+    `\nPnL $${(s.realizedPnl ?? 0).toFixed(2)} · ${s.closedCount ?? 0} trades · ${result.elapsedSec}s`
+  );
+  console.error(
+    `SFP regime skips ${s.sfpRegimeSkips ?? 0} · PB regime skips ${s.pullbackRegimeSkips ?? 0}`
+  );
+  console.error(
+    `Signals: SFP ${s.sfpSignals ?? 0}+${s.sfpBearSignals ?? 0} · PB ${s.pullbackSignals ?? 0}+${s.pullbackBearSignals ?? 0}`
   );
   console.error(`Saved ${dataPath("paper-bot-backtest-last.json")}`);
 }

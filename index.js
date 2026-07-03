@@ -25,8 +25,6 @@ const {
   barsAtTime,
   analyzeSweepReclaim,
   analyzeSweepReject,
-  analyzeLevelBreakUp,
-  analyzeLevelBreakDown,
   fastMoverPullbackMetrics,
   fastMoverPullbackBearMetrics,
   analyzePullback,
@@ -66,23 +64,6 @@ const {
   saveModel: saveSfpRegimeModel,
 } = require("./lib/sfp-regime-model");
 const { createSfpRegimeMonitor } = require("./lib/sfp-regime-monitor");
-const {
-  ensureAllDefaultModelsOnDisk: ensureAllLevelBreakRegimeModelsOnDisk,
-  getModel: getLevelBreakRegimeModel,
-  getModelStatus: getLevelBreakRegimeModelStatus,
-  trainFromTrades: trainLevelBreakRegimeFromTrades,
-  reloadModel: reloadLevelBreakRegimeModel,
-  saveModel: saveLevelBreakRegimeModel,
-} = require("./lib/level-break-regime-model");
-const { createLevelBreakRegimeMonitor } = require("./lib/level-break-regime-monitor");
-const {
-  ensureAllDefaultModelsOnDisk: ensureAllLevelBreakSignalModelsOnDisk,
-  getModel: getLevelBreakSignalModel,
-  getModelStatus: getLevelBreakSignalModelStatus,
-  trainFromTrades: trainLevelBreakSignalFromTrades,
-  reloadModel: reloadLevelBreakSignalModel,
-  saveModel: saveLevelBreakSignalModel,
-} = require("./lib/level-break-signal-model");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllPullbackRegimeModelsOnDisk,
   getModel: getPullbackRegimeModel,
@@ -186,13 +167,6 @@ const cfg = {
   pullbackMaxDistancePct: 0.35,
   pullbackMaxAboveMaPct: 1.5,
   pullbackMaxBelowMaPct: 1.5,
-  levelBreakPivotBars: 4,
-  levelBreakLookbackBars: 300,
-  levelBreakMinTouches: 5,
-  levelBreakTouchPct: 0.25,
-  levelBreakMinPct: 0.12,
-  levelBreakApproachPct: 0.4,
-  levelBreakApproachBars: 8,
   restMinGapMs: 450,
   restRetryMs: 8000,
   exchangeInfoCacheTtlMs: 24 * 60 * 60 * 1000,
@@ -241,8 +215,6 @@ let telegram = null;
 let paperBot = null;
 let sfpRegimeMonitor = null;
 let liveSfpRegimeMonitor = null;
-let levelBreakRegimeMonitor = null;
-let liveLevelBreakRegimeMonitor = null;
 let pullbackRegimeMonitor = null;
 let livePullbackRegimeMonitor = null;
 let liveBot = null;
@@ -305,8 +277,6 @@ const aiTrainJob = {
   paper: {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
-    level_break_regime: freshAiTrainJob(),
-    level_break_signal: freshAiTrainJob(),
     pullback_regime: freshAiTrainJob(),
     pullback_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
@@ -314,8 +284,6 @@ const aiTrainJob = {
   live: {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
-    level_break_regime: freshAiTrainJob(),
-    level_break_signal: freshAiTrainJob(),
     pullback_regime: freshAiTrainJob(),
     pullback_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
@@ -325,8 +293,6 @@ const aiTrainJob = {
 function aiTrainJobFor(model, scope = "paper") {
   const key = normalizeAiModelScope(scope);
   if (model === "sfp_regime") return aiTrainJob[key].sfp_regime;
-  if (model === "level_break_regime") return aiTrainJob[key].level_break_regime;
-  if (model === "level_break_signal") return aiTrainJob[key].level_break_signal;
   if (model === "pullback_regime") return aiTrainJob[key].pullback_regime;
   if (model === "pullback_signal") return aiTrainJob[key].pullback_signal;
   if (model === "ai_exit_levels") return aiTrainJob[key].ai_exit_levels;
@@ -344,20 +310,6 @@ function getSfpRegimeModelStatusFull(scope = "paper") {
   return modelStatusWithTraining(
     () => getSfpRegimeModelStatus(normalizeAiModelScope(scope)),
     aiTrainJobFor("sfp_regime", scope)
-  );
-}
-
-function getLevelBreakRegimeModelStatusFull(scope = "paper") {
-  return modelStatusWithTraining(
-    () => getLevelBreakRegimeModelStatus(normalizeAiModelScope(scope)),
-    aiTrainJobFor("level_break_regime", scope)
-  );
-}
-
-function getLevelBreakSignalModelStatusFull(scope = "paper") {
-  return modelStatusWithTraining(
-    () => getLevelBreakSignalModelStatus(normalizeAiModelScope(scope)),
-    aiTrainJobFor("level_break_signal", scope)
   );
 }
 
@@ -765,50 +717,6 @@ function importSfpRegimeModelFromBody(body = {}) {
   };
 }
 
-function importLevelBreakRegimeModelFromBody(body = {}) {
-  const scope = normalizeAiModelScope(body.scope);
-  if (!body.model || typeof body.model !== "object") {
-    throw new Error("model object required");
-  }
-  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
-  const model = saveLevelBreakRegimeModel(
-    {
-      ...modelPayload,
-      source: modelPayload.source ?? `import:local:${scope}`,
-      trainedAt: modelPayload.trainedAt ?? Date.now(),
-    },
-    scope
-  );
-  reloadLevelBreakRegimeModel(scope);
-  return {
-    scope,
-    status: getLevelBreakRegimeModelStatusFull(scope),
-    featureCount: model.featureNames?.length ?? null,
-  };
-}
-
-function importLevelBreakSignalModelFromBody(body = {}) {
-  const scope = normalizeAiModelScope(body.scope);
-  if (!body.model || typeof body.model !== "object") {
-    throw new Error("model object required");
-  }
-  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
-  const model = saveLevelBreakSignalModel(
-    {
-      ...modelPayload,
-      source: modelPayload.source ?? `import:local:${scope}`,
-      trainedAt: modelPayload.trainedAt ?? Date.now(),
-    },
-    scope
-  );
-  reloadLevelBreakSignalModel(scope);
-  return {
-    scope,
-    status: getLevelBreakSignalModelStatusFull(scope),
-    featureCount: model.featureNames?.length ?? null,
-  };
-}
-
 function importPullbackRegimeModelFromBody(body = {}) {
   const scope = normalizeAiModelScope(body.scope);
   if (!body.model || typeof body.model !== "object") {
@@ -950,158 +858,6 @@ function startAiExitLevelsTraining(body = {}) {
   return { scope, trades: trades.length, training: true };
 }
 
-function collectLevelBreakRegimeTrainingTrades(source = "auto", scope = "paper") {
-  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
-    (list ?? []).filter(
-      (t) => t.signalKind === "level_break" || t.signalKind === "level_break_bear"
-    )
-  );
-}
-
-function startLevelBreakRegimeTraining(body = {}) {
-  const scope = normalizeAiModelScope(body.scope);
-  const job = aiTrainJobFor("level_break_regime", scope);
-  if (job.running) {
-    throw new Error("Level-break regime model training already running");
-  }
-  const trades = collectLevelBreakRegimeTrainingTrades(body.source, scope);
-  if (!trades.length) {
-    const hint =
-      scope === "live"
-        ? "run train bot with level-break signals enabled (live fills merged when available)"
-        : "run train bot with level-break signals enabled";
-    throw new Error(`No level-break closed trades for training — ${hint}`);
-  }
-
-  job.running = true;
-  job.error = null;
-  job.result = null;
-  job.progress = {
-    phase: "starting",
-    done: 0,
-    total: trades.length,
-    message: `Preparing ${trades.length} level-break trades…`,
-  };
-
-  void (async () => {
-    const cfg =
-      scope === "live"
-        ? (await liveBot?.getPublicState?.())?.config ?? {}
-        : paperBot.getPublicState().config;
-    try {
-      await trainLevelBreakRegimeFromTrades(trades, fetchBarsForSfpRegimeTraining, {
-        ...cfg,
-        modelScope: scope,
-        source: `trained:${scope}:${body.source ?? "auto"}`,
-        onProgress: (p) => {
-          job.progress = p;
-        },
-      });
-      reloadLevelBreakRegimeModel(scope);
-      job.result = {
-        tradesUsed: trades.length,
-        model: getLevelBreakRegimeModelStatus(scope),
-      };
-      job.progress = {
-        phase: "done",
-        done: trades.length,
-        total: trades.length,
-        message: "Training complete",
-      };
-    } catch (e) {
-      job.error = e.message || String(e);
-      console.error(
-        `Level-break regime model training failed (${scope}): ${job.error}`
-      );
-    } finally {
-      job.running = false;
-    }
-  })();
-
-  return { ok: true, started: true, trades: trades.length, scope };
-}
-
-function trainLevelBreakRegimeModelFromHistory(body = {}) {
-  return startLevelBreakRegimeTraining(body);
-}
-
-function collectLevelBreakSignalTrainingTrades(source = "auto", scope = "paper") {
-  return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
-    (list ?? []).filter(
-      (t) => t.signalKind === "level_break" || t.signalKind === "level_break_bear"
-    )
-  );
-}
-
-function startLevelBreakSignalTraining(body = {}) {
-  const scope = normalizeAiModelScope(body.scope);
-  const job = aiTrainJobFor("level_break_signal", scope);
-  if (job.running) {
-    throw new Error("Level-break signal model training already running");
-  }
-  const trades = collectLevelBreakSignalTrainingTrades(body.source, scope);
-  if (trades.length < 12) {
-    const hint =
-      scope === "live"
-        ? "run train bot with level-break signals enabled (live fills merged when available)"
-        : "run train bot with level-break signals enabled";
-    throw new Error(
-      `Need at least 12 level-break closed trades for training (got ${trades.length}) — ${hint}`
-    );
-  }
-
-  job.running = true;
-  job.error = null;
-  job.result = null;
-  job.progress = {
-    phase: "starting",
-    done: 0,
-    total: trades.length,
-    message: `Preparing ${trades.length} level-break trades…`,
-  };
-
-  void (async () => {
-    const cfg =
-      scope === "live"
-        ? (await liveBot?.getPublicState?.())?.config ?? {}
-        : paperBot.getPublicState().config;
-    try {
-      await trainLevelBreakSignalFromTrades(trades, fetchBarsForSfpRegimeTraining, {
-        ...cfg,
-        modelScope: scope,
-        source: `trained:${scope}:${body.source ?? "auto"}`,
-        onProgress: (p) => {
-          job.progress = p;
-        },
-      });
-      reloadLevelBreakSignalModel(scope);
-      job.result = {
-        tradesUsed: trades.length,
-        model: getLevelBreakSignalModelStatus(scope),
-      };
-      job.progress = {
-        phase: "done",
-        done: trades.length,
-        total: trades.length,
-        message: "Training complete",
-      };
-    } catch (e) {
-      job.error = e.message || String(e);
-      console.error(
-        `Level-break signal model training failed (${scope}): ${job.error}`
-      );
-    } finally {
-      job.running = false;
-    }
-  })();
-
-  return { ok: true, started: true, trades: trades.length, scope };
-}
-
-function trainLevelBreakSignalModelFromHistory(body = {}) {
-  return startLevelBreakSignalTraining(body);
-}
-
 function collectPullbackTrainingTrades(source = "auto", scope = "paper") {
   return collectAiTrainingTrades(source, scope, aiTrainingTradeDeps(), (list) =>
     (list ?? []).filter(
@@ -1230,38 +986,6 @@ function trainPullbackSignalModelFromHistory(body = {}) {
   return startPullbackSignalTraining(body);
 }
 
-function refreshLevelBreakRegimeForSymbol(sym, historyBuffers) {
-  if (!levelBreakRegimeMonitor || !paperBot) return;
-  const cfg = paperBot.getPublicState().config;
-  if (!cfg.aiLevelBreakRegimeEnabled) return;
-  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
-  if (bars.length < 30) return;
-  levelBreakRegimeMonitor.refreshSymbol(sym, bars, cfg);
-}
-
-function refreshLiveLevelBreakRegimeForSymbol(sym, historyBuffers) {
-  if (!liveLevelBreakRegimeMonitor || !liveBot) return;
-  const cfg = liveBot.getConfig?.() ?? {};
-  if (!cfg?.aiLevelBreakRegimeEnabled) return;
-  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
-  if (bars.length < 30) return;
-  liveLevelBreakRegimeMonitor.refreshSymbol(sym, bars, cfg);
-}
-
-function getLevelBreakRegimeMonitorSnapshot() {
-  if (!levelBreakRegimeMonitor || !paperBot) {
-    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
-  }
-  return levelBreakRegimeMonitor.getSnapshot(paperBot.getPublicState().config);
-}
-
-function getLiveLevelBreakRegimeMonitorSnapshot() {
-  if (!liveLevelBreakRegimeMonitor || !liveBot) {
-    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
-  }
-  return liveLevelBreakRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
-}
-
 function refreshPullbackRegimeForSymbol(sym, historyBuffers) {
   if (!pullbackRegimeMonitor || !paperBot) return;
   const cfg = paperBot.getPublicState().config;
@@ -1335,8 +1059,6 @@ function getLiveAiReport() {
     earlyExitStatus: getEarlyExitModelStatusFull("live"),
     sfpRegimeStatus: getSfpRegimeModelStatusFull("live"),
     sfpRegimeMonitor: getLiveSfpRegimeMonitorSnapshot(),
-    levelBreakRegimeStatus: getLevelBreakRegimeModelStatusFull("live"),
-    levelBreakRegimeMonitor: getLiveLevelBreakRegimeMonitorSnapshot(),
     pullbackRegimeStatus: getPullbackRegimeModelStatusFull("live"),
     pullbackRegimeMonitor: getLivePullbackRegimeMonitorSnapshot(),
     exitLevelsStatus: getAiExitLevelsModelStatusFull("live"),
@@ -1398,8 +1120,6 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
   if (barClosed && klineSymbol) {
     refreshSfpRegimeForSymbol(klineSymbol, historyBuffers);
     refreshLiveSfpRegimeForSymbol(klineSymbol, historyBuffers);
-    refreshLevelBreakRegimeForSymbol(klineSymbol, historyBuffers);
-    refreshLiveLevelBreakRegimeForSymbol(klineSymbol, historyBuffers);
     refreshPullbackRegimeForSymbol(klineSymbol, historyBuffers);
     refreshLivePullbackRegimeForSymbol(klineSymbol, historyBuffers);
   }
@@ -2215,98 +1935,6 @@ function applyPullbackBearSignal(sym, pb, qv, pbBearActive, pbBearHistory, lastP
   lastPbBear.set(sym, pass);
 }
 
-function applyLevelBreakSignal(
-  sym,
-  analysis,
-  qv,
-  levelBreakActive,
-  levelBreakHistory,
-  lastLevelBreak
-) {
-  const pass = Boolean(analysis?.passes);
-  const metrics = analysis?.metrics;
-  const prev = lastLevelBreak.get(sym) ?? false;
-  const qvRounded = Math.round(qv);
-
-  if (pass && metrics) {
-    const existing = levelBreakHistory.get(sym);
-    const triggeredAt = !prev
-      ? Date.now()
-      : (existing?.triggeredAt ??
-        levelBreakActive.get(sym)?.triggeredAt ??
-        Date.now());
-    const row = {
-      ...metrics,
-      signalKind: "level_break",
-      signalStatus: "active",
-      quoteVol24h: qvRounded,
-      triggeredAt,
-      ended: false,
-    };
-    levelBreakActive.set(sym, row);
-    levelBreakHistory.set(sym, row);
-    if (!prev) {
-      const detail = `level ${metrics.levelPrice} · ${metrics.levelTouches} touches · break ${metrics.close}`;
-      dashboard?.pushEvent("NEW_LEVEL_BREAK", sym, detail);
-      paperBot?.onLevelBreakSignal(sym, metrics);
-    }
-  } else if (prev) {
-    markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", metrics);
-    dashboard?.pushEvent("END_LEVEL_BREAK", sym);
-  }
-
-  lastLevelBreak.set(sym, pass);
-}
-
-function applyLevelBreakBearSignal(
-  sym,
-  analysis,
-  qv,
-  levelBreakBearActive,
-  levelBreakBearHistory,
-  lastLevelBreakBear
-) {
-  const pass = Boolean(analysis?.passes);
-  const metrics = analysis?.metrics;
-  const prev = lastLevelBreakBear.get(sym) ?? false;
-  const qvRounded = Math.round(qv);
-
-  if (pass && metrics) {
-    const existing = levelBreakBearHistory.get(sym);
-    const triggeredAt = !prev
-      ? Date.now()
-      : (existing?.triggeredAt ??
-        levelBreakBearActive.get(sym)?.triggeredAt ??
-        Date.now());
-    const row = {
-      ...metrics,
-      signalKind: "level_break_bear",
-      signalStatus: "active",
-      quoteVol24h: qvRounded,
-      triggeredAt,
-      ended: false,
-    };
-    levelBreakBearActive.set(sym, row);
-    levelBreakBearHistory.set(sym, row);
-    if (!prev) {
-      const detail = `level ${metrics.levelPrice} · ${metrics.levelTouches} touches · break ${metrics.close}`;
-      dashboard?.pushEvent("NEW_LEVEL_BREAK_BEAR", sym, detail);
-      paperBot?.onLevelBreakBearSignal(sym, metrics);
-    }
-  } else if (prev) {
-    markKindSignalEnded(
-      sym,
-      levelBreakBearActive,
-      levelBreakBearHistory,
-      "level_break_bear",
-      metrics
-    );
-    dashboard?.pushEvent("END_LEVEL_BREAK_BEAR", sym);
-  }
-
-  lastLevelBreakBear.set(sym, pass);
-}
-
 function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
   const {
     sfpActive,
@@ -2317,16 +1945,10 @@ function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
     pbHistory,
     pbBearActive,
     pbBearHistory,
-    levelBreakActive,
-    levelBreakHistory,
-    levelBreakBearActive,
-    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
-    lastLevelBreak,
-    lastLevelBreakBear,
   } = maps;
   const signalBars = evalSignalBars(sym, signalBuffers);
   const priceBars = evalBars(sym, priceBuffers);
@@ -2339,31 +1961,13 @@ function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
   const pbBear = signalBars
     ? fastMoverPullbackBearMetrics(signalBars, cfg, fmOpts, priceBars)
     : null;
-  const levelBreak = signalBars ? analyzeLevelBreakUp(signalBars, cfg) : null;
-  const levelBreakBear = signalBars ? analyzeLevelBreakDown(signalBars, cfg) : null;
 
   applySfpSignal(sym, sfp, qv, sfpActive, sfpHistory, lastSfp);
   applySfpBearSignal(sym, sfpBear, qv, sfpBearActive, sfpBearHistory, lastSfpBear);
   applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
   applyPullbackBearSignal(sym, pbBear, qv, pbBearActive, pbBearHistory, lastPbBear);
-  applyLevelBreakSignal(
-    sym,
-    levelBreak,
-    qv,
-    levelBreakActive,
-    levelBreakHistory,
-    lastLevelBreak
-  );
-  applyLevelBreakBearSignal(
-    sym,
-    levelBreakBear,
-    qv,
-    levelBreakBearActive,
-    levelBreakBearHistory,
-    lastLevelBreakBear
-  );
 
-  return { sfp, sfpBear, pb, pbBear, levelBreak, levelBreakBear };
+  return { sfp, sfpBear, pb, pbBear };
 }
 
 function reevaluateAllSymbols(
@@ -2382,16 +1986,10 @@ function reevaluateAllSymbols(
     pbHistory,
     pbBearActive,
     pbBearHistory,
-    levelBreakActive,
-    levelBreakHistory,
-    levelBreakBearActive,
-    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
-    lastLevelBreak,
-    lastLevelBreakBear,
   } = maps;
 
   for (const sym of symbols) {
@@ -2409,24 +2007,10 @@ function reevaluateAllSymbols(
       if (lastPbBear.get(sym)) {
         markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", null);
       }
-      if (lastLevelBreak.get(sym)) {
-        markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
-      }
-      if (lastLevelBreakBear.get(sym)) {
-        markKindSignalEnded(
-          sym,
-          levelBreakBearActive,
-          levelBreakBearHistory,
-          "level_break_bear",
-          null
-        );
-      }
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
       lastPbBear.set(sym, false);
-      lastLevelBreak.set(sym, false);
-      lastLevelBreakBear.set(sym, false);
       continue;
     }
 
@@ -2453,16 +2037,10 @@ function createWsShards(
     pbHistory,
     pbBearActive,
     pbBearHistory,
-    levelBreakActive,
-    levelBreakHistory,
-    levelBreakBearActive,
-    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
-    lastLevelBreak,
-    lastLevelBreakBear,
   } = maps;
   const streamSuffix = `@kline_${PRIMARY_INTERVAL}`;
   const batches = chunk(
@@ -2489,34 +2067,18 @@ function createWsShards(
       if (lastPbBear.get(sym)) {
         markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", null);
       }
-      if (lastLevelBreak.get(sym)) {
-        markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
-      }
-      if (lastLevelBreakBear.get(sym)) {
-        markKindSignalEnded(
-          sym,
-          levelBreakBearActive,
-          levelBreakBearHistory,
-          "level_break_bear",
-          null
-        );
-      }
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
       lastPbBear.set(sym, false);
-      lastLevelBreak.set(sym, false);
-      lastLevelBreakBear.set(sym, false);
       return;
     }
 
     const prevSfp = lastSfp.get(sym) ?? false;
     const prevSfpBear = lastSfpBear.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
-    const prevLevelBreak = lastLevelBreak.get(sym) ?? false;
-    const prevLevelBreakBear = lastLevelBreakBear.get(sym) ?? false;
 
-    const { sfp, sfpBear, pb, levelBreak, levelBreakBear } = evaluateSymbolSignals(
+    const { sfp, sfpBear, pb } = evaluateSymbolSignals(
       sym,
       signalBuffers,
       historyBuffers,
@@ -2527,14 +2089,10 @@ function createWsShards(
     const sfpPass = Boolean(sfp?.passes);
     const sfpBearPass = Boolean(sfpBear?.passes);
     const pbPass = Boolean(pb?.passes);
-    const lbPass = Boolean(levelBreak?.passes);
-    const lbBearPass = Boolean(levelBreakBear?.passes);
     if (
       sfpPass !== prevSfp ||
       sfpBearPass !== prevSfpBear ||
-      pbPass !== prevPb ||
-      lbPass !== prevLevelBreak ||
-      lbBearPass !== prevLevelBreakBear
+      pbPass !== prevPb
     ) {
       printHits(maps, true);
     }
@@ -2672,16 +2230,10 @@ function createSignalWsShards(
     pbHistory,
     pbBearActive,
     pbBearHistory,
-    levelBreakActive,
-    levelBreakHistory,
-    levelBreakBearActive,
-    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
-    lastLevelBreak,
-    lastLevelBreakBear,
   } = maps;
   const streamSuffix = `@kline_${cfg.interval}`;
   const batches = chunk(
@@ -2705,34 +2257,18 @@ function createSignalWsShards(
       if (lastPbBear.get(sym)) {
         markKindSignalEnded(sym, pbBearActive, pbBearHistory, "pullback_bear", null);
       }
-      if (lastLevelBreak.get(sym)) {
-        markKindSignalEnded(sym, levelBreakActive, levelBreakHistory, "level_break", null);
-      }
-      if (lastLevelBreakBear.get(sym)) {
-        markKindSignalEnded(
-          sym,
-          levelBreakBearActive,
-          levelBreakBearHistory,
-          "level_break_bear",
-          null
-        );
-      }
       lastSfp.set(sym, false);
       lastSfpBear.set(sym, false);
       lastPb.set(sym, false);
       lastPbBear.set(sym, false);
-      lastLevelBreak.set(sym, false);
-      lastLevelBreakBear.set(sym, false);
       return;
     }
 
     const prevSfp = lastSfp.get(sym) ?? false;
     const prevSfpBear = lastSfpBear.get(sym) ?? false;
     const prevPb = lastPb.get(sym) ?? false;
-    const prevLevelBreak = lastLevelBreak.get(sym) ?? false;
-    const prevLevelBreakBear = lastLevelBreakBear.get(sym) ?? false;
 
-    const { sfp, sfpBear, pb, levelBreak, levelBreakBear } = evaluateSymbolSignals(
+    const { sfp, sfpBear, pb } = evaluateSymbolSignals(
       sym,
       signalBuffers,
       historyBuffers,
@@ -2743,14 +2279,10 @@ function createSignalWsShards(
     const sfpPass = Boolean(sfp?.passes);
     const sfpBearPass = Boolean(sfpBear?.passes);
     const pbPass = Boolean(pb?.passes);
-    const lbPass = Boolean(levelBreak?.passes);
-    const lbBearPass = Boolean(levelBreakBear?.passes);
     if (
       sfpPass !== prevSfp ||
       sfpBearPass !== prevSfpBear ||
-      pbPass !== prevPb ||
-      lbPass !== prevLevelBreak ||
-      lbBearPass !== prevLevelBreakBear
+      pbPass !== prevPb
     ) {
       printHits(maps, true);
     }
@@ -3187,16 +2719,10 @@ async function main() {
   const pbHistory = new Map();
   const pbBearActive = new Map();
   const pbBearHistory = new Map();
-  const levelBreakActive = new Map();
-  const levelBreakHistory = new Map();
-  const levelBreakBearActive = new Map();
-  const levelBreakBearHistory = new Map();
   const lastSfp = new Map();
   const lastSfpBear = new Map();
   const lastPb = new Map();
   const lastPbBear = new Map();
-  const lastLevelBreak = new Map();
-  const lastLevelBreakBear = new Map();
 
   const signalMaps = () => ({
     sfpActive,
@@ -3207,16 +2733,10 @@ async function main() {
     pbHistory,
     pbBearActive,
     pbBearHistory,
-    levelBreakActive,
-    levelBreakHistory,
-    levelBreakBearActive,
-    levelBreakBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
-    lastLevelBreak,
-    lastLevelBreakBear,
   });
 
   let symbols = [];
@@ -3658,8 +3178,6 @@ async function main() {
           sfpActive: sfpActive.size,
           sfpBearActive: sfpBearActive.size,
           pullbackActive: pbActive.size,
-          levelBreakActive: levelBreakActive.size,
-          levelBreakBearActive: levelBreakBearActive.size,
         },
         config: {
           sfpLookbackBars: cfg.sfpLookbackBars,
@@ -3669,13 +3187,6 @@ async function main() {
           pullbackTouchLookback: cfg.pullbackTouchLookback,
           pullbackMaxDistancePct: cfg.pullbackMaxDistancePct,
           pullbackMaxAboveMaPct: cfg.pullbackMaxAboveMaPct,
-          levelBreakPivotBars: cfg.levelBreakPivotBars,
-          levelBreakLookbackBars: cfg.levelBreakLookbackBars,
-          levelBreakMinTouches: cfg.levelBreakMinTouches,
-          levelBreakTouchPct: cfg.levelBreakTouchPct,
-          levelBreakMinPct: cfg.levelBreakMinPct,
-          levelBreakApproachPct: cfg.levelBreakApproachPct,
-          levelBreakApproachBars: cfg.levelBreakApproachBars,
         },
         live: {
           sfp: [...sfpActive.entries()].map(([symbol, row]) => ({
@@ -3850,19 +3361,11 @@ async function main() {
 
   ensureAllDefaultModelsOnDisk();
   ensureAllSfpRegimeModelsOnDisk();
-  ensureAllLevelBreakRegimeModelsOnDisk();
-  ensureAllLevelBreakSignalModelsOnDisk();
   ensureAllPullbackRegimeModelsOnDisk();
   ensureAllPullbackSignalModelsOnDisk();
   ensureAllAiExitLevelsModelsOnDisk();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
-    getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
-    modelScope: "paper",
-    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
-  });
-
-  levelBreakRegimeMonitor = createLevelBreakRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
     modelScope: "paper",
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
@@ -3881,7 +3384,6 @@ async function main() {
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
     sfpRegimeMonitor,
-    levelBreakRegimeMonitor,
     pullbackRegimeMonitor,
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
@@ -3894,12 +3396,6 @@ async function main() {
   futuresTrader = createFuturesTrader({ kv });
 
   liveSfpRegimeMonitor = createSfpRegimeMonitor({
-    getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
-    modelScope: "live",
-    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
-  });
-
-  liveLevelBreakRegimeMonitor = createLevelBreakRegimeMonitor({
     getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
     modelScope: "live",
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
@@ -3919,7 +3415,6 @@ async function main() {
       telegram?.onExitOrdersFailed?.(pos, detail),
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
     sfpRegimeMonitor: liveSfpRegimeMonitor,
-    levelBreakRegimeMonitor: liveLevelBreakRegimeMonitor,
     pullbackRegimeMonitor: livePullbackRegimeMonitor,
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
@@ -4175,12 +3670,6 @@ async function main() {
             : getSfpRegimeMonitorSnapshot(),
         trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
         importSfpRegimeModel: (body) => importSfpRegimeModelFromBody(body),
-        getLevelBreakRegimeModelStatus: (scope) =>
-          getLevelBreakRegimeModelStatusFull(scope),
-        getLevelBreakRegimeModelData: (scope) =>
-          getLevelBreakRegimeModel(normalizeAiModelScope(scope)),
-        importLevelBreakRegimeModel: (body) =>
-          importLevelBreakRegimeModelFromBody(body),
         getAiExitLevelsModelStatus: (scope) =>
           getAiExitLevelsModelStatusFull(scope),
         getAiExitLevelsModelData: (scope) =>
@@ -4188,20 +3677,6 @@ async function main() {
         importAiExitLevelsModel: (body) =>
           importAiExitLevelsModelFromBody(body),
         trainAiExitLevelsModel: (body) => startAiExitLevelsTraining(body),
-        getLevelBreakRegimeMonitor: (scope) =>
-          normalizeAiModelScope(scope) === "live"
-            ? getLiveLevelBreakRegimeMonitorSnapshot()
-            : getLevelBreakRegimeMonitorSnapshot(),
-        trainLevelBreakRegimeModel: (body) =>
-          trainLevelBreakRegimeModelFromHistory(body),
-        getLevelBreakSignalModelStatus: (scope) =>
-          getLevelBreakSignalModelStatusFull(scope),
-        getLevelBreakSignalModelData: (scope) =>
-          getLevelBreakSignalModel(normalizeAiModelScope(scope)),
-        importLevelBreakSignalModel: (body) =>
-          importLevelBreakSignalModelFromBody(body),
-        trainLevelBreakSignalModel: (body) =>
-          trainLevelBreakSignalModelFromHistory(body),
         getPullbackRegimeModelStatus: (scope) =>
           getPullbackRegimeModelStatusFull(scope),
         getPullbackRegimeModelData: (scope) =>
@@ -4581,18 +4056,6 @@ async function main() {
       );
     }
     if (
-      levelBreakRegimeMonitor &&
-      paperBot?.getPublicState?.().config?.aiLevelBreakRegimeEnabled
-    ) {
-      const syms = [...historyBuffers.keys()];
-      levelBreakRegimeMonitor.refreshBatch(
-        syms,
-        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
-        paperBot.getPublicState().config,
-        50
-      );
-    }
-    if (
       pullbackRegimeMonitor &&
       paperBot?.getPublicState?.().config?.aiPullbackRegimeEnabled
     ) {
@@ -4607,18 +4070,6 @@ async function main() {
     if (liveSfpRegimeMonitor && liveBot?.getConfig?.()?.aiSfpRegimeEnabled) {
       const syms = [...historyBuffers.keys()];
       liveSfpRegimeMonitor.refreshBatch(
-        syms,
-        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
-        liveBot.getConfig(),
-        50
-      );
-    }
-    if (
-      liveLevelBreakRegimeMonitor &&
-      liveBot?.getConfig?.()?.aiLevelBreakRegimeEnabled
-    ) {
-      const syms = [...historyBuffers.keys()];
-      liveLevelBreakRegimeMonitor.refreshBatch(
         syms,
         (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
         liveBot.getConfig(),
