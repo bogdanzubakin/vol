@@ -61,6 +61,7 @@ const {
   getModelStatus: getSfpRegimeModelStatus,
   trainFromTrades: trainSfpRegimeFromTrades,
   reloadModel: reloadSfpRegimeModel,
+  saveModel: saveSfpRegimeModel,
 } = require("./lib/sfp-regime-model");
 const { createSfpRegimeMonitor } = require("./lib/sfp-regime-monitor");
 const {
@@ -661,6 +662,28 @@ function startSfpRegimeTraining(body = {}) {
 
 function trainSfpRegimeModelFromHistory(body = {}) {
   return startSfpRegimeTraining(body);
+}
+
+function importSfpRegimeModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = saveSfpRegimeModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadSfpRegimeModel(scope);
+  return {
+    scope,
+    status: getSfpRegimeModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
 }
 
 function collectLevelBreakRegimeTrainingTrades(source = "auto", scope = "paper") {
@@ -3552,6 +3575,7 @@ async function main() {
             ? getLiveSfpRegimeMonitorSnapshot()
             : getSfpRegimeMonitorSnapshot(),
         trainSfpRegimeModel: (body) => trainSfpRegimeModelFromHistory(body),
+        importSfpRegimeModel: (body) => importSfpRegimeModelFromBody(body),
         getLevelBreakRegimeModelStatus: (scope) =>
           getLevelBreakRegimeModelStatusFull(scope),
         getLevelBreakRegimeModelData: (scope) =>
