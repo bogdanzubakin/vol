@@ -52,6 +52,7 @@ const {
   getModelStatus,
   trainFromTrades,
   reloadModel,
+  saveModel: saveEarlyExitModel,
 } = require("./lib/early-exit-model");
 const { normalizeAiModelScope } = require("./lib/ai-model-scope");
 const { collectAiTrainingTrades } = require("./lib/ai-training-trades");
@@ -70,6 +71,7 @@ const {
   getModelStatus: getLevelBreakRegimeModelStatus,
   trainFromTrades: trainLevelBreakRegimeFromTrades,
   reloadModel: reloadLevelBreakRegimeModel,
+  saveModel: saveLevelBreakRegimeModel,
 } = require("./lib/level-break-regime-model");
 const { createLevelBreakRegimeMonitor } = require("./lib/level-break-regime-monitor");
 const { BTC_SYMBOL } = require("./lib/btc-regime-context");
@@ -682,6 +684,50 @@ function importSfpRegimeModelFromBody(body = {}) {
   return {
     scope,
     status: getSfpRegimeModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
+function importLevelBreakRegimeModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = saveLevelBreakRegimeModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadLevelBreakRegimeModel(scope);
+  return {
+    scope,
+    status: getLevelBreakRegimeModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
+function importEarlyExitModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = saveEarlyExitModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadModel(scope);
+  return {
+    scope,
+    status: getEarlyExitModelStatusFull(scope),
     featureCount: model.featureNames?.length ?? null,
   };
 }
@@ -3565,6 +3611,7 @@ async function main() {
           getEarlyExitModelStatusFull(scope),
         getEarlyExitModelData: (scope) =>
           getEarlyExitModel(normalizeAiModelScope(scope)),
+        importEarlyExitModel: (body) => importEarlyExitModelFromBody(body),
         trainEarlyExitModel: (body) => trainEarlyExitModelFromHistory(body),
         getSfpRegimeModelStatus: (scope) =>
           getSfpRegimeModelStatusFull(scope),
@@ -3580,6 +3627,8 @@ async function main() {
           getLevelBreakRegimeModelStatusFull(scope),
         getLevelBreakRegimeModelData: (scope) =>
           getLevelBreakRegimeModel(normalizeAiModelScope(scope)),
+        importLevelBreakRegimeModel: (body) =>
+          importLevelBreakRegimeModelFromBody(body),
         getLevelBreakRegimeMonitor: (scope) =>
           normalizeAiModelScope(scope) === "live"
             ? getLiveLevelBreakRegimeMonitorSnapshot()
