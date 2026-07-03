@@ -20,17 +20,21 @@ const KLINE_MAX = 1500;
 
 function parseArgs(argv) {
   let toDays = 30;
-  let restGapMs = 300;
+  let restGapMs = 1200;
+  let batchPauseMs = 200;
   let dryRun = false;
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--to-days" && argv[i + 1]) toDays = Number(argv[++i]);
     else if (argv[i] === "--rest-gap-ms" && argv[i + 1]) {
       restGapMs = Number(argv[++i]);
+    } else if (argv[i] === "--batch-pause-ms" && argv[i + 1]) {
+      batchPauseMs = Number(argv[++i]);
     } else if (argv[i] === "--dry-run") dryRun = true;
   }
   return {
     toDays: Math.max(1, Math.min(60, Math.round(toDays) || 30)),
-    restGapMs: Math.max(50, restGapMs),
+    restGapMs: Math.max(200, restGapMs),
+    batchPauseMs: Math.max(0, batchPauseMs),
     dryRun,
   };
 }
@@ -47,21 +51,29 @@ function parseKlines(rows) {
   }));
 }
 
-function createFetcher(interval, restQueue) {
+function createFetcher(interval, restQueue, batchPauseMs) {
+  let throttleUntil = 0;
+
   async function fetchBatch(url, symbol, iv) {
     let attempt = 0;
     while (true) {
+      const now = Date.now();
+      if (throttleUntil > now) await sleep(throttleUntil - now);
+
       const res = await fetch(url);
       const text = await res.text();
       if (res.status === 429 || res.status === 418) {
         attempt++;
-        if (attempt > 8) throw new Error(`${symbol} ${iv} ${res.status}`);
-        const wait = Math.min(60_000, 2000 * 2 ** attempt);
+        if (attempt > 15) throw new Error(`${symbol} ${iv} ${res.status}`);
+        const wait = Math.min(120_000, 10_000 * attempt);
+        throttleUntil = Date.now() + wait;
+        restQueue.bumpGap?.(500);
         console.error(`[rate-limit] ${symbol} ${iv} ${res.status} — wait ${wait / 1000}s`);
         await sleep(wait);
         continue;
       }
       if (!res.ok) throw new Error(`${symbol} ${iv} ${res.status}`);
+      attempt = 0;
       return JSON.parse(text);
     }
   }
@@ -88,7 +100,7 @@ function createFetcher(interval, restQueue) {
       end = rows[0][0] - 1;
       remaining -= parsed.length;
       if (parsed.length < batch) break;
-      await sleep(20);
+      if (batchPauseMs > 0) await sleep(batchPauseMs);
     }
 
     return all.slice(-limit);
@@ -96,7 +108,7 @@ function createFetcher(interval, restQueue) {
 }
 
 async function main() {
-  const { toDays, restGapMs, dryRun } = parseArgs(process.argv);
+  const { toDays, restGapMs, batchPauseMs, dryRun } = parseArgs(process.argv);
   const manifest = loadManifest();
   const symbols = listCachedSymbols("signal");
   const fromDays = manifest?.days ?? 0;
@@ -127,6 +139,7 @@ async function main() {
   console.error(
     `Incremental fetch ~${addSignal} signal bars + ~${addMover} 1m bars per symbol (prepend only)`
   );
+  console.error(`REST gap ${restGapMs}ms · batch pause ${batchPauseMs}ms`);
 
   if (dryRun) {
     console.error("Dry run — no API calls.");
@@ -134,8 +147,8 @@ async function main() {
   }
 
   const restQueue = createRestQueue({ label: "extend-klines", gapMs: restGapMs });
-  const fetchSignalOlder = createFetcher(interval, restQueue);
-  const fetchMoverOlder = needs1m ? createFetcher("1m", restQueue) : null;
+  const fetchSignalOlder = createFetcher(interval, restQueue, batchPauseMs);
+  const fetchMoverOlder = needs1m ? createFetcher("1m", restQueue, batchPauseMs) : null;
 
   let lastSym = "";
   const started = Date.now();
