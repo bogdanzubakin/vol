@@ -14,6 +14,7 @@ public/results.json
 .env
 .env.*
 !.env.example
+scripts/.vol-railway-cookie
 
 # Logs
 *.log
