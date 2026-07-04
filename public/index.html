@@ -589,6 +589,25 @@
       padding: 12px 14px 14px;
       border-top: 1px solid var(--border);
     }
+    .settings-pane-root {
+      margin-bottom: 12px;
+    }
+    .settings-pane-root > summary {
+      font-size: 0.9rem;
+    }
+    .settings-pane-root-body {
+      padding: 8px 10px 10px;
+    }
+    .settings-pane-root-body > .settings-pane {
+      margin-bottom: 6px;
+    }
+    .settings-pane-root-body > .settings-pane:last-of-type {
+      margin-bottom: 0;
+    }
+    .settings-pane-root-body > .bot-settings-actions {
+      margin-top: 10px;
+      border-radius: 8px;
+    }
     .bot-settings-actions {
       margin-top: 4px;
       padding: 12px 14px;
@@ -1499,6 +1518,9 @@
         <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
       <form class="bot-settings-form" id="paperBotConfigForm">
+        <details class="settings-pane settings-pane-root" open>
+          <summary>Bot settings</summary>
+          <div class="settings-pane-body settings-pane-root-body">
         <details class="settings-pane">
           <summary>General</summary>
           <div class="settings-pane-body">
@@ -1976,6 +1998,8 @@
           <button type="button" class="btn secondary sm" id="paperBotReset">Reset account</button>
           <span class="config-msg" id="paperBotMsg"></span>
         </div>
+          </div>
+        </details>
       </form>
       <div class="paper-summary" id="paperBotSummary">
         <div><div class="stat-label">Deposit (free)</div><div class="stat-value" id="paperStatDeposit">—</div></div>
@@ -2066,6 +2090,9 @@
         <span class="config-msg" id="liveBotMsg"></span>
       </div>
       <form class="bot-settings-form" id="liveBotConfigForm">
+        <details class="settings-pane settings-pane-root" open>
+          <summary>Bot settings</summary>
+          <div class="settings-pane-body settings-pane-root-body">
         <details class="settings-pane">
           <summary>General</summary>
           <div class="settings-pane-body">
@@ -2447,6 +2474,8 @@
           <button type="button" class="btn secondary sm" id="liveBotRefresh">Refresh</button>
           <button type="button" class="btn secondary sm" id="liveBotResetHistory">Reset history</button>
         </div>
+          </div>
+        </details>
       </form>
       <div class="paper-summary" id="liveBotSummary">
         <div><div class="stat-label">Wallet USDT</div><div class="stat-value" id="liveStatWallet">—</div></div>
