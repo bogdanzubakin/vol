@@ -1998,7 +1998,7 @@
               <th class="sortable" data-paper-open-sort="symbol">Symbol <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="signalKind">Signal <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="entryPrice">Entry <span class="sort-mark"></span></th>
-              <th class="sortable" data-paper-open-sort="margin">Qty/Margin <span class="sort-mark"></span></th>
+              <th class="sortable" data-paper-open-sort="margin">Margin <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="stopLoss">SL <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="takeProfit">TP <span class="sort-mark"></span></th>
               <th class="sortable" data-paper-open-sort="unrealizedPnl">Unrealized <span class="sort-mark"></span></th>
@@ -2466,9 +2466,10 @@
               <th class="sortable" data-live-open-sort="symbol">Symbol <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="signalKind">Signal <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="entryPrice">Entry <span class="sort-mark"></span></th>
-              <th class="sortable" data-live-open-sort="quantity">Qty/Margin <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="margin">Margin <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="stopLoss">SL <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="takeProfit">TP <span class="sort-mark"></span></th>
+              <th class="sortable" data-live-open-sort="openDelaySec">Delay <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="unrealizedPnl">Unrealized <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="unrealizedPnlPct">Unrealized % <span class="sort-mark"></span></th>
               <th class="sortable" data-live-open-sort="durationSec">Duration <span class="sort-mark"></span></th>
@@ -2477,7 +2478,7 @@
             </tr>
           </thead>
           <tbody id="liveBotOpenBody">
-            <tr><td colspan="11" class="empty">No open positions</td></tr>
+            <tr><td colspan="12" class="empty">No open positions</td></tr>
           </tbody>
         </table>
       </div>
@@ -4116,6 +4117,49 @@
       return '<span class="status-tag muted">—</span>';
     }
 
+    function botIsShort(p) {
+      return (
+        p?.side === "SHORT" ||
+        p?.signalKind === "sfp_bear" ||
+        p?.signalKind === "pullback_bear"
+      );
+    }
+
+    function botPotentialPnl(p, exitPrice) {
+      const entry = p?.entryPrice;
+      const qty = p?.quantity;
+      if (!Number.isFinite(exitPrice) || !Number.isFinite(entry) || !Number.isFinite(qty)) {
+        return null;
+      }
+      return botIsShort(p) ? qty * (entry - exitPrice) : qty * (exitPrice - entry);
+    }
+
+    function fmtMarginLeverage(p) {
+      const m = p?.margin;
+      const lev = p?.leverage ?? 1;
+      if (!Number.isFinite(m)) return "—";
+      return `${fmtUsd(m)}${lev > 1 ? ` · ${lev}x` : ""}`;
+    }
+
+    function fmtExitLevelCell(price, pnl, pnlCls) {
+      if (!Number.isFinite(price)) return '<span class="time">—</span>';
+      const pnlLine =
+        pnl != null
+          ? `<div class="hint ${pnlCls}">${fmtUsd(pnl)}</div>`
+          : "";
+      return `<div>${fmt(price, 6)}</div>${pnlLine}`;
+    }
+
+    function fmtOpenDelaySec(p) {
+      const sec =
+        p?.openDelaySec ??
+        (p?.decidedAt && p?.exchangeOpenedAt
+          ? (p.exchangeOpenedAt - p.decidedAt) / 1000
+          : null);
+      if (sec == null || !Number.isFinite(sec)) return "—";
+      return `${sec.toFixed(1)}s`;
+    }
+
     function botUnrealizedPct(p) {
       if (p.unrealizedPnlPct != null) return p.unrealizedPnlPct;
       const base = p.margin ?? p.positionSizeUsdt;
@@ -4681,7 +4725,7 @@
     function renderBotOpenBody(bodyId, rows, sort, sortAttr, options = {}) {
       const openBody = document.getElementById(bodyId);
       updateBotSortHeaders(sortAttr, sort);
-      const colSpan = options.live ? 11 : 11;
+      const colSpan = options.live ? 12 : 11;
       if (!rows?.length) {
         openBody.innerHTML =
           `<tr class="empty-row"><td colspan="${colSpan}" class="empty">No open positions</td></tr>`;
@@ -4698,9 +4742,9 @@
             !options.live && p.addCount > 0
               ? `${fmt(p.initialEntryPrice, 6)} → ${fmt(p.entryPrice, 6)}`
               : fmt(p.entryPrice, 6);
-          const qtyMargin = options.live
-            ? fmt(p.quantity, 4)
-            : `${fmtUsd(p.margin)}${p.leverage > 1 ? ` · ${p.leverage}x` : ""}`;
+          const marginLabel = fmtMarginLeverage(p);
+          const slPnl = botPotentialPnl(p, p.stopLoss);
+          const tpPnl = botPotentialPnl(p, p.takeProfit);
           const previewBtn = p.id
             ? `<button type="button" class="btn secondary sm ${options.live ? "live-" : ""}open-snapshot-btn" data-position-id="${escapeHtml(p.id)}" data-symbol="${escapeHtml(p.symbol)}">Preview</button>`
             : "";
@@ -4712,13 +4756,17 @@
               ? `<button type="button" class="btn secondary sm live-forget-btn" data-symbol="${escapeHtml(p.symbol)}">Forget</button>`
               : "";
           const openMs = positionOpenMs(p);
+          const delayCell = options.live
+            ? `<td class="time" data-label="Delay">${fmtOpenDelaySec(p)}</td>`
+            : "";
           return `<tr class="data-row">
               <td class="sym-cell" data-label="Symbol">${symLink(p.symbol)}</td>
               <td data-label="Signal">${kind}</td>
               <td class="time" data-label="Entry">${entryLabel}</td>
-              <td data-label="Qty/Margin">${qtyMargin}</td>
-              <td class="bad" data-label="SL">${fmt(p.stopLoss, 6)}</td>
-              <td class="pass" data-label="TP">${fmt(p.takeProfit, 6)}</td>
+              <td data-label="Margin">${marginLabel}</td>
+              <td class="bad" data-label="SL">${fmtExitLevelCell(p.stopLoss, slPnl, "bad")}</td>
+              <td class="pass" data-label="TP">${fmtExitLevelCell(p.takeProfit, tpPnl, "pass")}</td>
+              ${delayCell}
               <td class="${unrCls}" data-label="Unrealized">${fmtUsd(p.unrealizedPnl)}</td>
               <td class="${unrPctCls}" data-label="Unrealized %">${unrPct == null ? "—" : `${fmt(unrPct, 2)}%`}</td>
               <td class="history-duration" data-label="Duration" data-opened-at-ms="${openMs ?? ""}">${escapeHtml(fmtLivePositionDuration(p))}</td>

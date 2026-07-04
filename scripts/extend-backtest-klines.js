@@ -5,6 +5,7 @@
  *
  *   node scripts/extend-backtest-klines.js --to-days 30
  *   node scripts/extend-backtest-klines.js --to-days 30 --dry-run
+ *   node scripts/extend-backtest-klines.js --to-days 30 --no-resume
  */
 
 const {
@@ -12,103 +13,55 @@ const {
   extendBacktestKlineCache,
   listCachedSymbols,
   loadManifest,
+  readSymbolBars,
+  symbolAtTarget,
 } = require("../lib/backtest-kline-cache");
-const { createRestQueue, sleep } = require("../lib/rest-queue");
-
-const REST_BASE = "https://fapi.binance.com";
-const KLINE_MAX = 1500;
+const { createOlderKlineFetcher } = require("../lib/binance-rest-fetch");
+const { createRestQueue } = require("../lib/rest-queue");
 
 function parseArgs(argv) {
   let toDays = 30;
-  let restGapMs = 1200;
-  let batchPauseMs = 200;
+  let restGapMs = 2500;
+  let batchPauseMs = 800;
+  let symbolPauseMs = 4000;
   let dryRun = false;
+  let resume = true;
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--to-days" && argv[i + 1]) toDays = Number(argv[++i]);
     else if (argv[i] === "--rest-gap-ms" && argv[i + 1]) {
       restGapMs = Number(argv[++i]);
     } else if (argv[i] === "--batch-pause-ms" && argv[i + 1]) {
       batchPauseMs = Number(argv[++i]);
+    } else if (argv[i] === "--symbol-pause-ms" && argv[i + 1]) {
+      symbolPauseMs = Number(argv[++i]);
     } else if (argv[i] === "--dry-run") dryRun = true;
+    else if (argv[i] === "--no-resume") resume = false;
+    else if (argv[i] === "--resume") resume = true;
   }
   return {
     toDays: Math.max(1, Math.min(60, Math.round(toDays) || 30)),
-    restGapMs: Math.max(200, restGapMs),
+    restGapMs: Math.max(500, restGapMs),
     batchPauseMs: Math.max(0, batchPauseMs),
+    symbolPauseMs: Math.max(0, symbolPauseMs),
     dryRun,
+    resume,
   };
 }
 
-function parseKlines(rows) {
-  return rows.map((r) => ({
-    openTime: r[0],
-    open: +r[1],
-    high: +r[2],
-    low: +r[3],
-    close: +r[4],
-    volume: +r[5],
-    closeTime: r[6],
-  }));
-}
-
-function createFetcher(interval, restQueue, batchPauseMs) {
-  let throttleUntil = 0;
-
-  async function fetchBatch(url, symbol, iv) {
-    let attempt = 0;
-    while (true) {
-      const now = Date.now();
-      if (throttleUntil > now) await sleep(throttleUntil - now);
-
-      const res = await fetch(url);
-      const text = await res.text();
-      if (res.status === 429 || res.status === 418) {
-        attempt++;
-        if (attempt > 15) throw new Error(`${symbol} ${iv} ${res.status}`);
-        const wait = Math.min(120_000, 10_000 * attempt);
-        throttleUntil = Date.now() + wait;
-        restQueue.bumpGap?.(500);
-        console.error(`[rate-limit] ${symbol} ${iv} ${res.status} — wait ${wait / 1000}s`);
-        await sleep(wait);
-        continue;
-      }
-      if (!res.ok) throw new Error(`${symbol} ${iv} ${res.status}`);
-      attempt = 0;
-      return JSON.parse(text);
-    }
+function onRateLimit(info) {
+  if (info.message?.includes("IP banned")) {
+    console.error(`[rate-limit] ${info.label} ${info.status} — ${info.message}`);
+    return;
   }
-
-  return async function fetchOlder(symbol, limit, endTime) {
-    let all = [];
-    let end = endTime;
-    let remaining = limit;
-
-    while (remaining > 0) {
-      const batch = Math.min(remaining, KLINE_MAX);
-      const params = {
-        symbol,
-        interval,
-        limit: String(batch),
-        endTime: String(end),
-      };
-      const url = new URL("/fapi/v1/klines", REST_BASE);
-      for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-      const rows = await restQueue.schedule(() => fetchBatch(url, symbol, interval));
-      if (!rows.length) break;
-      const parsed = parseKlines(rows);
-      all = [...parsed, ...all];
-      end = rows[0][0] - 1;
-      remaining -= parsed.length;
-      if (parsed.length < batch) break;
-      if (batchPauseMs > 0) await sleep(batchPauseMs);
-    }
-
-    return all.slice(-limit);
-  };
+  const waitSec = Math.ceil((info.waitMs ?? 0) / 1000);
+  console.error(
+    `[rate-limit] ${info.label} ${info.status ?? "network"} — wait ${waitSec}s (attempt ${info.attempt ?? "?"})`
+  );
 }
 
 async function main() {
-  const { toDays, restGapMs, batchPauseMs, dryRun } = parseArgs(process.argv);
+  const { toDays, restGapMs, batchPauseMs, symbolPauseMs, dryRun, resume } =
+    parseArgs(process.argv);
   const manifest = loadManifest();
   const symbols = listCachedSymbols("signal");
   const fromDays = manifest?.days ?? 0;
@@ -120,17 +73,24 @@ async function main() {
     process.exit(1);
   }
 
-  if (fromDays >= toDays) {
+  const signalBarCount = barsForDays(interval, toDays);
+  const moverBarCount = needs1m ? barsForDays("1m", toDays) : 0;
+  let alreadyDone = 0;
+  if (resume) {
+    for (const sym of symbols) {
+      if (symbolAtTarget(sym, signalBarCount, moverBarCount, needs1m)) alreadyDone++;
+    }
+  }
+
+  if (fromDays >= toDays && alreadyDone >= symbols.length) {
     console.error(
-      `Cache already covers ${fromDays}d (need ${toDays}d). Nothing to extend.`
+      `Cache already covers ${fromDays}d for all ${symbols.length} symbols (need ${toDays}d).`
     );
     process.exit(0);
   }
 
-  const signalBars = barsForDays(interval, toDays);
-  const moverBars = needs1m ? barsForDays("1m", toDays) : 0;
-  const addSignal = barsForDays(interval, toDays - fromDays);
-  const addMover = needs1m ? barsForDays("1m", toDays - fromDays) : 0;
+  const addSignal = barsForDays(interval, Math.max(0, toDays - fromDays));
+  const addMover = needs1m ? barsForDays("1m", Math.max(0, toDays - fromDays)) : 0;
 
   console.error(
     `Extend backtest cache: ${fromDays}d → ${toDays}d · ${symbols.length} symbols · ${interval}` +
@@ -139,7 +99,15 @@ async function main() {
   console.error(
     `Incremental fetch ~${addSignal} signal bars + ~${addMover} 1m bars per symbol (prepend only)`
   );
-  console.error(`REST gap ${restGapMs}ms · batch pause ${batchPauseMs}ms`);
+  console.error(
+    `REST gap ${restGapMs}ms · batch pause ${batchPauseMs}ms · symbol pause ${symbolPauseMs}ms` +
+      (resume ? ` · resume (${alreadyDone} already complete)` : "")
+  );
+  if (manifest?.extendCheckpoint) {
+    console.error(
+      `Previous run checkpoint: ${manifest.extendCheckpoint.done}/${manifest.extendCheckpoint.total} at ${manifest.extendCheckpoint.symbol}`
+    );
+  }
 
   if (dryRun) {
     console.error("Dry run — no API calls.");
@@ -147,10 +115,21 @@ async function main() {
   }
 
   const restQueue = createRestQueue({ label: "extend-klines", gapMs: restGapMs });
-  const fetchSignalOlder = createFetcher(interval, restQueue, batchPauseMs);
-  const fetchMoverOlder = needs1m ? createFetcher("1m", restQueue, batchPauseMs) : null;
+  const fetchSignalOlder = createOlderKlineFetcher({
+    interval,
+    restQueue,
+    batchPauseMs,
+    onRateLimit,
+  });
+  const fetchMoverOlder = needs1m
+    ? createOlderKlineFetcher({
+        interval: "1m",
+        restQueue,
+        batchPauseMs,
+        onRateLimit,
+      })
+    : null;
 
-  let lastSym = "";
   const started = Date.now();
   const stats = await extendBacktestKlineCache({
     targetDays: toDays,
@@ -159,30 +138,39 @@ async function main() {
     needs1m,
     fetchSignalOlder,
     fetchMoverOlder,
+    resume,
+    symbolPauseMs,
     onProgress: (p) => {
       if (p.error) {
         console.error(`[err] ${p.message}`);
         return;
       }
-      if (p.symbol && p.symbol !== lastSym) {
-        lastSym = p.symbol;
-        if (p.done % 25 === 0 || p.done + 1 >= symbols.length) {
-          console.error(`[extend] ${p.done + 1}/${symbols.length} · ${p.symbol}`);
+      if (p.resumed) {
+        if ((p.done + 1) % 50 === 0) {
+          console.error(`[resume] ${p.done + 1}/${p.total} skipped so far`);
         }
+        return;
       }
+      if (p.phase !== "done" || !p.symbol) return;
+      const sigLen = readSymbolBars("signal", p.symbol)?.length ?? 0;
+      const movLen = needs1m ? readSymbolBars("mover", p.symbol)?.length ?? 0 : 0;
+      const movPart = needs1m ? ` · 1m ${movLen}/${moverBarCount}` : "";
+      console.error(
+        `[extend] ${p.done}/${p.total} · ${p.symbol} · ${interval} ${sigLen}/${signalBarCount}${movPart}`
+      );
     },
   });
 
   const elapsed = Math.round((Date.now() - started) / 1000);
   console.error(
-    `\nDone in ${elapsed}s · signal extended ${stats.signalExtended} · skipped ${stats.signalSkipped}` +
+    `\nDone in ${elapsed}s · resumed ${stats.resumeSkipped} · signal extended ${stats.signalExtended} · skipped ${stats.signalSkipped}` +
       (needs1m
         ? ` · 1m extended ${stats.moverExtended} · skipped ${stats.moverSkipped}`
         : "") +
       ` · errors ${stats.errors}`
   );
   console.error(
-    `Manifest: ${toDays}d · ${signalBars}×${interval} · ${needs1m ? `${moverBars}×1m · ` : ""}persistent`
+    `Manifest: ${toDays}d · ${signalBarCount}×${interval} · ${needs1m ? `${moverBarCount}×1m · ` : ""}persistent`
   );
 }
 
