@@ -6,6 +6,9 @@
  *   node scripts/optimize-pullback-params.js --days 10 --quick
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");
@@ -140,7 +143,16 @@ function summarizeRun(result) {
   };
 }
 
-async function runBacktest({ label, botConfig, signalCfg, days, symbols, saveResult }) {
+async function runBacktest({
+  label,
+  botConfig,
+  signalCfg,
+  days,
+  symbols,
+  saveResult,
+  botPatch = {},
+  signalPatch = {},
+}) {
   const { fetchKlinesForSymbol, fetchKlines1mForSymbol } = createFetchers();
   log(`\n=== RUN: ${label} ===`);
   log(
@@ -171,7 +183,13 @@ async function runBacktest({ label, botConfig, signalCfg, days, symbols, saveRes
   log(
     `→ ${label}: PnL $${summary.pnl} · ${summary.trades} tr · PB ${summary.pbTrades} ($${summary.pbPnl}) · regime skips ${summary.pbRegimeSkips} · sig skips ${summary.pbSignalSkips}`
   );
-  return { label, days, ...summary };
+  return {
+    label,
+    days,
+    ...summary,
+    botPatch: { ...botPatch },
+    signalPatch: { ...signalPatch },
+  };
 }
 
 async function trainModels() {
@@ -254,6 +272,8 @@ async function main() {
       days: args.days,
       symbols,
       saveResult,
+      botPatch,
+      signalPatch,
     });
     store.runs = store.runs.filter((r) => r.label !== label);
     store.runs.push(row);

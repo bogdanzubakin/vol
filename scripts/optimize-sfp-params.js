@@ -7,6 +7,9 @@
  *   node scripts/optimize-sfp-params.js --export ... --phase baseline
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");

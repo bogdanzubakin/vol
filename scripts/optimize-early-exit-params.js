@@ -6,6 +6,9 @@
  *   node scripts/optimize-early-exit-params.js --days 10 --cache-only --quick
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");
@@ -42,7 +45,7 @@ function parseArgs(argv) {
     else if (argv[i] === "--quick") quick = true;
   }
   return {
-    days: Math.max(1, Math.min(21, Math.round(days) || 10)),
+    days: Math.max(1, Math.min(60, Math.round(days) || 10)),
     cacheOnly,
     quick,
   };

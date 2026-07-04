@@ -6,6 +6,9 @@
  *   node scripts/compare-sfp-regime-btc.js --days 10 --quick
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");
@@ -39,7 +42,7 @@ function parseArgs(argv) {
     if (argv[i] === "--days" && argv[i + 1]) days = Number(argv[++i]);
     else if (argv[i] === "--quick") quick = true;
   }
-  return { days: Math.max(1, Math.min(21, Math.round(days) || 10)), quick };
+  return { days: Math.max(1, Math.min(60, Math.round(days) || 10)), quick };
 }
 
 function loadBotConfig(overrides = {}) {

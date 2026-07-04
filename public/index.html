@@ -5082,6 +5082,49 @@
       });
     }
 
+    function formatAiModelSource(source) {
+      if (!source) return "Default bootstrap";
+      const labels = {
+        bootstrap: "Default bootstrap",
+        "train:cached-backtest": "30-day cache backtest",
+        "train:cached-backtest:live": "30-day cache (live copy)",
+        "train-best-eval": "Best-settings pipeline",
+        "sync:paper-train-best-eval": "Copied from paper",
+      };
+      if (labels[source]) return labels[source];
+      if (source.startsWith("train-best-eval:")) {
+        return `Best-settings train (${source.split(":").pop()})`;
+      }
+      if (source.startsWith("best-training:")) {
+        return `SFP compare (${source.split(":").pop()})`;
+      }
+      if (source.startsWith("compare:")) return "SFP BTC compare";
+      if (source.startsWith("optimize:")) return "Parameter optimize";
+      if (source.startsWith("import:")) return "Imported";
+      if (source.startsWith("train:")) {
+        return source.slice(6).replace(/:/g, " · ").replace(/-/g, " ");
+      }
+      return source.replace(/:/g, " · ");
+    }
+
+    function formatAiTrainedAt(trainedAt) {
+      if (trainedAt == null || trainedAt === "") return null;
+      if (typeof trainedAt === "string" && /^\d{4}-\d{2}-\d{2}/.test(trainedAt)) {
+        return trainedAt.replace("T", " ").replace("+03:00", " UTC+3");
+      }
+      const n = Number(trainedAt);
+      if (!Number.isFinite(n)) return String(trainedAt);
+      const d = new Date(n + 3 * 60 * 60 * 1000);
+      const pad = (x) => String(x).padStart(2, "0");
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC+3`;
+    }
+
+    function formatAiMaePct(mae) {
+      const n = Number(mae);
+      if (!Number.isFinite(n) || n < 0 || n > 50) return null;
+      return `±${n.toFixed(2)}%`;
+    }
+
     function formatAiTrainProgress(training) {
       if (!training) return null;
       const p = training.progress;
@@ -5162,7 +5205,7 @@
               : "";
         el.textContent = trainLine
           ? `Training: ${trainLine}`
-          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `${model.summary ?? `Model v${model.version ?? 2}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumeSfpRegimeTrainPollIfNeeded(model, "paper");
       } catch (e) {
         el.textContent = `Monitor: ${e.message}`;
@@ -5200,7 +5243,7 @@
               : "";
         el.textContent = trainLine
           ? `Training: ${trainLine}`
-          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `${model.summary ?? `Live v${model.version ?? 2}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumeSfpRegimeTrainPollIfNeeded(model, "live");
       } catch (e) {
         el.textContent = `Live monitor: ${e.message}`;
@@ -5244,7 +5287,7 @@
                 : "";
         el.textContent = trainLine
           ? `Training: ${trainLine}`
-          : `Model v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `${model.summary ?? `Model v${model.version ?? 2}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumePullbackRegimeTrainPollIfNeeded(model, "paper");
       } catch (e) {
         el.textContent = `Monitor: ${e.message}`;
@@ -5287,7 +5330,7 @@
                 : "";
         const text = trainLine
           ? `Training: ${trainLine}`
-          : `Live v${model.version ?? 2}: ${model.source ?? "—"}${acc}${bearAcc} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
+          : `${model.summary ?? `Live v${model.version ?? 2}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         for (const id of ids) {
           const el = document.getElementById(id);
           if (el) el.textContent = text;
@@ -5323,8 +5366,11 @@
         const bearAcc =
           rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
         el.textContent =
-          `Model v${data.version ?? 2}: ${data.source ?? "—"}${acc}${bearAcc}` +
-          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap");
+          data.summary ??
+          `Model v${data.version ?? 2}: ${formatAiModelSource(data.sourceLabel ?? data.source)}` +
+          (data.trainedAt ? ` · ${formatAiTrainedAt(data.trainedAt)}` : " · bootstrap") +
+          acc +
+          bearAcc;
         resumePullbackSignalTrainPollIfNeeded(data, "paper");
       } catch (e) {
         el.textContent = `Model: ${e.message}`;
@@ -5348,8 +5394,11 @@
           rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
         const text = trainLine
           ? `Training: ${trainLine}`
-          : `Live v${data.version ?? 2}: ${data.source ?? "—"}${acc}${bearAcc}` +
-            (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap");
+          : data.summary ??
+            `Live v${data.version ?? 2}: ${formatAiModelSource(data.sourceLabel ?? data.source)}` +
+            (data.trainedAt ? ` · ${formatAiTrainedAt(data.trainedAt)}` : " · bootstrap") +
+            acc +
+            bearAcc;
         for (const id of ids) {
           const el = document.getElementById(id);
           if (el) el.textContent = text;
@@ -5382,8 +5431,13 @@
         const bull = data.bull ?? {};
         const bear = data.bear ?? {};
         el.textContent =
-          `${apiScope} model: ${data.source ?? "—"} · bull slMAE ${bull.slMae ?? "—"} tpMAE ${bull.tpMae ?? "—"} · bear slMAE ${bear.slMae ?? "—"} tpMAE ${bear.tpMae ?? "—"}` +
-          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap");
+          data.summary ??
+          `${apiScope === "live" ? "Live" : "Paper"} SL/TP · ${formatAiModelSource(data.sourceLabel ?? data.source)}` +
+            (data.trainedAt ? ` · ${formatAiTrainedAt(data.trainedAt)}` : "") +
+            ` · long SL ${formatAiMaePct(bull.slMae) ?? "—"} TP ${formatAiMaePct(bull.tpMae) ?? "—"}` +
+            (data.bearMirrorsBull
+              ? ` · short: same fit (n=${bull.samples ?? "—"})`
+              : ` · short SL ${formatAiMaePct(bear.slMae) ?? "—"} TP ${formatAiMaePct(bear.tpMae) ?? "—"}`);
       } catch (e) {
         el.textContent = `Model: ${e.message}`;
       }
@@ -5424,8 +5478,10 @@
           sm.accuracy != null ? ` · soft acc ${(sm.accuracy * 100).toFixed(1)}%` : "";
         const samples = hm.samples ? ` · ${hm.samples} hard samples` : "";
         el.textContent =
-          `SFP v${data.version ?? 2}: ${data.source ?? "—"} · hard ${data.hardThreshold ?? data.threshold ?? "—"} · soft ${data.softThreshold ?? "—"}` +
-          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap") +
+          data.summary ??
+          `SFP v${data.version ?? 2}: ${formatAiModelSource(data.sourceLabel ?? data.source)}` +
+          (data.trainedAt ? ` · ${formatAiTrainedAt(data.trainedAt)}` : " · bootstrap") +
+          ` · hard ${data.hardThreshold ?? data.threshold ?? "—"} · soft ${data.softThreshold ?? "—"}` +
           hardAcc +
           softAcc +
           samples;
@@ -5457,8 +5513,10 @@
           sm.accuracy != null ? ` · soft acc ${(sm.accuracy * 100).toFixed(1)}%` : "";
         const samples = hm.samples ? ` · ${hm.samples} hard samples` : "";
         el.textContent =
-          `Live SFP v${data.version ?? 2}: ${data.source ?? "—"} · hard ${data.hardThreshold ?? data.threshold ?? "—"} · soft ${data.softThreshold ?? "—"}` +
-          (data.trainedAt ? ` · trained ${data.trainedAt}` : " · bootstrap") +
+          data.summary ??
+          `Live SFP v${data.version ?? 2}: ${formatAiModelSource(data.sourceLabel ?? data.source)}` +
+          (data.trainedAt ? ` · ${formatAiTrainedAt(data.trainedAt)}` : " · bootstrap") +
+          ` · hard ${data.hardThreshold ?? data.threshold ?? "—"} · soft ${data.softThreshold ?? "—"}` +
           hardAcc +
           softAcc +
           samples;
@@ -5537,7 +5595,7 @@
         <div class="ai-report-card">
           <h3>${escapeHtml(title)} ${enabledBadge}</h3>
           <div class="model-meta">
-            ${escapeHtml(m.source ?? "bootstrap")}${m.trainedAt ? ` · trained ${escapeHtml(m.trainedAt)}` : ""}${trainLine ? `<br>${trainLine}` : ""}
+            ${escapeHtml(m.summary ?? `${formatAiModelSource(m.sourceLabel ?? m.source)}${m.trainedAt ? ` · ${formatAiTrainedAt(m.trainedAt)}` : ""}`)}${trainLine ? `<br>${trainLine}` : ""}
           </div>
           <div class="mini-stats">
             ${metricsHtml}
@@ -5567,14 +5625,14 @@
         <div class="ai-report-card">
           <h3>AI SL/TP levels ${enabledBadge}</h3>
           <div class="model-meta">
-            ${escapeHtml(m.source ?? "bootstrap")}${m.trainedAt ? ` · trained ${escapeHtml(m.trainedAt)}` : ""} · ${escapeHtml(modeLine)}
+            ${escapeHtml(m.summary ?? `${formatAiModelSource(m.sourceLabel ?? m.source)}${m.trainedAt ? ` · ${formatAiTrainedAt(m.trainedAt)}` : ""} · ${modeLine}`)}
             ${trainLine ? `<br>${trainLine}` : ""}
           </div>
           <div class="mini-stats">
-            <div><div class="label">Bull SL MAE</div><div class="value">${metrics.bullSlMae ?? "—"}% · n=${metrics.bullSamples ?? "—"}</div></div>
-            <div><div class="label">Bull TP MAE</div><div class="value">${metrics.bullTpMae ?? "—"}%</div></div>
-            <div><div class="label">Bear SL MAE</div><div class="value">${metrics.bearSlMae ?? "—"}% · n=${metrics.bearSamples ?? "—"}</div></div>
-            <div><div class="label">Bear TP MAE</div><div class="value">${metrics.bearTpMae ?? "—"}%</div></div>
+            <div><div class="label">Bull SL MAE</div><div class="value">${formatAiMaePct(metrics.bullSlMae) ?? "—"} · n=${metrics.bullSamples ?? "—"}</div></div>
+            <div><div class="label">Bull TP MAE</div><div class="value">${formatAiMaePct(metrics.bullTpMae) ?? "—"}</div></div>
+            <div><div class="label">Bear SL MAE</div><div class="value">${m.bearMirrorsBull ? "same as bull" : formatAiMaePct(metrics.bearSlMae) ?? "—"} · n=${metrics.bearSamples ?? "—"}</div></div>
+            <div><div class="label">Bear TP MAE</div><div class="value">${m.bearMirrorsBull ? "same as bull" : formatAiMaePct(metrics.bearTpMae) ?? "—"}</div></div>
             <div><div class="label">Live entries w/ AI levels</div><div class="value">${m.impact?.count ?? 0}</div></div>
             <div><div class="label">AI levels PnL</div><div class="value ${laiPnlCls(m.impact?.pnl)}">${fmtUsd(m.impact?.pnl)}</div></div>
           </div>

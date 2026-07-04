@@ -6,6 +6,9 @@
  *   node scripts/compare-ai-exit-rr-backtest.js --days 10 --quick
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");

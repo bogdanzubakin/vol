@@ -4,15 +4,16 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified!\" && exit 1",
-    "start": "node index.js --all",
-    "start:public": "node scripts/serve-public.js",
-    "start:scanner": "node index.js --all",
-    "visualize": "node scripts/visualize-cache.js",
-    "visualize:signals": "node scripts/visualize-cache.js --signals-only",
+    "start": "NODE_OPTIONS='--max-old-space-size=8192' node index.js --all",
+    "start:public": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/serve-public.js",
+    "start:scanner": "NODE_OPTIONS='--max-old-space-size=8192' node index.js --all",
+    "visualize": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/visualize-cache.js",
+    "visualize:signals": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/visualize-cache.js --signals-only",
     "telegram:chats": "node scripts/telegram-chats.js",
-    "train:early-exit": "node scripts/train-early-exit-model.js",
-    "train:sfp-regime": "node scripts/train-sfp-regime-model.js",
-    "train:early-abort-runner": "node scripts/optimize-early-abort-runner-params.js --days 10 --cache-only --train --apply"
+    "train:early-exit": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/train-early-exit-model.js",
+    "train:sfp-regime": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/train-sfp-regime-model.js",
+    "train:all-ai": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/train-all-ai-and-deploy.js",
+    "train:early-abort-runner": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/optimize-early-abort-runner-params.js --days 10 --cache-only --train --apply"
   },
   "engines": {
     "node": ">=18"

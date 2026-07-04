@@ -10,6 +10,8 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const { ensureMinHeapMb, execNode, nodeChildEnv } = require("../lib/node-mem");
+ensureMinHeapMb();
 const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");
 const scannerConfig = require("../lib/scanner-config");
 const { pickLiveConfig } = require("../lib/signal-metrics");
@@ -167,7 +169,7 @@ async function main() {
 
   if (!args.skipBacktest) {
     console.log("\nRunning baseline backtest (regime OFF) for training trades…");
-    execSync(`node scripts/run-cached-train-backtest.js --days ${days}`, {
+    execNode(path.join("scripts", "run-cached-train-backtest.js"), [`--days`, String(days)], {
       cwd: ROOT,
       stdio: "inherit",
     });
@@ -190,11 +192,10 @@ async function main() {
 
   if (args.push) {
     console.log("\nPushing to Railway…");
-    execSync("node scripts/push-railway-data.js", {
+    execNode(path.join("scripts", "push-railway-data.js"), [], {
       cwd: ROOT,
       stdio: "inherit",
-      env: {
-        ...process.env,
+      env: nodeChildEnv({
         RAILWAY_URL:
           process.env.RAILWAY_URL ||
           process.env.VOL_RAILWAY_URL ||
@@ -202,7 +203,7 @@ async function main() {
         VOL_SESSION_COOKIE_FILE:
           process.env.VOL_SESSION_COOKIE_FILE ||
           path.join(ROOT, "scripts", ".vol-railway-cookie"),
-      },
+      }),
     });
   }
 

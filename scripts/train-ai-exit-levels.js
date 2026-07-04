@@ -6,6 +6,9 @@
  */
 
 const { execSync } = require("child_process");
+const path = require("path");
+const { ensureMinHeapMb, execNode } = require("../lib/node-mem");
+ensureMinHeapMb();
 const { dataPath, readJsonFile } = require("../lib/data-dir");
 const { normalizeConfig } = require("../lib/paper-bot");
 const { readSymbolBars } = require("../lib/backtest-kline-cache");
@@ -26,7 +29,7 @@ function parseArgs(argv) {
     if (argv[i] === "--days" && argv[i + 1]) days = Number(argv[++i]);
     else if (argv[i] === "--skip-backtest") skipBacktest = true;
   }
-  return { days: Math.max(1, Math.min(21, Math.round(days) || 10)), skipBacktest };
+  return { days: Math.max(1, Math.min(60, Math.round(days) || 10)), skipBacktest };
 }
 
 function loadBotConfig() {
@@ -49,9 +52,9 @@ async function main() {
 
   if (!skipBacktest) {
     console.error(`Running baseline backtest ${days}d (regime ON, legacy SL/TP)…`);
-    execSync(`node scripts/run-cached-train-backtest.js --days ${days} --regime-on`, {
+    execNode(path.join(__dirname, "run-cached-train-backtest.js"), [`--days`, String(days), "--regime-on"], {
       stdio: "inherit",
-      cwd: require("path").join(__dirname, ".."),
+      cwd: path.join(__dirname, ".."),
     });
   }
 
@@ -75,21 +78,21 @@ async function main() {
   await trainFromTrades(trades, fetchBars, {
     botConfig,
     scope: "paper",
-    source: "train:cached-backtest",
+    source: "train-best-eval",
   });
   reloadModel("paper");
 
   const paperModel = getModel("paper");
   saveModel(
-    { ...paperModel, source: "train:cached-backtest:live" },
+    { ...paperModel, source: "train-best-eval:live" },
     "live"
   );
   reloadModel("live");
 
   const paperSt = getModelStatus("paper");
   const liveSt = getModelStatus("live");
-  console.error("\nPaper model:", paperSt.file, paperSt);
-  console.error("Live model:", liveSt.file, liveSt);
+  console.error("\nPaper:", paperSt.summary);
+  console.error("Live:", liveSt.summary);
   console.error("Done.");
 }
 

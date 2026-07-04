@@ -6,6 +6,9 @@
  *   node scripts/run-train-bot-backtest.js --days 5 --max-symbols 50
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile } = require("../lib/data-dir");

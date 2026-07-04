@@ -5,6 +5,9 @@
  *   node scripts/run-cached-train-backtest.js --days 10 --cache-only
  */
 
+const { ensureMinHeapMb } = require("../lib/node-mem");
+ensureMinHeapMb();
+
 const fs = require("fs");
 const path = require("path");
 const { dataPath, readJsonFile } = require("../lib/data-dir");
