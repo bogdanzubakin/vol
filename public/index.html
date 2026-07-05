@@ -1517,7 +1517,7 @@
         <span class="status-tag sfp-bear">SFP↓</span>, and
         <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
-      <form class="bot-settings-form" id="paperBotConfigForm">
+      <form class="bot-settings-form" id="paperBotConfigForm" novalidate>
         <details class="settings-pane settings-pane-root" open>
           <summary>Bot settings</summary>
           <div class="settings-pane-body settings-pane-root-body">
@@ -2034,7 +2034,7 @@
         </div>
         <div class="field">
           <label for="paperBotWorstPairsCount">Worst pairs (train bot)</label>
-          <input type="number" id="paperBotWorstPairsCount" step="1" min="1" max="200" value="20" required />
+          <input type="number" id="paperBotWorstPairsCount" step="1" min="1" max="200" value="20" />
         </div>
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
@@ -2153,7 +2153,7 @@
         <button type="button" class="btn secondary sm" id="liveBotForgetOpen">Forget open</button>
         <span class="config-msg" id="liveBotMsg"></span>
       </div>
-      <form class="bot-settings-form" id="liveBotConfigForm">
+      <form class="bot-settings-form" id="liveBotConfigForm" novalidate>
         <details class="settings-pane settings-pane-root" open>
           <summary>Bot settings</summary>
           <div class="settings-pane-body settings-pane-root-body">
@@ -2550,7 +2550,7 @@
         </div>
         <div class="field">
           <label for="liveBotWorstPairsCount">Worst pairs (train bot)</label>
-          <input type="number" id="liveBotWorstPairsCount" step="1" min="1" max="200" value="20" required />
+          <input type="number" id="liveBotWorstPairsCount" step="1" min="1" max="200" value="20" />
         </div>
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
@@ -3233,6 +3233,68 @@
         document.getElementById(k)?.addEventListener("input", (e) => {
           setUiSetting(`topMovers_${k}`, e.target.value);
         });
+      }
+    }
+
+    const BOT_SETTINGS_PANES_COOKIE = "vol_bot_settings_panes";
+    const BOT_SETTINGS_PANES_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+
+    function readBotSettingsPanesCookie() {
+      const match = document.cookie.match(
+        new RegExp(
+          `(?:^|; )${BOT_SETTINGS_PANES_COOKIE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}=([^;]*)`
+        )
+      );
+      if (!match) return {};
+      try {
+        const parsed = JSON.parse(decodeURIComponent(match[1]));
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function writeBotSettingsPanesCookie(state) {
+      document.cookie = `${BOT_SETTINGS_PANES_COOKIE}=${encodeURIComponent(
+        JSON.stringify(state)
+      )}; path=/; max-age=${BOT_SETTINGS_PANES_COOKIE_MAX_AGE}; SameSite=Lax`;
+    }
+
+    function botSettingsPaneKey(details) {
+      if (details.dataset.paneId) return details.dataset.paneId;
+      const summary = details.querySelector(":scope > summary");
+      return String(summary?.textContent || "pane")
+        .trim()
+        .toLowerCase()
+        .replace(/&/g, "and")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    }
+
+    function initBotSettingsPaneCookies() {
+      const forms = ["paperBotConfigForm", "liveBotConfigForm"]
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
+      if (!forms.length) return;
+
+      const cookieState = readBotSettingsPanesCookie();
+
+      for (const form of forms) {
+        const scope = form.id;
+        const saved = cookieState[scope];
+        const panes = form.querySelectorAll("details.settings-pane");
+        for (const pane of panes) {
+          const key = botSettingsPaneKey(pane);
+          if (saved && Object.prototype.hasOwnProperty.call(saved, key)) {
+            pane.open = Boolean(saved[key]);
+          }
+          pane.addEventListener("toggle", () => {
+            const state = readBotSettingsPanesCookie();
+            if (!state[scope]) state[scope] = {};
+            state[scope][key] = pane.open;
+            writeBotSettingsPanesCookie(state);
+          });
+        }
       }
     }
 
@@ -6112,17 +6174,18 @@
     document.getElementById("paperBotConfigForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        const patch = paperBotConfigFromForm();
         const res = await fetch("/api/paper-bot/config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ patch: paperBotConfigFromForm() }),
+          body: JSON.stringify({ patch }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPaperBot(data, false);
         setPaperBotMsg("Settings saved", true);
       } catch (err) {
-        setPaperBotMsg(err.message, false);
+        setPaperBotMsg(err.message || "Save failed", false);
       }
     });
 
@@ -8623,6 +8686,7 @@
         loadMoversConfigForm();
         loadTopMoversConfigForm();
         bindUiSettingsPersistence();
+        initBotSettingsPaneCookies();
         loadStorageInfo();
         initCalcStartAmount();
         updateAiExitLevelsModeFields("paper");

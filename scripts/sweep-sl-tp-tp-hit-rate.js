@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * Sweep SL/TP bot settings; rank by take-profit hit rate (30d cached backtest).
+ * Sweep TP bot settings; rank by take-profit hit rate (30d cached backtest).
+ *
+ * AI ON: SFP regime, PB signal, AI exit levels (SL/TP).
+ * AI OFF: early exit, PB regime, pattern break, early invalidation, early abort, runner.
  *
  *   node scripts/sweep-sl-tp-tp-hit-rate.js --days 30
  *   node scripts/sweep-sl-tp-tp-hit-rate.js --days 30 --quick
@@ -20,13 +23,14 @@ const { runPaperBotBacktest } = require("../lib/paper-bot-backtest");
 const OUT_FILE = () => dataPath("sl-tp-tp-hit-rate-sweep.json");
 
 const TP_PCT_FULL = [2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 12];
-const SL_CORRIDOR_FULL = [1, 1.5, 2, 2.5, 3, 3.5, 4];
-const TP_PCT_QUICK = [3, 4, 5, 6, 8];
-const SL_CORRIDOR_QUICK = [1.5, 2, 2.5, 3];
+const TP_MIN_PCT_FULL = [0.8, 1, 1.5, 2, 2.5, 3];
+const SFP_TP_PCT_FULL = [3, 3.5, 4, 4.5, 5, 5.5, 6];
+const AI_TP_SCALE_FULL = [1, 1.05, 1.1, 1.15, 1.2, 1.3];
 
-const FALLBACK_PCT = [1.5, 2, 2.5, 3];
-const TP_MIN_PCT = [0.8, 1, 1.5, 2, 2.5];
-const SFP_TP_PCT = [0, 3, 3.5, 4, 4.5, 5];
+const TP_PCT_QUICK = [3, 4, 5, 6, 8];
+const TP_MIN_PCT_QUICK = [1, 1.5, 2, 2.5];
+const SFP_TP_PCT_QUICK = [3.5, 4.5, 5.5];
+const AI_TP_SCALE_QUICK = [1.1, 1.15, 1.2];
 
 function log(line) {
   console.error(String(line));
@@ -48,6 +52,7 @@ function parseArgs(argv) {
   };
 }
 
+/** AI stack: SFP regime + PB signal + AI SL/TP only. */
 function sweepBase(saved) {
   return normalizeConfig({
     enabled: true,
@@ -60,13 +65,21 @@ function sweepBase(saved) {
     runnerEnabled: false,
     pbEarlyInvalidationEnabled: false,
     aiEarlyExitEnabled: false,
-    aiExitLevelsEnabled: false,
-    smartExitLevelsEnabled: true,
-    aiSfpRegimeEnabled: false,
     aiPullbackRegimeEnabled: false,
-    aiPullbackSignalEnabled: false,
     aiPullbackPatternBreakEnabled: false,
-    stopLossFallbackPnlPct: 2,
+    aiSfpRegimeEnabled: true,
+    aiSfpRegimeBullThreshold: 0.78,
+    aiSfpRegimeBearThreshold: 0.72,
+    aiRegimeBtcLookbackHours: 24,
+    aiPullbackSignalEnabled: true,
+    aiPullbackSignalBullThreshold: 0.52,
+    aiPullbackSignalBearThreshold: 0.54,
+    aiExitLevelsEnabled: true,
+    aiExitLevelsLegacyDisabled: true,
+    aiExitLevelsMode: "legacy_scale",
+    aiExitLevelsSlScale: 1.15,
+    aiExitLevelsTpScale: 1.15,
+    smartExitLevelsEnabled: true,
     takeProfitMinPct: 1.5,
     sfpTakeProfitPct: 4.5,
   });
@@ -176,10 +189,11 @@ async function runOne({ label, botConfig, signalCfg, days, symbols, fetchers }) 
   return {
     label,
     takeProfitPct: botConfig.takeProfitPct,
-    stopLossBelowCorridorPct: botConfig.stopLossBelowCorridorPct,
-    stopLossFallbackPnlPct: botConfig.stopLossFallbackPnlPct,
     takeProfitMinPct: botConfig.takeProfitMinPct,
     sfpTakeProfitPct: botConfig.sfpTakeProfitPct,
+    aiExitLevelsTpScale: botConfig.aiExitLevelsTpScale,
+    stopLossBelowCorridorPct: botConfig.stopLossBelowCorridorPct,
+    stopLossFallbackPnlPct: botConfig.stopLossFallbackPnlPct,
     ...stats,
     elapsedSec: result.elapsedSec ?? 0,
   };
@@ -207,29 +221,36 @@ async function main() {
   const fetchers = createFetchers();
 
   const tpVals = quick ? TP_PCT_QUICK : TP_PCT_FULL;
-  const slVals = quick ? SL_CORRIDOR_QUICK : SL_CORRIDOR_FULL;
+  const tpMinVals = quick ? TP_MIN_PCT_QUICK : TP_MIN_PCT_FULL;
+  const sfpTpVals = quick ? SFP_TP_PCT_QUICK : SFP_TP_PCT_FULL;
+  const aiTpScaleVals = quick ? AI_TP_SCALE_QUICK : AI_TP_SCALE_FULL;
 
   log(
-    `SL/TP sweep · ${days}d · ${symbols.length} symbols · rank=TP hit rate · AI exits OFF`
+    `TP sweep · ${days}d · ${symbols.length} symbols · rank=TP hit rate · AI: SFP regime + PB signal + AI SL/TP`
   );
 
   const store = readJsonFile(OUT_FILE(), { grid: [], fine: [] });
-  const grid = [];
+  const grid = [...(store.grid ?? [])];
+  const doneLabels = new Set(grid.map((r) => r.label));
 
   if (phase === "all" || phase === "grid") {
     let n = 0;
-    const total = tpVals.length * slVals.length;
+    const total = tpVals.length * tpMinVals.length;
     for (const tp of tpVals) {
-      for (const sl of slVals) {
+      for (const tmin of tpMinVals) {
         n++;
-        const label = `tp${tp}_sl${sl}`;
+        const label = `tp${tp}_tmin${tmin}`;
+        if (doneLabels.has(label)) {
+          log(`\n[grid ${n}/${total}] ${label} — skip (cached)`);
+          continue;
+        }
         log(`\n[grid ${n}/${total}] ${label}`);
         const row = await runOne({
           label,
           botConfig: normalizeConfig({
             ...base,
             takeProfitPct: tp,
-            stopLossBelowCorridorPct: sl,
+            takeProfitMinPct: Math.min(tmin, tp),
           }),
           signalCfg,
           days,
@@ -240,6 +261,7 @@ async function main() {
           `→ TP ${row.tpRate}% (${row.tpHits}/${row.trades}) · SL ${row.slRate}% · PnL $${row.pnl}`
         );
         grid.push(row);
+        doneLabels.add(label);
         store.grid = grid;
         writeJsonFile(OUT_FILE(), store);
       }
@@ -258,70 +280,66 @@ async function main() {
   log("\n=== TOP 10 BY TP HIT RATE (grid) ===");
   for (const r of ranked.slice(0, 10)) {
     log(
-      `TP ${r.takeProfitPct}% SL ${r.stopLossBelowCorridorPct}% → ${r.tpRate}% TP (${r.tpHits}/${r.trades}) · SL ${r.slRate}% · $${r.pnl}`
+      `TP ${r.takeProfitPct}% min ${r.takeProfitMinPct}% → ${r.tpRate}% TP (${r.tpHits}/${r.trades}) · SL ${r.slRate}% · $${r.pnl}`
     );
   }
 
-  const fine = [];
+  const fine = [...(store.fine ?? [])];
+  const fineDone = new Set(fine.map((r) => r.label));
   if (phase === "all" || phase === "fine") {
     const anchor = normalizeConfig({
       ...base,
       takeProfitPct: best.takeProfitPct,
-      stopLossBelowCorridorPct: best.stopLossBelowCorridorPct,
+      takeProfitMinPct: best.takeProfitMinPct,
     });
 
     log(
-      `\n=== FINE SWEEP @ TP ${best.takeProfitPct}% SL ${best.stopLossBelowCorridorPct}% ===`
+      `\n=== FINE SWEEP @ TP ${best.takeProfitPct}% min ${best.takeProfitMinPct}% ===`
     );
 
-    for (const fb of FALLBACK_PCT) {
-      if (fb === anchor.stopLossFallbackPnlPct) continue;
-      const label = `fine_fb${fb}`;
-      log(`\n[fine] ${label}`);
-      const row = await runOne({
-        label,
-        botConfig: normalizeConfig({ ...anchor, stopLossFallbackPnlPct: fb }),
-        signalCfg,
-        days,
-        symbols,
-        fetchers,
-      });
-      fine.push(row);
-      log(`→ TP ${row.tpRate}% · $${row.pnl}`);
-    }
-
-    for (const tmin of TP_MIN_PCT) {
-      if (tmin === anchor.takeProfitMinPct) continue;
-      const label = `fine_tmin${tmin}`;
-      log(`\n[fine] ${label}`);
-      const row = await runOne({
-        label,
-        botConfig: normalizeConfig({ ...anchor, takeProfitMinPct: tmin }),
-        signalCfg,
-        days,
-        symbols,
-        fetchers,
-      });
-      fine.push(row);
-      log(`→ TP ${row.tpRate}% · $${row.pnl}`);
-    }
-
-    for (const sfpTp of SFP_TP_PCT) {
+    for (const sfpTp of sfpTpVals) {
       if (sfpTp === anchor.sfpTakeProfitPct) continue;
       const label = `fine_sfptp${sfpTp}`;
+      if (fineDone.has(label)) {
+        log(`\n[fine] ${label} — skip (cached)`);
+        continue;
+      }
       log(`\n[fine] ${label}`);
       const row = await runOne({
         label,
-        botConfig: normalizeConfig({
-          ...anchor,
-          sfpTakeProfitPct: sfpTp > 0 ? sfpTp : anchor.takeProfitPct,
-        }),
+        botConfig: normalizeConfig({ ...anchor, sfpTakeProfitPct: sfpTp }),
         signalCfg,
         days,
         symbols,
         fetchers,
       });
       fine.push(row);
+      fineDone.add(label);
+      store.fine = fine;
+      writeJsonFile(OUT_FILE(), store);
+      log(`→ TP ${row.tpRate}% · $${row.pnl}`);
+    }
+
+    for (const aiScale of aiTpScaleVals) {
+      if (aiScale === anchor.aiExitLevelsTpScale) continue;
+      const label = `fine_aiscale${String(aiScale).replace(".", "_")}`;
+      if (fineDone.has(label)) {
+        log(`\n[fine] ${label} — skip (cached)`);
+        continue;
+      }
+      log(`\n[fine] ${label}`);
+      const row = await runOne({
+        label,
+        botConfig: normalizeConfig({ ...anchor, aiExitLevelsTpScale: aiScale }),
+        signalCfg,
+        days,
+        symbols,
+        fetchers,
+      });
+      fine.push(row);
+      fineDone.add(label);
+      store.fine = fine;
+      writeJsonFile(OUT_FILE(), store);
       log(`→ TP ${row.tpRate}% · $${row.pnl}`);
     }
   }
@@ -334,7 +352,9 @@ async function main() {
     days,
     symbolCount: symbols.length,
     quick,
-    note: "Fixed smart SL/TP (aiExitLevels OFF). Ranked by take_profit hit rate.",
+    aiStack:
+      "SFP regime + PB signal + AI exit levels ON; early exit, PB regime, pattern break OFF",
+    note: "Ranked by take_profit hit rate.",
     gridCount: grid.length,
     fineCount: fine.length,
     top10: allRanked.slice(0, 10),
@@ -348,7 +368,7 @@ async function main() {
 
   log("\n=== BEST BY TP HIT RATE ===");
   log(
-    `TP ${overallBest.takeProfitPct}% · SL corridor ${overallBest.stopLossBelowCorridorPct}% · fallback ${overallBest.stopLossFallbackPnlPct}% · TP min ${overallBest.takeProfitMinPct}% · SFP TP ${overallBest.sfpTakeProfitPct}%`
+    `TP ${overallBest.takeProfitPct}% · TP min ${overallBest.takeProfitMinPct}% · SFP TP ${overallBest.sfpTakeProfitPct}% · AI TP scale ${overallBest.aiExitLevelsTpScale}`
   );
   log(
     `→ ${overallBest.tpRate}% TP hits (${overallBest.tpHits}/${overallBest.trades}) · SL ${overallBest.slRate}% · PnL $${overallBest.pnl} · WR ${overallBest.winRate}%`
