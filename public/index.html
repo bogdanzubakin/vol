@@ -1777,6 +1777,33 @@
           <label for="paperBotEarlyAbortMaxAdversePct">Max early adverse %</label>
           <input type="number" id="paperBotEarlyAbortMaxAdversePct" step="0.1" min="0.1" max="20" value="0.9" required />
         </div>
+        <div class="field" style="min-width: 220px; grid-column: 1 / -1;">
+          <label>
+            <input type="checkbox" id="paperBotPbEarlyInvalidationEnabled" />
+            PB early invalidation (pullback only)
+          </label>
+          <div class="hint">In-trade exit when corridor/reclaim/MA breaks in first bars — reduces full SL hits</div>
+        </div>
+        <div class="field">
+          <label for="paperBotPbEarlyInvalidationBars">PB invalidation window (bars)</label>
+          <input type="number" id="paperBotPbEarlyInvalidationBars" step="1" min="1" max="60" value="10" required />
+        </div>
+        <div class="field">
+          <label for="paperBotPbEarlyInvalidationInvalidateBars">PB strict invalidate bars</label>
+          <input type="number" id="paperBotPbEarlyInvalidationInvalidateBars" step="1" min="1" max="30" value="5" required />
+        </div>
+        <div class="field">
+          <label for="paperBotPbEarlyInvalidationMaxAdversePct">PB max adverse %</label>
+          <input type="number" id="paperBotPbEarlyInvalidationMaxAdversePct" step="0.1" min="0.1" max="20" value="0.85" required />
+        </div>
+        <div class="field">
+          <label for="paperBotPbEarlyInvalidationMinProgressPct">PB min progress %</label>
+          <input type="number" id="paperBotPbEarlyInvalidationMinProgressPct" step="0.1" min="0" max="20" value="0.35" required />
+        </div>
+        <div class="field">
+          <label for="paperBotPbEarlyInvalidationMaBreakPct">PB MA break %</label>
+          <input type="number" id="paperBotPbEarlyInvalidationMaBreakPct" step="0.01" min="0.02" max="3" value="0.12" required />
+        </div>
         <div class="field" style="min-width: 220px;">
           <label>
             <input type="checkbox" id="paperBotRunnerEnabled" />
@@ -1911,6 +1938,43 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="paperBotTrainPullbackRegime">Train pullback regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane" open>
+          <summary>AI pullback pattern-break filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiPullbackPatternBreakEnabled" />
+            AI pullback pattern-break filter (paper bot)
+          </label>
+          <div class="hint">Bull/bear heads detect corridor/reclaim/MA breaks and failed bounce at entry — runs after regime filter, before signal filter.</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackPatternBreakBullThreshold">Bull pattern-break threshold</label>
+          <input type="number" id="paperBotAiPullbackPatternBreakBullThreshold" step="0.01" min="0.5" max="0.95" value="0.72" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackPatternBreakBearThreshold">Bear pattern-break threshold</label>
+          <input type="number" id="paperBotAiPullbackPatternBreakBearThreshold" step="0.01" min="0.5" max="0.95" value="0.7" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackPatternBreakBtcLookbackHours">BTC lookback (hours)</label>
+          <input type="number" id="paperBotAiPullbackPatternBreakBtcLookbackHours" step="1" min="1" max="72" value="24" required />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackPatternBreakThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="paperBotAiPullbackPatternBreakThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="paperBotPullbackPatternBreakStatus">Monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="paperBotTrainPullbackPatternBreak">Train pattern-break model</button>
         </div>
             </div>
           </div>
@@ -2390,6 +2454,43 @@
         <div class="field" style="align-self: end;">
           <label>&nbsp;</label>
           <button type="button" class="btn secondary sm" id="liveBotTrainPullbackRegime">Train live pullback regime model</button>
+        </div>
+            </div>
+          </div>
+        </details>
+        <details class="settings-pane" open>
+          <summary>AI pullback pattern-break filter</summary>
+          <div class="settings-pane-body">
+            <div class="settings-form movers-settings">
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiPullbackPatternBreakEnabled" />
+            AI pullback pattern-break filter (live bot)
+          </label>
+          <div class="hint">Skips entries when corridor/reclaim/MA break or bounce failure is detected at signal bar.</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackPatternBreakBullThreshold">Bull pattern-break threshold</label>
+          <input type="number" id="liveBotAiPullbackPatternBreakBullThreshold" step="0.01" min="0.5" max="0.95" value="0.72" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackPatternBreakBearThreshold">Bear pattern-break threshold</label>
+          <input type="number" id="liveBotAiPullbackPatternBreakBearThreshold" step="0.01" min="0.5" max="0.95" value="0.7" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackPatternBreakBtcLookbackHours">BTC lookback (hours)</label>
+          <input type="number" id="liveBotAiPullbackPatternBreakBtcLookbackHours" step="1" min="1" max="72" value="24" required />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackPatternBreakThreshold">Legacy threshold (fallback)</label>
+          <input type="number" id="liveBotAiPullbackPatternBreakThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <div class="hint" id="liveBotPullbackPatternBreakStatus">Live monitor: loading…</div>
+        </div>
+        <div class="field" style="align-self: end;">
+          <label>&nbsp;</label>
+          <button type="button" class="btn secondary sm" id="liveBotTrainPullbackPatternBreak">Train live pattern-break model</button>
         </div>
             </div>
           </div>
@@ -4292,6 +4393,7 @@
         earlyAbortMaxAdversePct: Number(
           document.getElementById("paperBotEarlyAbortMaxAdversePct").value
         ),
+        ...pbEarlyInvalidationConfigFromForm("paper"),
         runnerEnabled: document.getElementById("paperBotRunnerEnabled").checked,
         runnerActivatePct: Number(document.getElementById("paperBotRunnerActivatePct").value),
         runnerGivebackPct: Number(document.getElementById("paperBotRunnerGivebackPct").value),
@@ -4330,6 +4432,7 @@
           document.getElementById("paperBotAiRegimeBtcLookbackHours").value
         ),
         ...pullbackRegimeConfigFromForm("paper"),
+        ...pullbackPatternBreakConfigFromForm("paper"),
         ...pullbackSignalConfigFromForm("paper"),
         blockedSymbols: blockedSymbolsFromText(
           document.getElementById("paperBotBlockedSymbols").value
@@ -4431,6 +4534,7 @@
         cfg.earlyAbortMinProgressPct ?? 0.5;
       document.getElementById("paperBotEarlyAbortMaxAdversePct").value =
         cfg.earlyAbortMaxAdversePct ?? 0.9;
+      fillPbEarlyInvalidationForm("paper", cfg);
       document.getElementById("paperBotRunnerEnabled").checked = Boolean(cfg.runnerEnabled);
       document.getElementById("paperBotRunnerActivatePct").value = cfg.runnerActivatePct ?? 0;
       document.getElementById("paperBotRunnerGivebackPct").value = cfg.runnerGivebackPct ?? 0.5;
@@ -4470,6 +4574,7 @@
         cfg.drawdownStopPct ?? 4;
       fillAiExitLevelsForm("paper", cfg);
       fillPullbackRegimeForm("paper", cfg);
+      fillPullbackPatternBreakForm("paper", cfg);
       fillPullbackSignalForm("paper", cfg);
       updatePaperBotBadges(cfg);
     }
@@ -4541,6 +4646,96 @@
       set("tpClampMin", cfg.aiExitLevelsTpClampMin ?? 1);
       set("tpClampMax", cfg.aiExitLevelsTpClampMax ?? 15);
       updateAiExitLevelsModeFields(kind);
+    }
+
+    function pbEarlyInvalidationConfigFromForm(kind) {
+      const prefix = kind === "live" ? "liveBotPbEarlyInvalidation" : "paperBotPbEarlyInvalidation";
+      return {
+        pbEarlyInvalidationEnabled: document.getElementById(`${prefix}Enabled`)?.checked ?? false,
+        pbEarlyInvalidationBars: Number(document.getElementById(`${prefix}Bars`)?.value ?? 10),
+        pbEarlyInvalidationInvalidateBars: Number(
+          document.getElementById(`${prefix}InvalidateBars`)?.value ?? 5
+        ),
+        pbEarlyInvalidationMinProgressPct: Number(
+          document.getElementById(`${prefix}MinProgressPct`)?.value ?? 0.35
+        ),
+        pbEarlyInvalidationMaxAdversePct: Number(
+          document.getElementById(`${prefix}MaxAdversePct`)?.value ?? 0.85
+        ),
+        pbEarlyInvalidationMaBreakPct: Number(
+          document.getElementById(`${prefix}MaBreakPct`)?.value ?? 0.12
+        ),
+      };
+    }
+
+    function fillPbEarlyInvalidationForm(kind, cfg) {
+      const prefix = kind === "live" ? "liveBotPbEarlyInvalidation" : "paperBotPbEarlyInvalidation";
+      const enabledEl = document.getElementById(`${prefix}Enabled`);
+      if (enabledEl) enabledEl.checked = Boolean(cfg.pbEarlyInvalidationEnabled);
+      const barsEl = document.getElementById(`${prefix}Bars`);
+      if (barsEl) barsEl.value = cfg.pbEarlyInvalidationBars ?? 10;
+      const invEl = document.getElementById(`${prefix}InvalidateBars`);
+      if (invEl) invEl.value = cfg.pbEarlyInvalidationInvalidateBars ?? 5;
+      const minEl = document.getElementById(`${prefix}MinProgressPct`);
+      if (minEl) minEl.value = cfg.pbEarlyInvalidationMinProgressPct ?? 0.35;
+      const advEl = document.getElementById(`${prefix}MaxAdversePct`);
+      if (advEl) advEl.value = cfg.pbEarlyInvalidationMaxAdversePct ?? 0.85;
+      const maEl = document.getElementById(`${prefix}MaBreakPct`);
+      if (maEl) maEl.value = cfg.pbEarlyInvalidationMaBreakPct ?? 0.12;
+    }
+
+    function pullbackPatternBreakConfigFromForm(kind) {
+      const prefix =
+        kind === "liveAi"
+          ? "liveAiPullbackPatternBreak"
+          : kind === "live"
+            ? "liveBotAiPullbackPatternBreak"
+            : "paperBotAiPullbackPatternBreak";
+      return {
+        aiPullbackPatternBreakEnabled: document.getElementById(`${prefix}Enabled`).checked,
+        aiPullbackPatternBreakBullThreshold: Number(
+          document.getElementById(`${prefix}BullThreshold`).value
+        ),
+        aiPullbackPatternBreakBearThreshold: Number(
+          document.getElementById(`${prefix}BearThreshold`).value
+        ),
+        aiPullbackPatternBreakBtcLookbackHours: Number(
+          document.getElementById(`${prefix}BtcLookbackHours`).value
+        ),
+        ...(kind === "paper" || kind === "live"
+          ? {
+              aiPullbackPatternBreakThreshold: Number(
+                document.getElementById(`${prefix}Threshold`).value
+              ),
+            }
+          : {}),
+      };
+    }
+
+    function fillPullbackPatternBreakForm(kind, cfg) {
+      if (!cfg) return;
+      const prefix =
+        kind === "liveAi"
+          ? "liveAiPullbackPatternBreak"
+          : kind === "live"
+            ? "liveBotAiPullbackPatternBreak"
+            : "paperBotAiPullbackPatternBreak";
+      const enabledEl = document.getElementById(`${prefix}Enabled`);
+      if (enabledEl) enabledEl.checked = Boolean(cfg.aiPullbackPatternBreakEnabled);
+      const bullEl = document.getElementById(`${prefix}BullThreshold`);
+      if (bullEl) {
+        bullEl.value =
+          cfg.aiPullbackPatternBreakBullThreshold ?? cfg.aiPullbackPatternBreakThreshold ?? 0.72;
+      }
+      const bearEl = document.getElementById(`${prefix}BearThreshold`);
+      if (bearEl) {
+        bearEl.value =
+          cfg.aiPullbackPatternBreakBearThreshold ?? cfg.aiPullbackPatternBreakThreshold ?? 0.7;
+      }
+      const btcEl = document.getElementById(`${prefix}BtcLookbackHours`);
+      if (btcEl) btcEl.value = cfg.aiPullbackPatternBreakBtcLookbackHours ?? 24;
+      const legacyEl = document.getElementById(`${prefix}Threshold`);
+      if (legacyEl) legacyEl.value = cfg.aiPullbackPatternBreakThreshold ?? 0.58;
     }
 
     function pullbackRegimeConfigFromForm(kind) {
@@ -5044,6 +5239,8 @@
     let liveSfpRegimeTrainPolling = false;
     let pullbackRegimeTrainPolling = false;
     let livePullbackRegimeTrainPolling = false;
+    let pullbackPatternBreakTrainPolling = false;
+    let livePullbackPatternBreakTrainPolling = false;
     let pullbackSignalTrainPolling = false;
     let livePullbackSignalTrainPolling = false;
 
@@ -5093,6 +5290,21 @@
       }, scope).finally(() => {
         if (scope === "live") livePullbackRegimeTrainPolling = false;
         else pullbackRegimeTrainPolling = false;
+      });
+    }
+
+    function resumePullbackPatternBreakTrainPollIfNeeded(data, scope = "paper") {
+      const polling =
+        scope === "live" ? livePullbackPatternBreakTrainPolling : pullbackPatternBreakTrainPolling;
+      if (!data?.training?.running || polling) return;
+      if (scope === "live") livePullbackPatternBreakTrainPolling = true;
+      else pullbackPatternBreakTrainPolling = true;
+      void pollAiModelTraining("/api/pullback-pattern-break-model", () => {
+        if (scope === "live") void loadLivePullbackPatternBreakMonitorStatus();
+        else void loadPullbackPatternBreakMonitorStatus();
+      }, scope).finally(() => {
+        if (scope === "live") livePullbackPatternBreakTrainPolling = false;
+        else pullbackPatternBreakTrainPolling = false;
       });
     }
 
@@ -5274,6 +5486,90 @@
           ? `Training: ${trainLine}`
           : `${model.summary ?? `Live v${model.version ?? 2}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · ${btcLine} · tracked ${mon.tracked ?? 0} · bad ${mon.badCount ?? 0}${worst}`;
         resumeSfpRegimeTrainPollIfNeeded(model, "live");
+      } catch (e) {
+        el.textContent = `Live monitor: ${e.message}`;
+      }
+    }
+
+    async function loadPullbackPatternBreakMonitorStatus() {
+      const el = document.getElementById("paperBotPullbackPatternBreakStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/pullback-pattern-break-model", "paper"), {
+            cache: "no-store",
+          }),
+          fetch(aiModelApiUrl("/api/pullback-pattern-break-monitor", "paper"), {
+            cache: "no-store",
+          }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%` : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+              ? ` · broken now: ${mon.worst
+                  .slice(0, 5)
+                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                  .join(", ")}`
+              : mon.enabled
+                ? " · no broken patterns flagged"
+                : "";
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `${model.summary ?? `Model v${model.version ?? 1}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · tracked ${mon.tracked ?? 0} · broken ${mon.badCount ?? 0}${worst}`;
+        resumePullbackPatternBreakTrainPollIfNeeded(model, "paper");
+      } catch (e) {
+        el.textContent = `Monitor: ${e.message}`;
+      }
+    }
+
+    async function loadLivePullbackPatternBreakMonitorStatus() {
+      const el = document.getElementById("liveBotPullbackPatternBreakStatus");
+      if (!el) return;
+      try {
+        const [modelRes, monRes] = await Promise.all([
+          fetch(aiModelApiUrl("/api/pullback-pattern-break-model", "live"), {
+            cache: "no-store",
+          }),
+          fetch(aiModelApiUrl("/api/pullback-pattern-break-monitor", "live"), {
+            cache: "no-store",
+          }),
+        ]);
+        const model = await modelRes.json().catch(() => ({}));
+        const mon = await monRes.json().catch(() => ({}));
+        if (!modelRes.ok) throw new Error(model.error || modelRes.statusText);
+        const bm = model.bullMetrics ?? model.metrics ?? {};
+        const rm = model.bearMetrics ?? {};
+        const acc =
+          bm.accuracy != null ? ` · bull ${(bm.accuracy * 100).toFixed(1)}%` : "";
+        const bearAcc =
+          rm.accuracy != null ? ` · bear ${(rm.accuracy * 100).toFixed(1)}%` : "";
+        const trainLine = formatAiTrainProgress(model.training);
+        const worst =
+          model.training?.running
+            ? ""
+            : mon.worst?.length > 0
+              ? ` · broken now: ${mon.worst
+                  .slice(0, 5)
+                  .map((r) => `${r.symbol} ${(r.probability * 100).toFixed(0)}%`)
+                  .join(", ")}`
+              : mon.enabled
+                ? " · no broken patterns flagged"
+                : "";
+        el.textContent = trainLine
+          ? `Training: ${trainLine}`
+          : `${model.summary ?? `Live v${model.version ?? 1}: ${formatAiModelSource(model.sourceLabel ?? model.source)}${model.trainedAt ? ` · ${formatAiTrainedAt(model.trainedAt)}` : ""}${acc}${bearAcc}`} · tracked ${mon.tracked ?? 0} · broken ${mon.badCount ?? 0}${worst}`;
+        resumePullbackPatternBreakTrainPollIfNeeded(model, "live");
       } catch (e) {
         el.textContent = `Live monitor: ${e.message}`;
       }
@@ -5736,6 +6032,7 @@
       fillPullbackSignalForm("liveAi", cfg);
       void loadAiExitLevelsModelStatus("liveAi");
       void loadLivePullbackRegimeMonitorStatus();
+      void loadLivePullbackPatternBreakMonitorStatus();
       void loadLivePullbackSignalModelStatus();
 
       const reasonsBody = document.getElementById("liveAiExitReasonsBody");
@@ -5800,6 +6097,7 @@
         void loadEarlyExitModelStatus();
         void loadSfpRegimeMonitorStatus();
         void loadPullbackRegimeMonitorStatus();
+        void loadPullbackPatternBreakMonitorStatus();
         void loadPullbackSignalModelStatus();
         void loadAiExitLevelsModelStatus("paper");
         setPaperBotMsg(
@@ -5992,6 +6290,51 @@
       }
     });
 
+    document.getElementById("paperBotTrainPullbackPatternBreak")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train pullback pattern-break model from pullback closed trades in train-bot + paper history?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("paperBotTrainPullbackPatternBreak");
+      try {
+        btn.disabled = true;
+        setPaperBotMsg("Starting pattern-break training…", true);
+        const res = await fetch("/api/pullback-pattern-break-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: "auto", scope: "paper" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setPaperBotMsg(
+          `Pattern-break training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/pullback-pattern-break-model",
+          () => {
+            void loadPullbackPatternBreakMonitorStatus();
+          },
+          "paper"
+        );
+        await loadPullbackPatternBreakMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setPaperBotMsg(
+          `Pattern-break trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setPaperBotMsg(e.message, false);
+        void loadPullbackPatternBreakMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById("paperBotTrainPullbackSignal")?.addEventListener("click", async () => {
       if (
         !confirm(
@@ -6135,6 +6478,7 @@
           document.getElementById("liveBotAiRegimeBtcLookbackHours").value
         ),
         ...pullbackRegimeConfigFromForm("live"),
+        ...pullbackPatternBreakConfigFromForm("live"),
         ...pullbackSignalConfigFromForm("live"),
       };
     }
@@ -6222,6 +6566,7 @@
       document.getElementById("liveBotAiRegimeBtcLookbackHours").value =
         cfg.aiRegimeBtcLookbackHours ?? 12;
       fillPullbackRegimeForm("live", cfg);
+      fillPullbackPatternBreakForm("live", cfg);
       fillPullbackRegimeForm("liveAi", cfg);
       fillPullbackSignalForm("live", cfg);
       fillPullbackSignalForm("liveAi", cfg);
@@ -6308,6 +6653,7 @@
         void loadLiveEarlyExitModelStatus();
         void loadLiveSfpRegimeMonitorStatus();
         void loadLivePullbackRegimeMonitorStatus();
+        void loadLivePullbackPatternBreakMonitorStatus();
         void loadLivePullbackSignalModelStatus();
         void loadAiExitLevelsModelStatus("live");
         if (!data.busy) {
@@ -6467,7 +6813,9 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         fillPullbackRegimeForm("live", data.config ?? data);
+        fillPullbackPatternBreakForm("live", data.config ?? data);
         fillPullbackRegimeForm("liveAi", data.config ?? data);
+        fillPullbackPatternBreakForm("liveAi", data.config ?? data);
         if (msg) msg.textContent = "Pullback regime settings saved to live bot";
         void loadLiveAiReport();
       } catch (e) {
@@ -6733,6 +7081,51 @@
       } catch (e) {
         setLiveBotMsg(e.message, false);
         void loadLivePullbackRegimeMonitorStatus();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("liveBotTrainPullbackPatternBreak")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Train live pullback pattern-break model from train-bot backtest + live closed trades?"
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("liveBotTrainPullbackPatternBreak");
+      try {
+        btn.disabled = true;
+        setLiveBotMsg("Starting live pattern-break training…", true);
+        const res = await fetch("/api/pullback-pattern-break-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: "live" }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        setLiveBotMsg(
+          `Live pattern-break training started (${data.trades ?? "?"} trades)…`,
+          true
+        );
+        const training = await pollAiModelTraining(
+          "/api/pullback-pattern-break-model",
+          () => {
+            void loadLivePullbackPatternBreakMonitorStatus();
+          },
+          "live"
+        );
+        await loadLivePullbackPatternBreakMonitorStatus();
+        if (training?.error) throw new Error(training.error);
+        const m = training?.result?.model?.metrics ?? {};
+        setLiveBotMsg(
+          `Live pattern-break trained (${training?.result?.tradesUsed ?? data.trades} trades · acc ${m.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"})`,
+          true
+        );
+      } catch (e) {
+        setLiveBotMsg(e.message, false);
+        void loadLivePullbackPatternBreakMonitorStatus();
       } finally {
         btn.disabled = false;
       }

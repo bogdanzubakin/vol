@@ -120,6 +120,17 @@ function applyPullbackRegimeThresholds(model, botConfig) {
   return m;
 }
 
+function applyPullbackPatternBreakThresholds(model, botConfig) {
+  const m = { ...model };
+  if (m.bull && botConfig?.aiPullbackPatternBreakBullThreshold != null) {
+    m.bull = { ...m.bull, threshold: botConfig.aiPullbackPatternBreakBullThreshold };
+  }
+  if (m.bear && botConfig?.aiPullbackPatternBreakBearThreshold != null) {
+    m.bear = { ...m.bear, threshold: botConfig.aiPullbackPatternBreakBearThreshold };
+  }
+  return m;
+}
+
 function applyPullbackSignalThresholds(model, botConfig) {
   const m = { ...model };
   if (m.bull && botConfig?.aiPullbackSignalBullThreshold != null) {
@@ -244,6 +255,22 @@ async function main() {
       file: dataPath("pullback-regime-model-live.json"),
       bot: liveConfig,
       apply: applyPullbackRegimeThresholds,
+    },
+    {
+      label: "Pullback pattern break (paper)",
+      path: "/api/pullback-pattern-break-model",
+      scope: "paper",
+      file: dataPath("pullback-pattern-break-model.json"),
+      bot: paperConfig,
+      apply: applyPullbackPatternBreakThresholds,
+    },
+    {
+      label: "Pullback pattern break (live)",
+      path: "/api/pullback-pattern-break-model",
+      scope: "live",
+      file: dataPath("pullback-pattern-break-model-live.json"),
+      bot: liveConfig,
+      apply: applyPullbackPatternBreakThresholds,
     },
     {
       label: "Pullback signal (paper)",

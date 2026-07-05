@@ -74,6 +74,15 @@ const {
 } = require("./lib/pullback-regime-model");
 const { createPullbackRegimeMonitor } = require("./lib/pullback-regime-monitor");
 const {
+  ensureAllDefaultModelsOnDisk: ensureAllPullbackPatternBreakModelsOnDisk,
+  getModel: getPullbackPatternBreakModel,
+  getModelStatus: getPullbackPatternBreakModelStatus,
+  trainFromTrades: trainPullbackPatternBreakFromTrades,
+  reloadModel: reloadPullbackPatternBreakModel,
+  saveModel: savePullbackPatternBreakModel,
+} = require("./lib/pullback-pattern-break-model");
+const { createPullbackPatternBreakMonitor } = require("./lib/pullback-pattern-break-monitor");
+const {
   ensureAllDefaultModelsOnDisk: ensureAllPullbackSignalModelsOnDisk,
   getModel: getPullbackSignalModel,
   getModelStatus: getPullbackSignalModelStatus,
@@ -217,6 +226,8 @@ let sfpRegimeMonitor = null;
 let liveSfpRegimeMonitor = null;
 let pullbackRegimeMonitor = null;
 let livePullbackRegimeMonitor = null;
+let pullbackPatternBreakMonitor = null;
+let livePullbackPatternBreakMonitor = null;
 let liveBot = null;
 let futuresTrader = null;
 let dashboardWs = null;
@@ -278,6 +289,7 @@ const aiTrainJob = {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
     pullback_regime: freshAiTrainJob(),
+    pullback_pattern_break: freshAiTrainJob(),
     pullback_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
   },
@@ -285,6 +297,7 @@ const aiTrainJob = {
     early_exit: freshAiTrainJob(),
     sfp_regime: freshAiTrainJob(),
     pullback_regime: freshAiTrainJob(),
+    pullback_pattern_break: freshAiTrainJob(),
     pullback_signal: freshAiTrainJob(),
     ai_exit_levels: freshAiTrainJob(),
   },
@@ -294,6 +307,7 @@ function aiTrainJobFor(model, scope = "paper") {
   const key = normalizeAiModelScope(scope);
   if (model === "sfp_regime") return aiTrainJob[key].sfp_regime;
   if (model === "pullback_regime") return aiTrainJob[key].pullback_regime;
+  if (model === "pullback_pattern_break") return aiTrainJob[key].pullback_pattern_break;
   if (model === "pullback_signal") return aiTrainJob[key].pullback_signal;
   if (model === "ai_exit_levels") return aiTrainJob[key].ai_exit_levels;
   return aiTrainJob[key].early_exit;
@@ -317,6 +331,13 @@ function getPullbackRegimeModelStatusFull(scope = "paper") {
   return modelStatusWithTraining(
     () => getPullbackRegimeModelStatus(normalizeAiModelScope(scope)),
     aiTrainJobFor("pullback_regime", scope)
+  );
+}
+
+function getPullbackPatternBreakModelStatusFull(scope = "paper") {
+  return modelStatusWithTraining(
+    () => getPullbackPatternBreakModelStatus(normalizeAiModelScope(scope)),
+    aiTrainJobFor("pullback_pattern_break", scope)
   );
 }
 
@@ -739,6 +760,28 @@ function importPullbackRegimeModelFromBody(body = {}) {
   };
 }
 
+function importPullbackPatternBreakModelFromBody(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  if (!body.model || typeof body.model !== "object") {
+    throw new Error("model object required");
+  }
+  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const model = savePullbackPatternBreakModel(
+    {
+      ...modelPayload,
+      source: modelPayload.source ?? `import:local:${scope}`,
+      trainedAt: modelPayload.trainedAt ?? Date.now(),
+    },
+    scope
+  );
+  reloadPullbackPatternBreakModel(scope);
+  return {
+    scope,
+    status: getPullbackPatternBreakModelStatusFull(scope),
+    featureCount: model.featureNames?.length ?? null,
+  };
+}
+
 function importPullbackSignalModelFromBody(body = {}) {
   const scope = normalizeAiModelScope(body.scope);
   if (!body.model || typeof body.model !== "object") {
@@ -982,6 +1025,66 @@ function trainPullbackRegimeModelFromHistory(body = {}) {
   return startPullbackRegimeTraining(body);
 }
 
+function startPullbackPatternBreakTraining(body = {}) {
+  const scope = normalizeAiModelScope(body.scope);
+  const job = aiTrainJobFor("pullback_pattern_break", scope);
+  if (job.running) {
+    throw new Error("Pullback pattern-break model training already running");
+  }
+  const trades = collectPullbackTrainingTrades(body.source, scope);
+  if (trades.length < 12) {
+    throw new Error(
+      `Need at least 12 pullback closed trades for training (got ${trades.length})`
+    );
+  }
+  job.running = true;
+  job.error = null;
+  job.result = null;
+  job.progress = {
+    phase: "starting",
+    done: 0,
+    total: trades.length,
+    message: `Preparing ${trades.length} pullback trades…`,
+  };
+  void (async () => {
+    const cfg =
+      scope === "live"
+        ? (await liveBot?.getPublicState?.())?.config ?? {}
+        : paperBot.getPublicState().config;
+    try {
+      await trainPullbackPatternBreakFromTrades(trades, fetchBarsForSfpRegimeTraining, {
+        ...cfg,
+        modelScope: scope,
+        source: `trained:${scope}:${body.source ?? "auto"}`,
+        onProgress: (p) => {
+          job.progress = p;
+        },
+      });
+      reloadPullbackPatternBreakModel(scope);
+      job.result = {
+        tradesUsed: trades.length,
+        model: getPullbackPatternBreakModelStatus(scope),
+      };
+      job.progress = {
+        phase: "done",
+        done: trades.length,
+        total: trades.length,
+        message: "Training complete",
+      };
+    } catch (e) {
+      job.error = e.message || String(e);
+      console.error(`Pullback pattern-break model training failed (${scope}): ${job.error}`);
+    } finally {
+      job.running = false;
+    }
+  })();
+  return { ok: true, started: true, trades: trades.length, scope };
+}
+
+function trainPullbackPatternBreakModelFromHistory(body = {}) {
+  return startPullbackPatternBreakTraining(body);
+}
+
 function trainPullbackSignalModelFromHistory(body = {}) {
   return startPullbackSignalTraining(body);
 }
@@ -995,6 +1098,15 @@ function refreshPullbackRegimeForSymbol(sym, historyBuffers) {
   pullbackRegimeMonitor.refreshSymbol(sym, bars, cfg);
 }
 
+function refreshPullbackPatternBreakForSymbol(sym, historyBuffers) {
+  if (!pullbackPatternBreakMonitor || !paperBot) return;
+  const cfg = paperBot.getPublicState().config;
+  if (!cfg.aiPullbackPatternBreakEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  pullbackPatternBreakMonitor.refreshSymbol(sym, bars, cfg);
+}
+
 function refreshLivePullbackRegimeForSymbol(sym, historyBuffers) {
   if (!livePullbackRegimeMonitor || !liveBot) return;
   const cfg = liveBot.getConfig?.() ?? {};
@@ -1002,6 +1114,15 @@ function refreshLivePullbackRegimeForSymbol(sym, historyBuffers) {
   const bars = getRecentBarsForBot(sym, historyBuffers, 120);
   if (bars.length < 30) return;
   livePullbackRegimeMonitor.refreshSymbol(sym, bars, cfg);
+}
+
+function refreshLivePullbackPatternBreakForSymbol(sym, historyBuffers) {
+  if (!livePullbackPatternBreakMonitor || !liveBot) return;
+  const cfg = liveBot.getConfig?.() ?? {};
+  if (!cfg?.aiPullbackPatternBreakEnabled) return;
+  const bars = getRecentBarsForBot(sym, historyBuffers, 120);
+  if (bars.length < 30) return;
+  livePullbackPatternBreakMonitor.refreshSymbol(sym, bars, cfg);
 }
 
 function getPullbackRegimeMonitorSnapshot() {
@@ -1016,6 +1137,20 @@ function getLivePullbackRegimeMonitorSnapshot() {
     return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
   }
   return livePullbackRegimeMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
+}
+
+function getPullbackPatternBreakMonitorSnapshot() {
+  if (!pullbackPatternBreakMonitor || !paperBot) {
+    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return pullbackPatternBreakMonitor.getSnapshot(paperBot.getPublicState().config);
+}
+
+function getLivePullbackPatternBreakMonitorSnapshot() {
+  if (!livePullbackPatternBreakMonitor || !liveBot) {
+    return { ok: false, enabled: false, tracked: 0, badCount: 0, worst: [] };
+  }
+  return livePullbackPatternBreakMonitor.getSnapshot(liveBot.getConfig?.() ?? {});
 }
 
 function refreshSfpRegimeForSymbol(sym, historyBuffers) {
@@ -1061,6 +1196,8 @@ function getLiveAiReport() {
     sfpRegimeMonitor: getLiveSfpRegimeMonitorSnapshot(),
     pullbackRegimeStatus: getPullbackRegimeModelStatusFull("live"),
     pullbackRegimeMonitor: getLivePullbackRegimeMonitorSnapshot(),
+    pullbackPatternBreakStatus: getPullbackPatternBreakModelStatusFull("live"),
+    pullbackPatternBreakMonitor: getLivePullbackPatternBreakMonitorSnapshot(),
     exitLevelsStatus: getAiExitLevelsModelStatusFull("live"),
   });
 }
@@ -1121,7 +1258,9 @@ function refreshBotPrices(historyBuffers, klineSymbol = null, opts = {}) {
     refreshSfpRegimeForSymbol(klineSymbol, historyBuffers);
     refreshLiveSfpRegimeForSymbol(klineSymbol, historyBuffers);
     refreshPullbackRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshPullbackPatternBreakForSymbol(klineSymbol, historyBuffers);
     refreshLivePullbackRegimeForSymbol(klineSymbol, historyBuffers);
+    refreshLivePullbackPatternBreakForSymbol(klineSymbol, historyBuffers);
   }
 
   let paperChanged = false;
@@ -3362,6 +3501,7 @@ async function main() {
   ensureAllDefaultModelsOnDisk();
   ensureAllSfpRegimeModelsOnDisk();
   ensureAllPullbackRegimeModelsOnDisk();
+  ensureAllPullbackPatternBreakModelsOnDisk();
   ensureAllPullbackSignalModelsOnDisk();
   ensureAllAiExitLevelsModelsOnDisk();
 
@@ -3377,6 +3517,12 @@ async function main() {
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
+  pullbackPatternBreakMonitor = createPullbackPatternBreakMonitor({
+    getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
+    modelScope: "paper",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+  });
+
   paperBot = createPaperBot({
     onTradeClosed: captureTradeSnapshot,
     onDrawdownStop: handleDrawdownStop,
@@ -3385,6 +3531,7 @@ async function main() {
       getRecentBarsForBot(sym, historyBuffers, limit),
     sfpRegimeMonitor,
     pullbackRegimeMonitor,
+    pullbackPatternBreakMonitor,
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
@@ -3407,6 +3554,12 @@ async function main() {
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
+  livePullbackPatternBreakMonitor = createPullbackPatternBreakMonitor({
+    getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
+    modelScope: "live",
+    getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+  });
+
   liveBot = createLiveBot({
     trader: futuresTrader,
     onTradeClosed: createTradeClosedHandler("Live bot"),
@@ -3416,6 +3569,7 @@ async function main() {
     resolveExtremalSpikeGate: resolveExtremalSpikeGateForSymbol,
     sfpRegimeMonitor: liveSfpRegimeMonitor,
     pullbackRegimeMonitor: livePullbackRegimeMonitor,
+    pullbackPatternBreakMonitor: livePullbackPatternBreakMonitor,
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
@@ -3689,6 +3843,18 @@ async function main() {
           normalizeAiModelScope(scope) === "live"
             ? getLivePullbackRegimeMonitorSnapshot()
             : getPullbackRegimeMonitorSnapshot(),
+        getPullbackPatternBreakModelStatus: (scope) =>
+          getPullbackPatternBreakModelStatusFull(scope),
+        getPullbackPatternBreakModelData: (scope) =>
+          getPullbackPatternBreakModel(normalizeAiModelScope(scope)),
+        importPullbackPatternBreakModel: (body) =>
+          importPullbackPatternBreakModelFromBody(body),
+        trainPullbackPatternBreakModel: (body) =>
+          trainPullbackPatternBreakModelFromHistory(body),
+        getPullbackPatternBreakMonitor: (scope) =>
+          normalizeAiModelScope(scope) === "live"
+            ? getLivePullbackPatternBreakMonitorSnapshot()
+            : getPullbackPatternBreakMonitorSnapshot(),
         getPullbackSignalModelStatus: (scope) =>
           getPullbackSignalModelStatusFull(scope),
         getPullbackSignalModelData: (scope) =>
@@ -4067,6 +4233,18 @@ async function main() {
         50
       );
     }
+    if (
+      pullbackPatternBreakMonitor &&
+      paperBot?.getPublicState?.().config?.aiPullbackPatternBreakEnabled
+    ) {
+      const syms = [...historyBuffers.keys()];
+      pullbackPatternBreakMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        paperBot.getPublicState().config,
+        50
+      );
+    }
     if (liveSfpRegimeMonitor && liveBot?.getConfig?.()?.aiSfpRegimeEnabled) {
       const syms = [...historyBuffers.keys()];
       liveSfpRegimeMonitor.refreshBatch(
@@ -4082,6 +4260,18 @@ async function main() {
     ) {
       const syms = [...historyBuffers.keys()];
       livePullbackRegimeMonitor.refreshBatch(
+        syms,
+        (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+        liveBot.getConfig(),
+        50
+      );
+    }
+    if (
+      livePullbackPatternBreakMonitor &&
+      liveBot?.getConfig?.()?.aiPullbackPatternBreakEnabled
+    ) {
+      const syms = [...historyBuffers.keys()];
+      livePullbackPatternBreakMonitor.refreshBatch(
         syms,
         (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
         liveBot.getConfig(),

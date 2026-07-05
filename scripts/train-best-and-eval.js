@@ -44,6 +44,11 @@ const {
   reloadModel: reloadPbRegimeModel,
 } = require("../lib/pullback-regime-model");
 const {
+  ensureAllDefaultModelsOnDisk: ensurePbPatternBreakModels,
+  trainFromTrades: trainPbPatternBreakFromTrades,
+  reloadModel: reloadPbPatternBreakModel,
+} = require("../lib/pullback-pattern-break-model");
+const {
   ensureAllDefaultModelsOnDisk: ensureExitLevelsModels,
   trainFromTrades: trainExitLevelsFromTrades,
   reloadModel: reloadExitLevelsModel,
@@ -96,6 +101,10 @@ const BEST_BOT = {
   aiPullbackRegimeEnabled: true,
   aiPullbackRegimeBullThreshold: 0.76,
   aiPullbackRegimeBearThreshold: 0.74,
+  aiPullbackPatternBreakEnabled: false,
+  aiPullbackPatternBreakBullThreshold: 0.72,
+  aiPullbackPatternBreakBearThreshold: 0.7,
+  aiPullbackPatternBreakBtcLookbackHours: 24,
   aiExitLevelsEnabled: true,
   aiExitLevelsLegacyDisabled: true,
   aiExitLevelsMode: "legacy_scale",
@@ -258,7 +267,7 @@ async function trainSfpRegime(scopes, btcHours, bullTh, bearTh) {
   for (const scope of scopes) {
     await trainSfpFromTrades(trades, fetchBarsAll, {
       modelScope: scope,
-      source: `train-best-eval:${scope}`,
+      source: `train:cached-backtest:30d:${scope}`,
       btcFeaturesEnabled: true,
       aiRegimeBtcLookbackHours: btcHours,
     });
@@ -286,8 +295,8 @@ async function trainEarlyExit(scopes) {
   log(`\n=== TRAIN early_exit (${trades.length} trades) ===`);
   for (const scope of scopes) {
     await trainEarlyExitFromTrades(trades, fetchBarsAll, {
-      scope,
-      source: `train-best-eval:${scope}`,
+      modelScope: scope,
+      source: `train:cached-backtest:30d:${scope}`,
     });
     reloadEarlyExitModel(scope);
     const st = getEarlyExitStatus(scope);
@@ -303,19 +312,26 @@ async function trainPullback(scopes) {
     log(`  skip pullback train: ${trades.length} PB trades (need >=30)`);
     return { skipped: true, trades: trades.length };
   }
-  log(`\n=== TRAIN pullback signal+regime (${trades.length} trades) ===`);
+  log(`\n=== TRAIN pullback signal+regime+pattern-break (${trades.length} trades) ===`);
   for (const scope of scopes) {
     await trainPbSignalFromTrades(trades, fetchBarsAll, {
-      scope,
-      source: `train-best-eval:pb-signal:${scope}`,
+      modelScope: scope,
+      source: `train:cached-backtest:30d:${scope}`,
     });
     reloadPbSignalModel(scope);
     await trainPbRegimeFromTrades(trades, fetchBarsAll, {
-      scope,
-      source: `train-best-eval:pb-regime:${scope}`,
+      modelScope: scope,
+      source: `train:cached-backtest:30d:${scope}`,
+      aiRegimeBtcLookbackHours: BEST_BOT.aiRegimeBtcLookbackHours,
     });
     reloadPbRegimeModel(scope);
-    log(`  ✓ ${scope} pullback signal + regime`);
+    await trainPbPatternBreakFromTrades(trades, fetchBarsAll, {
+      modelScope: scope,
+      source: `train:cached-backtest:30d:${scope}`,
+      aiPullbackPatternBreakBtcLookbackHours: BEST_BOT.aiPullbackPatternBreakBtcLookbackHours,
+    });
+    reloadPbPatternBreakModel(scope);
+    log(`  ✓ ${scope} pullback signal + regime + pattern-break`);
   }
 }
 
@@ -338,11 +354,11 @@ async function trainExitLevels(scopes, botConfig) {
   await trainExitLevelsFromTrades(trades, fetchBars, {
     botConfig,
     scope: "paper",
-    source: "train-best-eval",
+    source: "train:cached-backtest:30d",
   });
   reloadExitLevelsModel("paper");
   const paperModel = getExitLevelsModel("paper");
-  saveExitLevelsModel({ ...paperModel, source: "train-best-eval:live" }, "live");
+  saveExitLevelsModel({ ...paperModel, source: "train:cached-backtest:30d:live" }, "live");
   reloadExitLevelsModel("live");
   log(`  ✓ paper + live exit-levels`);
 }
@@ -363,6 +379,7 @@ async function main() {
   ensureEarlyExitModels();
   ensurePbSignalModels();
   ensurePbRegimeModels();
+  ensurePbPatternBreakModels();
   ensureExitLevelsModels();
 
   applyScanner();
@@ -413,7 +430,13 @@ async function main() {
   if (shouldRun("pullback", fromStep)) {
     await runWindowBacktest({
     label: "pullback_train_data",
-    botConfig: { ...BEST_BOT, aiEarlyExitEnabled: false },
+    botConfig: {
+      ...BEST_BOT,
+      aiEarlyExitEnabled: false,
+      aiPullbackSignalEnabled: false,
+      aiPullbackRegimeEnabled: false,
+      aiPullbackPatternBreakEnabled: false,
+    },
     signalCfg,
     symbols,
     days: trainDays,
@@ -458,7 +481,7 @@ async function main() {
   // Re-enable full best config for eval
   patchBotState("paper-bot-state.json", evalBot);
 
-  if (!shouldRun("test", fromStep)) return;
+  if (!shouldRun("test", fromStep) || testDays <= 0) return;
 
   log(`\n=== TEST (${testDays}d held-out) ===`);
   const baseline = await runWindowBacktest({
