@@ -1899,6 +1899,21 @@
           <label for="paperBotAiSfpRegimeThreshold">Legacy threshold (fallback)</label>
           <input type="number" id="paperBotAiSfpRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
         </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiSfpRegimeFundingOiGbmEnabled" />
+            Funding/OI GBM filter (optional)
+          </label>
+          <div class="hint">30d-optimized non-linear model with funding rate + open interest. Requires main regime filter above.</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiSfpRegimeGbmBullThreshold">GBM bull threshold</label>
+          <input type="number" id="paperBotAiSfpRegimeGbmBullThreshold" step="0.01" min="0.5" max="0.95" value="0.72" />
+        </div>
+        <div class="field">
+          <label for="paperBotAiSfpRegimeGbmBearThreshold">GBM bear threshold</label>
+          <input type="number" id="paperBotAiSfpRegimeGbmBearThreshold" step="0.01" min="0.5" max="0.95" value="0.70" />
+        </div>
         <div class="field" style="grid-column: 1 / -1;">
           <div class="hint" id="paperBotSfpRegimeStatus">Monitor: loading…</div>
         </div>
@@ -1989,6 +2004,21 @@
             AI pullback signal filter (paper bot)
           </label>
           <div class="hint">Entry-quality gate — skips weak pullback setups before open (off by default; regime filter above is recommended)</div>
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="paperBotAiPullbackSignalFundingOiGbmEnabled" />
+            Funding/OI GBM filter (optional)
+          </label>
+          <div class="hint">30d-optimized non-linear model with funding rate + open interest. Requires main signal filter above.</div>
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackSignalGbmBullThreshold">GBM bull threshold</label>
+          <input type="number" id="paperBotAiPullbackSignalGbmBullThreshold" step="0.01" min="0.35" max="0.9" value="0.58" />
+        </div>
+        <div class="field">
+          <label for="paperBotAiPullbackSignalGbmBearThreshold">GBM bear threshold</label>
+          <input type="number" id="paperBotAiPullbackSignalGbmBearThreshold" step="0.01" min="0.35" max="0.9" value="0.60" />
         </div>
         <div class="field">
           <label for="paperBotAiPullbackSignalBtcLookbackHours">BTC trend lookback (hours)</label>
@@ -2415,6 +2445,21 @@
           <label for="liveBotAiSfpRegimeThreshold">Legacy threshold (fallback)</label>
           <input type="number" id="liveBotAiSfpRegimeThreshold" step="0.01" min="0.5" max="0.95" value="0.58" required />
         </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiSfpRegimeFundingOiGbmEnabled" />
+            Funding/OI GBM filter (optional)
+          </label>
+          <div class="hint">30d-optimized non-linear model with funding rate + open interest. Requires main regime filter above.</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiSfpRegimeGbmBullThreshold">GBM bull threshold</label>
+          <input type="number" id="liveBotAiSfpRegimeGbmBullThreshold" step="0.01" min="0.5" max="0.95" value="0.72" />
+        </div>
+        <div class="field">
+          <label for="liveBotAiSfpRegimeGbmBearThreshold">GBM bear threshold</label>
+          <input type="number" id="liveBotAiSfpRegimeGbmBearThreshold" step="0.01" min="0.5" max="0.95" value="0.70" />
+        </div>
         <div class="field" style="grid-column: 1 / -1;">
           <div class="hint" id="liveBotSfpRegimeStatus">Live monitor: loading…</div>
         </div>
@@ -2505,6 +2550,21 @@
             AI pullback signal filter (live bot)
           </label>
           <div class="hint">Entry-quality gate — skips weak pullback setups before open (off by default; regime filter above is recommended)</div>
+        </div>
+        <div class="field" style="min-width: 220px;">
+          <label>
+            <input type="checkbox" id="liveBotAiPullbackSignalFundingOiGbmEnabled" />
+            Funding/OI GBM filter (optional)
+          </label>
+          <div class="hint">Uses funding rate + open interest GBM model (30d backtest winner).</div>
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackSignalGbmBullThreshold">GBM bull threshold</label>
+          <input type="number" id="liveBotAiPullbackSignalGbmBullThreshold" step="0.01" min="0.35" max="0.9" value="0.58" />
+        </div>
+        <div class="field">
+          <label for="liveBotAiPullbackSignalGbmBearThreshold">GBM bear threshold</label>
+          <input type="number" id="liveBotAiPullbackSignalGbmBearThreshold" step="0.01" min="0.35" max="0.9" value="0.60" />
         </div>
         <div class="field">
           <label for="liveBotAiPullbackSignalBtcLookbackHours">BTC trend lookback (hours)</label>
@@ -2755,6 +2815,21 @@
                 AI pullback signal filter
               </label>
               <div class="hint">Off by default — regime filter above is recommended on 10d cache.</div>
+            </div>
+            <div class="field" style="min-width: 220px;">
+              <label>
+                <input type="checkbox" id="liveAiPullbackSignalFundingOiGbmEnabled" />
+                Funding/OI GBM filter (optional)
+              </label>
+              <div class="hint">Non-linear funding/OI model · default thresholds 0.58 / 0.60</div>
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackSignalGbmBullThreshold">GBM bull threshold</label>
+              <input type="number" id="liveAiPullbackSignalGbmBullThreshold" step="0.01" min="0.35" max="0.9" value="0.58" />
+            </div>
+            <div class="field">
+              <label for="liveAiPullbackSignalGbmBearThreshold">GBM bear threshold</label>
+              <input type="number" id="liveAiPullbackSignalGbmBearThreshold" step="0.01" min="0.35" max="0.9" value="0.60" />
             </div>
             <div class="field">
               <label for="liveAiPullbackSignalBtcLookbackHours">BTC trend lookback (hours)</label>
@@ -4490,6 +4565,15 @@
         aiSfpRegimeThreshold: Number(
           document.getElementById("paperBotAiSfpRegimeThreshold").value
         ),
+        aiSfpRegimeFundingOiGbmEnabled: Boolean(
+          document.getElementById("paperBotAiSfpRegimeFundingOiGbmEnabled")?.checked
+        ),
+        aiSfpRegimeGbmBullThreshold: Number(
+          document.getElementById("paperBotAiSfpRegimeGbmBullThreshold")?.value ?? 0.72
+        ),
+        aiSfpRegimeGbmBearThreshold: Number(
+          document.getElementById("paperBotAiSfpRegimeGbmBearThreshold")?.value ?? 0.7
+        ),
         aiRegimeBtcLookbackHours: Number(
           document.getElementById("paperBotAiRegimeBtcLookbackHours").value
         ),
@@ -4623,6 +4707,12 @@
         cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("paperBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
+      const paperSfpGbmEl = document.getElementById("paperBotAiSfpRegimeFundingOiGbmEnabled");
+      if (paperSfpGbmEl) paperSfpGbmEl.checked = Boolean(cfg.aiSfpRegimeFundingOiGbmEnabled);
+      const paperSfpGbmBullEl = document.getElementById("paperBotAiSfpRegimeGbmBullThreshold");
+      if (paperSfpGbmBullEl) paperSfpGbmBullEl.value = cfg.aiSfpRegimeGbmBullThreshold ?? 0.72;
+      const paperSfpGbmBearEl = document.getElementById("paperBotAiSfpRegimeGbmBearThreshold");
+      if (paperSfpGbmBearEl) paperSfpGbmBearEl.value = cfg.aiSfpRegimeGbmBearThreshold ?? 0.7;
       document.getElementById("paperBotAiRegimeBtcLookbackHours").value =
         cfg.aiRegimeBtcLookbackHours ?? 12;
       document.getElementById("paperBotBlockedSymbols").value = (
@@ -4858,11 +4948,20 @@
             : "paperBotAiPullbackSignal";
       return {
         aiPullbackSignalEnabled: document.getElementById(`${prefix}Enabled`).checked,
+        aiPullbackSignalFundingOiGbmEnabled: Boolean(
+          document.getElementById(`${prefix}FundingOiGbmEnabled`)?.checked
+        ),
         aiPullbackSignalBullThreshold: Number(
           document.getElementById(`${prefix}BullThreshold`).value
         ),
         aiPullbackSignalBearThreshold: Number(
           document.getElementById(`${prefix}BearThreshold`).value
+        ),
+        aiPullbackSignalGbmBullThreshold: Number(
+          document.getElementById(`${prefix}GbmBullThreshold`)?.value ?? 0.58
+        ),
+        aiPullbackSignalGbmBearThreshold: Number(
+          document.getElementById(`${prefix}GbmBearThreshold`)?.value ?? 0.6
         ),
         aiPullbackSignalBtcLookbackHours: Number(
           document.getElementById(`${prefix}BtcLookbackHours`).value
@@ -4880,6 +4979,18 @@
             : "paperBotAiPullbackSignal";
       const enabledEl = document.getElementById(`${prefix}Enabled`);
       if (enabledEl) enabledEl.checked = Boolean(cfg.aiPullbackSignalEnabled);
+      const gbmEl = document.getElementById(`${prefix}FundingOiGbmEnabled`);
+      if (gbmEl) gbmEl.checked = Boolean(cfg.aiPullbackSignalFundingOiGbmEnabled);
+      const gbmBullEl = document.getElementById(`${prefix}GbmBullThreshold`);
+      if (gbmBullEl) {
+        gbmBullEl.value =
+          cfg.aiPullbackSignalGbmBullThreshold ?? 0.58;
+      }
+      const gbmBearEl = document.getElementById(`${prefix}GbmBearThreshold`);
+      if (gbmBearEl) {
+        gbmBearEl.value =
+          cfg.aiPullbackSignalGbmBearThreshold ?? 0.6;
+      }
       const bullEl = document.getElementById(`${prefix}BullThreshold`);
       if (bullEl) {
         bullEl.value =
@@ -6537,6 +6648,15 @@
         aiSfpRegimeThreshold: Number(
           document.getElementById("liveBotAiSfpRegimeThreshold").value
         ),
+        aiSfpRegimeFundingOiGbmEnabled: Boolean(
+          document.getElementById("liveBotAiSfpRegimeFundingOiGbmEnabled")?.checked
+        ),
+        aiSfpRegimeGbmBullThreshold: Number(
+          document.getElementById("liveBotAiSfpRegimeGbmBullThreshold")?.value ?? 0.72
+        ),
+        aiSfpRegimeGbmBearThreshold: Number(
+          document.getElementById("liveBotAiSfpRegimeGbmBearThreshold")?.value ?? 0.7
+        ),
         aiRegimeBtcLookbackHours: Number(
           document.getElementById("liveBotAiRegimeBtcLookbackHours").value
         ),
@@ -6626,6 +6746,12 @@
         cfg.aiSfpRegimeBearThreshold ?? cfg.aiSfpRegimeThreshold ?? 0.72;
       document.getElementById("liveBotAiSfpRegimeThreshold").value =
         cfg.aiSfpRegimeThreshold ?? 0.58;
+      const liveSfpGbmEl = document.getElementById("liveBotAiSfpRegimeFundingOiGbmEnabled");
+      if (liveSfpGbmEl) liveSfpGbmEl.checked = Boolean(cfg.aiSfpRegimeFundingOiGbmEnabled);
+      const liveSfpGbmBullEl = document.getElementById("liveBotAiSfpRegimeGbmBullThreshold");
+      if (liveSfpGbmBullEl) liveSfpGbmBullEl.value = cfg.aiSfpRegimeGbmBullThreshold ?? 0.72;
+      const liveSfpGbmBearEl = document.getElementById("liveBotAiSfpRegimeGbmBearThreshold");
+      if (liveSfpGbmBearEl) liveSfpGbmBearEl.value = cfg.aiSfpRegimeGbmBearThreshold ?? 0.7;
       document.getElementById("liveBotAiRegimeBtcLookbackHours").value =
         cfg.aiRegimeBtcLookbackHours ?? 12;
       fillPullbackRegimeForm("live", cfg);

@@ -27,6 +27,9 @@
     "dejavu-fonts-ttf": "^2.37.3",
     "ws": "^8.20.1"
   },
+  "optionalDependencies": {
+    "onnxruntime-node": "^1.20.0"
+  },
   "keywords": [],
   "description": ""
 }

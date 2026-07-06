@@ -90,6 +90,9 @@ const {
   reloadModel: reloadPullbackSignalModel,
   saveModel: savePullbackSignalModel,
 } = require("./lib/pullback-signal-model");
+const { ensureGbmModelsForScope: ensurePullbackGbm } = require("./lib/pullback-signal-onnx");
+const { ensureGbmModelsForScope: ensureSfpRegimeGbm } = require("./lib/sfp-regime-onnx");
+const { createFundingOiProvider } = require("./lib/funding-oi-provider");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllAiExitLevelsModelsOnDisk,
   getModel: getAiExitLevelsModel,
@@ -229,6 +232,7 @@ let livePullbackRegimeMonitor = null;
 let pullbackPatternBreakMonitor = null;
 let livePullbackPatternBreakMonitor = null;
 let liveBot = null;
+let fundingOiProvider = null;
 let futuresTrader = null;
 let dashboardWs = null;
 let fetchPositionsPayload = null;
@@ -3504,11 +3508,17 @@ async function main() {
   ensureAllPullbackPatternBreakModelsOnDisk();
   ensureAllPullbackSignalModelsOnDisk();
   ensureAllAiExitLevelsModelsOnDisk();
+  ensurePullbackGbm("paper", "paper");
+  ensurePullbackGbm("live", "paper");
+  ensureSfpRegimeGbm("paper", "paper");
+  ensureSfpRegimeGbm("live", "paper");
+  fundingOiProvider = createFundingOiProvider();
 
   sfpRegimeMonitor = createSfpRegimeMonitor({
     getClosedTrades: () => paperBot?.getClosedTrades?.() ?? [],
     modelScope: "paper",
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+    getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
   });
 
   pullbackRegimeMonitor = createPullbackRegimeMonitor({
@@ -3534,6 +3544,7 @@ async function main() {
     pullbackPatternBreakMonitor,
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+    getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -3546,6 +3557,7 @@ async function main() {
     getClosedTrades: () => liveBot?.getClosedTrades?.() ?? [],
     modelScope: "live",
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+    getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
   });
 
   livePullbackRegimeMonitor = createPullbackRegimeMonitor({
@@ -3574,6 +3586,7 @@ async function main() {
       getRecentBarsForBot(sym, historyBuffers, limit),
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
+    getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
   });
   void liveBot.getPublicState().then((st) => {
     console.error(
@@ -4128,6 +4141,14 @@ async function main() {
     symbols = symbols.slice(0, maxSymbols);
   }
   dashboard.setMeta({ symbolCount: symbols.length, prefetching: false });
+
+  if (fundingOiProvider) {
+    fundingOiProvider.setSymbols(symbols);
+    fundingOiProvider.startAutoRefresh();
+    void fundingOiProvider.refreshAll().then((r) => {
+      console.error(`Funding/OI provider: cached ${r.ok} symbols (${r.fail} failed)`);
+    }).catch((e) => console.error(`Funding/OI refresh: ${e.message}`));
+  }
 
   const snapshotClean = cleanOldSnapshots();
   if (snapshotClean.removed > 0) {
