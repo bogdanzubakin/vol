@@ -145,6 +145,7 @@ const {
   formatBytes,
   writeJsonFile,
 } = require("./lib/data-dir");
+const { createKeyedExclusive } = require("./lib/keyed-mutex");
 const scannerConfig = require("./lib/scanner-config");
 const { buildLiveAiReport } = require("./lib/live-ai-report");
 
@@ -226,6 +227,7 @@ let dashboard = null;
 let pushScannerState = null;
 let telegram = null;
 let paperBot = null;
+const symbolEvalLock = createKeyedExclusive();
 let sfpRegimeMonitor = null;
 let liveSfpRegimeMonitor = null;
 let pullbackRegimeMonitor = null;
@@ -1975,6 +1977,7 @@ function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
     sfpActive.set(sym, row);
     sfpHistory.set(sym, row);
     if (!prev) {
+      lastSfp.set(sym, true);
       const detail = `sweep ${metrics.sweepLow?.toFixed(6)} · reclaim ${metrics.close} · ${metrics.barsSinceSweep} bars`;
       dashboard?.pushEvent("NEW_SFP", sym, detail);
       paperBot?.onSfpSignal(sym, metrics);
@@ -2012,6 +2015,7 @@ function applySfpBearSignal(sym, analysis, qv, sfpBearActive, sfpBearHistory, la
     sfpBearActive.set(sym, row);
     sfpBearHistory.set(sym, row);
     if (!prev) {
+      lastSfpBear.set(sym, true);
       const detail = `sweep ${metrics.sweepHigh?.toFixed(6)} · reject ${metrics.close} · ${metrics.barsSinceSweep} bars`;
       dashboard?.pushEvent("NEW_SFP_BEAR", sym, detail);
       paperBot?.onSfpBearSignal(sym, metrics);
@@ -2048,6 +2052,7 @@ function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
     pbActive.set(sym, row);
     pbHistory.set(sym, row);
     if (!prev) {
+      lastPb.set(sym, true);
       const detail = `MA${pb.maBars} ${pb.ma} · +${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
       dashboard?.pushEvent("NEW_PB", sym, detail);
       paperBot?.onPullbackSignal(sym, pb);
@@ -2084,6 +2089,7 @@ function applyPullbackBearSignal(sym, pb, qv, pbBearActive, pbBearHistory, lastP
     pbBearActive.set(sym, row);
     pbBearHistory.set(sym, row);
     if (!prev) {
+      lastPbBear.set(sym, true);
       const detail = `MA${pb.maBars} ${pb.ma} · ${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
       dashboard?.pushEvent("NEW_PB_BEAR", sym, detail);
       paperBot?.onPullbackBearSignal(sym, pb);
@@ -2098,6 +2104,14 @@ function applyPullbackBearSignal(sym, pb, qv, pbBearActive, pbBearHistory, lastP
 }
 
 function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
+  let out;
+  symbolEvalLock.runExclusive(`eval:${sym}`, () => {
+    out = evaluateSymbolSignalsUnlocked(sym, signalBuffers, priceBuffers, qv, maps);
+  });
+  return out;
+}
+
+function evaluateSymbolSignalsUnlocked(sym, signalBuffers, priceBuffers, qv, maps) {
   const {
     sfpActive,
     sfpHistory,
