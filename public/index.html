@@ -308,6 +308,10 @@
       background: rgba(244, 114, 182, 0.2);
       color: #f472b6;
     }
+    .status-tag.pb-bear {
+      background: rgba(251, 146, 60, 0.2);
+      color: #fdba74;
+    }
     .strategy-monitor {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -4381,6 +4385,7 @@
       if (kind === "sfp") return '<span class="status-tag sfp">SFP</span>';
       if (kind === "sfp_bear") return '<span class="status-tag sfp-bear">SFP↓</span>';
       if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
+      if (kind === "pullback_bear") return '<span class="status-tag pb-bear">PB↓</span>';
       return '<span class="status-tag muted">—</span>';
     }
 
