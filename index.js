@@ -54,6 +54,7 @@ const {
   saveModel: saveEarlyExitModel,
 } = require("./lib/early-exit-model");
 const { normalizeAiModelScope } = require("./lib/ai-model-scope");
+const { writeGbmBundles } = require("./lib/gbm-model-import");
 const { collectAiTrainingTrades } = require("./lib/ai-training-trades");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllSfpRegimeModelsOnDisk,
@@ -725,7 +726,7 @@ function importSfpRegimeModelFromBody(body = {}) {
   if (!body.model || typeof body.model !== "object") {
     throw new Error("model object required");
   }
-  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const { scope: _ignore, savedAt, savedAtIso, gbmBundles, ...modelPayload } = body.model;
   const model = saveSfpRegimeModel(
     {
       ...modelPayload,
@@ -734,6 +735,15 @@ function importSfpRegimeModelFromBody(body = {}) {
     },
     scope
   );
+  const bundles = body.gbmBundles ?? gbmBundles;
+  if (bundles) {
+    writeGbmBundles({
+      basename: "sfp-regime-onnx",
+      modelPrefix: "sfp-regime",
+      scope,
+      bundles,
+    });
+  }
   reloadSfpRegimeModel(scope);
   return {
     scope,
@@ -791,7 +801,7 @@ function importPullbackSignalModelFromBody(body = {}) {
   if (!body.model || typeof body.model !== "object") {
     throw new Error("model object required");
   }
-  const { scope: _ignore, savedAt, savedAtIso, ...modelPayload } = body.model;
+  const { scope: _ignore, savedAt, savedAtIso, gbmBundles, ...modelPayload } = body.model;
   const model = savePullbackSignalModel(
     {
       ...modelPayload,
@@ -800,6 +810,15 @@ function importPullbackSignalModelFromBody(body = {}) {
     },
     scope
   );
+  const bundles = body.gbmBundles ?? gbmBundles;
+  if (bundles) {
+    writeGbmBundles({
+      basename: "pullback-signal-onnx",
+      modelPrefix: "pullback-signal",
+      scope,
+      bundles,
+    });
+  }
   reloadPullbackSignalModel(scope);
   return {
     scope,

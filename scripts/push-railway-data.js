@@ -9,6 +9,7 @@ const path = require("path");
 const http = require("http");
 const https = require("https");
 const { dataPath, resolveDataDir } = require("../lib/data-dir");
+const { readGbmBundles } = require("../lib/gbm-model-import");
 
 const ROOT = path.join(__dirname, "..");
 
@@ -156,22 +157,27 @@ function applyEarlyExitThresholds(model, botConfig) {
   return m;
 }
 
-async function pushModel(baseUrl, cookie, apiPath, scope, modelFile, botConfig, applyThresholds) {
+async function pushModel(baseUrl, cookie, apiPath, scope, modelFile, botConfig, applyThresholds, gbmOpts = null) {
   if (!fs.existsSync(modelFile)) {
     return { skipped: true, reason: "file missing" };
   }
   const raw = readJsonOptional(modelFile);
   if (!raw) return { skipped: true, reason: "invalid json" };
   const model = applyThresholds(stripModelMeta(raw), botConfig);
-  const result = await api(baseUrl, cookie, "PUT", apiPath, {
+  const body = {
     scope,
     model: {
       ...model,
       source: model.source ?? `import:local:${scope}`,
       trainedAt: model.trainedAt ?? Date.now(),
     },
-  });
-  return { skipped: false, result };
+  };
+  if (gbmOpts) {
+    const bundles = readGbmBundles({ ...gbmOpts, scope });
+    if (bundles) body.gbmBundles = bundles;
+  }
+  const result = await api(baseUrl, cookie, "PUT", apiPath, body);
+  return { skipped: false, result, gbm: Boolean(body.gbmBundles) };
 }
 
 async function main() {
@@ -231,6 +237,7 @@ async function main() {
       file: dataPath("sfp-regime-model.json"),
       bot: paperConfig,
       apply: applySfpThresholds,
+      gbm: { basename: "sfp-regime-onnx", modelPrefix: "sfp-regime" },
     },
     {
       label: "SFP regime (live)",
@@ -239,6 +246,7 @@ async function main() {
       file: dataPath("sfp-regime-model-live.json"),
       bot: liveConfig,
       apply: applySfpThresholds,
+      gbm: { basename: "sfp-regime-onnx", modelPrefix: "sfp-regime" },
     },
     {
       label: "Pullback regime (paper)",
@@ -279,6 +287,7 @@ async function main() {
       file: dataPath("pullback-signal-model.json"),
       bot: paperConfig,
       apply: applyPullbackSignalThresholds,
+      gbm: { basename: "pullback-signal-onnx", modelPrefix: "pullback-signal" },
     },
     {
       label: "Pullback signal (live)",
@@ -287,6 +296,7 @@ async function main() {
       file: dataPath("pullback-signal-model-live.json"),
       bot: liveConfig,
       apply: applyPullbackSignalThresholds,
+      gbm: { basename: "pullback-signal-onnx", modelPrefix: "pullback-signal" },
     },
     {
       label: "Early exit (paper)",
@@ -331,13 +341,14 @@ async function main() {
       m.scope,
       m.file,
       m.bot,
-      m.apply
+      m.apply,
+      m.gbm ?? null
     );
     if (out.skipped) {
       console.log(`skip (${out.reason})`);
     } else {
       const st = out.result?.status ?? {};
-      console.log(`ok — source=${st.source ?? "?"}`);
+      console.log(`ok — source=${st.source ?? "?"}${out.gbm ? " · gbm" : ""}`);
     }
   }
 
