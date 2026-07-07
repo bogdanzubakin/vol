@@ -2616,18 +2616,26 @@ async function prefetchAllSymbols(
 ) {
   prefetching = true;
   let done = 0;
+  let planned = 0;
   let fromCache = 0;
   let refreshed = 0;
   let fetched = 0;
   let failed = 0;
+  let cachePlanned = 0;
+  let restPlanned = 0;
+  let phase = "planning";
   const t0 = Date.now();
   let lastPrefetchUiPushAt = 0;
   const publishPrefetchStatus = (force = false) => {
     dashboard?.setMeta({
       prefetching: true,
       prefetchStatus: {
+        phase,
+        planned,
         done,
         total: symbols.length,
+        cachePlanned,
+        restPlanned,
         fromCache,
         refreshed,
         fetched,
@@ -2646,6 +2654,7 @@ async function prefetchAllSymbols(
       pushScannerState?.();
     }
   };
+  const heartbeat = setInterval(() => publishPrefetchStatus(true), 2000);
   publishPrefetchStatus(true);
 
   console.error(
@@ -2659,12 +2668,27 @@ async function prefetchAllSymbols(
   const cacheSymbols = [];
   const restSymbols = [];
 
-  await runConcurrent(symbols, cfg.prefetchCacheConcurrency * 2, (sym) => {
-    const meta = klineCache.readMeta(sym);
-    if (symbolCacheSufficientFromMeta(meta)) cacheSymbols.push(sym);
-    else restSymbols.push(sym);
-  });
+  const indexT0 = Date.now();
+  const metaIndex = klineCache.buildMetaIndex?.() ?? new Map();
+  console.error(
+    `Prefetch cache index: ${metaIndex.size} symbols with disk meta (${((Date.now() - indexT0) / 1000).toFixed(1)}s)`
+  );
 
+  const planKind = new Array(symbols.length);
+  await runConcurrent(symbols, cfg.prefetchCacheConcurrency * 2, async (sym, i) => {
+    const meta = metaIndex.get(sym) ?? klineCache.readMeta(sym);
+    planKind[i] = symbolCacheSufficientFromMeta(meta) ? "cache" : "rest";
+    planned++;
+    if (planned % 50 === 0 || planned === symbols.length) publishPrefetchStatus();
+  });
+  for (let i = 0; i < symbols.length; i++) {
+    if (planKind[i] === "cache") cacheSymbols.push(symbols[i]);
+    else restSymbols.push(symbols[i]);
+  }
+
+  cachePlanned = cacheSymbols.length;
+  restPlanned = restSymbols.length;
+  phase = cacheSymbols.length ? "cache" : "rest";
   console.error(
     `Prefetch plan: ${cacheSymbols.length} from disk (≥${minPrefetchBars()} bars) · ${restSymbols.length} REST`
   );
@@ -2690,9 +2714,10 @@ async function prefetchAllSymbols(
     if (done % 50 === 0) publishPrefetchStatus();
   });
 
+  if (restSymbols.length) phase = "rest";
   for (const sym of restSymbols) {
     try {
-      const hadCache = Boolean(klineCache.readMeta(sym)?.barCount);
+      const hadCache = Boolean(metaIndex.get(sym)?.barCount ?? klineCache.readMeta(sym)?.barCount);
       const bars = await loadSymbolHistory(sym);
       if (hadCache) refreshed++;
       else fetched++;
@@ -2715,16 +2740,26 @@ async function prefetchAllSymbols(
     if (cfg.prefetchPauseMs > 0) await sleep(cfg.prefetchPauseMs);
   }
 
-  if (afterPrefetch) await afterPrefetch(symbols);
+  if (afterPrefetch) {
+    phase = "signal";
+    publishPrefetchStatus(true);
+    await afterPrefetch(symbols);
+  }
 
   if (reevaluateAllFn) reevaluateAllFn();
 
+  clearInterval(heartbeat);
   prefetching = false;
+  phase = "done";
   dashboard?.setMeta({
     prefetching: false,
     prefetchStatus: {
+      phase: "done",
+      planned: symbols.length,
       done,
       total: symbols.length,
+      cachePlanned,
+      restPlanned,
       fromCache,
       refreshed,
       fetched,
@@ -2837,17 +2872,37 @@ async function main() {
     if (!separateSignal) return;
     const minBars = minSignalPrefetchBars();
     const t0 = Date.now();
+    let done = 0;
     let fromCache = 0;
     let fetched = 0;
     let failed = 0;
 
+    const publishSignalPrefetch = () => {
+      dashboard?.setMeta({
+        prefetching: true,
+        prefetchStatus: {
+          phase: "signal",
+          done,
+          total: symbols.length,
+          fromCache,
+          fetched,
+          failed,
+          elapsedSec: Math.round((Date.now() - t0) / 1000),
+        },
+      });
+      pushScannerState?.();
+    };
+
     console.error(
       `Prefetch ${cfg.interval} for SFP/PB signals (${symbols.length} symbols, ≥${minBars} bars)…`
     );
+    publishSignalPrefetch();
+
+    const signalIndex = signalKlineCache.buildMetaIndex?.() ?? new Map();
 
     await runConcurrent(symbols, cfg.prefetchCacheConcurrency, async (sym) => {
       try {
-        const meta = signalKlineCache.readMeta(sym);
+        const meta = signalIndex.get(sym) ?? signalKlineCache.readMeta(sym);
         if (meta?.barCount >= minBars) {
           const bars = signalKlineCache.capBars(
             signalKlineCache.read(sym) ?? [],
@@ -2865,6 +2920,8 @@ async function main() {
         console.error(`Signal prefetch failed ${sym}: ${e.message}`);
         signalBuffers.set(sym, []);
       }
+      done++;
+      if (done % 50 === 0 || done === symbols.length) publishSignalPrefetch();
     });
 
     console.error(

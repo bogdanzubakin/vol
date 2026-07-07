@@ -172,6 +172,21 @@
     .status span { color: var(--muted); }
     .status strong { color: var(--text); }
     .prefetch { color: var(--blue); }
+    .prefetch.prefetch-active::after {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin-left: 6px;
+      border-radius: 50%;
+      background: var(--blue);
+      animation: prefetch-pulse 1.2s ease-in-out infinite;
+      vertical-align: middle;
+    }
+    @keyframes prefetch-pulse {
+      0%, 100% { opacity: 0.25; transform: scale(0.85); }
+      50% { opacity: 1; transform: scale(1); }
+    }
     .grid {
       display: grid;
       grid-template-columns: 1fr 320px;
@@ -7956,14 +7971,35 @@
 
     function prefetchLabel(state) {
       const p = state.prefetchStatus;
-      if (!p) return state.prefetching ? "running…" : "done";
-      const base = `${p.done ?? 0}/${p.total ?? state.symbolCount ?? "?"}`;
-      const detail =
+      if (!p) return state.prefetching ? "starting…" : "done";
+      const total = p.total ?? state.symbolCount ?? "?";
+      const elapsed = p.elapsedSec != null ? `${p.elapsedSec}s` : "0s";
+      const counts =
         `cache ${p.fromCache ?? 0} · refresh ${p.refreshed ?? 0} · rest ${p.fetched ?? 0} · fail ${p.failed ?? 0}`;
-      const elapsed = p.elapsedSec != null ? ` · ${p.elapsedSec}s` : "";
-      return state.prefetching
-        ? `${base} done · ${detail}${elapsed}`
-        : `done ${base} · ${detail}${elapsed}`;
+
+      if (!state.prefetching && (p.phase === "done" || p.done === total)) {
+        return `done ${p.done ?? 0}/${total} · ${counts} · ${elapsed}`;
+      }
+
+      const phase = p.phase ?? "running";
+      if (phase === "planning") {
+        const scanned = p.planned ?? 0;
+        return `scanning disk ${scanned}/${total} · ${elapsed}`;
+      }
+      if (phase === "cache") {
+        const plan =
+          p.cachePlanned != null && p.restPlanned != null
+            ? ` · plan ${p.cachePlanned} cache + ${p.restPlanned} REST`
+            : "";
+        return `loading cache ${p.done ?? 0}/${total}${plan} · ${counts} · ${elapsed}`;
+      }
+      if (phase === "rest") {
+        return `REST fetch ${p.done ?? 0}/${total} · ${counts} · ${elapsed}`;
+      }
+      if (phase === "signal") {
+        return `signal bars ${p.done ?? 0}/${total} · cache ${p.fromCache ?? 0} · rest ${p.fetched ?? 0} · ${elapsed}`;
+      }
+      return `${p.done ?? 0}/${total} · ${counts} · ${elapsed}`;
     }
 
     document.getElementById("configForm").addEventListener("submit", applyConfig);
@@ -8003,7 +8039,7 @@
         <div><span>SFP</span> <strong>${state.sfpActiveCount ?? 0}</strong></div>
         <div><span>SFP↓</span> <strong>${state.sfpBearActiveCount ?? 0}</strong></div>
         <div><span>Pullback</span> <strong>${state.pullbackActiveCount ?? 0}</strong></div>
-        <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch" : ""}">${prefetchLabel(state)}</strong></div>
+        <div><span>Prefetch</span> <strong class="${state.prefetching ? "prefetch prefetch-active" : ""}">${prefetchLabel(state)}</strong></div>
       `;
 
       const activeHits = (state.hits ?? []).filter(
