@@ -46,7 +46,7 @@ function loadLiveBase() {
 
 function loadSignalConfig() {
   const cfg = {
-    interval: "5m",
+    interval: "1m",
     corridorDays: 2,
     corridorExcludeMinutes: 40,
     signalCandles: 3,
@@ -80,7 +80,8 @@ function cachedSymbolList() {
     .sort();
 }
 
-function createFetchers() {
+function createFetchers(signalCfg) {
+  const interval = signalCfg?.interval ?? "1m";
   function readCached(sym, kind, barCount) {
     const bars = readSymbolBars(kind, sym);
     if (!bars?.length) return null;
@@ -88,14 +89,18 @@ function createFetchers() {
   }
   return {
     async fetchKlinesForSymbol(sym, barCount) {
-      const cached = readCached(sym, "signal", barCount);
+      const symbol = String(sym).toUpperCase();
+      const kind = interval === "1m" ? "mover" : "signal";
+      const cached = readCached(symbol, kind, barCount);
       if (cached?.length >= 200) return cached;
-      throw new Error(`no signal cache for ${sym}`);
+      throw new Error(`no ${interval} cache for ${symbol}`);
     },
     async fetchKlines1mForSymbol(sym, barCount) {
-      const cached = readCached(sym, "mover", barCount);
+      if (interval === "1m") return null;
+      const symbol = String(sym).toUpperCase();
+      const cached = readCached(symbol, "mover", barCount);
       if (cached?.length >= 200) return cached;
-      throw new Error(`no 1m cache for ${sym}`);
+      throw new Error(`no 1m cache for ${symbol}`);
     },
   };
 }
@@ -125,7 +130,8 @@ async function runBacktest({ label, botConfig, signalCfg, days, symbols, fetcher
     botConfig,
     days,
     fetchKlinesForSymbol: fetchers.fetchKlinesForSymbol,
-    fetchKlines1mForSymbol: fetchers.fetchKlines1mForSymbol,
+    fetchKlines1mForSymbol:
+      signalCfg.interval !== "1m" ? fetchers.fetchKlines1mForSymbol : null,
     restGapMs: 0,
     saveLastResult: false,
     runMeta: { optimize: "live-pnl-10d", label },
@@ -299,7 +305,7 @@ async function main() {
   }
 
   const signalCfg = loadSignalConfig();
-  const fetchers = createFetchers();
+  const fetchers = createFetchers(signalCfg);
   const store = readJsonFile(OUT_FILE(), {
     runs: [],
     phasesDone: [],
