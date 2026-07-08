@@ -136,15 +136,11 @@ const {
   snapshotPositionsFromMap,
   rememberPositionOpenTimes,
 } = require("./lib/binance-positions");
-const { createPositionsHistoryStore } = require("./lib/positions-history");
+const { createLiveBotHistoryStore } = require("./lib/live-bot-history");
+const { buildLiveBotHistoryExport } = require("./lib/live-bot-history-export");
 const { createTelegramAuth } = require("./lib/telegram-auth");
-const {
-  dataPath,
-  migrateLegacyCache,
-  resolveDataDir,
-  formatBytes,
-  writeJsonFile,
-} = require("./lib/data-dir");
+const { migrateLegacyCache, resolveDataDir, formatBytes, dataPath, writeJsonFile } = require("./lib/data-dir");
+const { migrate: migrateDb, closeDb, getDb, repos } = require("./lib/db");
 const { createKeyedExclusive } = require("./lib/keyed-mutex");
 const scannerConfig = require("./lib/scanner-config");
 const { buildLiveAiReport } = require("./lib/live-ai-report");
@@ -155,8 +151,13 @@ const WS_STREAM_BASE = "wss://stream.binance.com:443/stream";
 const KLINE_MAX = 1500;
 const SIGNAL_RETENTION_MS = 24 * 60 * 60 * 1000;
 migrateLegacyCache();
+const dbBoot = migrateDb();
+if (dbBoot.importResult && !dbBoot.importResult.skipped) {
+  console.error(`SQLite: imported legacy JSON → ${require("./lib/db").dbFilePath()}`);
+}
 scannerConfig.migrateFromResultsJson();
 console.error(`Persistent data: ${resolveDataDir()}`);
+console.error(`SQLite database: ${require("./lib/db").dbFilePath()}`);
 const EXCHANGE_INFO_CACHE = dataPath("futures-exchangeInfo.json");
 const KLINES_CACHE_DIR = dataPath("klines");
 console.error(`Kline cache dir: ${KLINES_CACHE_DIR}`);
@@ -1953,6 +1954,20 @@ function printHits(maps, force = false) {
   }
 }
 
+function recordSignalHitDb(symbol, signalKind, metrics, at = Date.now()) {
+  try {
+    repos.signals.recordSignalHit(getDb(), {
+      symbol,
+      signalKind,
+      signalStatus: "active",
+      at,
+      metrics,
+    });
+  } catch (e) {
+    console.error(`signal_hits insert ${symbol}: ${e.message}`);
+  }
+}
+
 function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
   const pass = Boolean(analysis?.passes);
   const metrics = analysis?.metrics;
@@ -1978,6 +1993,7 @@ function applySfpSignal(sym, analysis, qv, sfpActive, sfpHistory, lastSfp) {
     sfpHistory.set(sym, row);
     if (!prev) {
       lastSfp.set(sym, true);
+      recordSignalHitDb(sym, "sfp", metrics, triggeredAt);
       const detail = `sweep ${metrics.sweepLow?.toFixed(6)} · reclaim ${metrics.close} · ${metrics.barsSinceSweep} bars`;
       dashboard?.pushEvent("NEW_SFP", sym, detail);
       paperBot?.onSfpSignal(sym, metrics);
@@ -2016,6 +2032,7 @@ function applySfpBearSignal(sym, analysis, qv, sfpBearActive, sfpBearHistory, la
     sfpBearHistory.set(sym, row);
     if (!prev) {
       lastSfpBear.set(sym, true);
+      recordSignalHitDb(sym, "sfp_bear", metrics, triggeredAt);
       const detail = `sweep ${metrics.sweepHigh?.toFixed(6)} · reject ${metrics.close} · ${metrics.barsSinceSweep} bars`;
       dashboard?.pushEvent("NEW_SFP_BEAR", sym, detail);
       paperBot?.onSfpBearSignal(sym, metrics);
@@ -2053,6 +2070,7 @@ function applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb) {
     pbHistory.set(sym, row);
     if (!prev) {
       lastPb.set(sym, true);
+      recordSignalHitDb(sym, "pullback", pb, triggeredAt);
       const detail = `MA${pb.maBars} ${pb.ma} · +${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
       dashboard?.pushEvent("NEW_PB", sym, detail);
       paperBot?.onPullbackSignal(sym, pb);
@@ -2090,6 +2108,7 @@ function applyPullbackBearSignal(sym, pb, qv, pbBearActive, pbBearHistory, lastP
     pbBearHistory.set(sym, row);
     if (!prev) {
       lastPbBear.set(sym, true);
+      recordSignalHitDb(sym, "pullback_bear", pb, triggeredAt);
       const detail = `MA${pb.maBars} ${pb.ma} · ${pb.distFromMaPct}% · avg move ${pb.avgMovePct}%`;
       dashboard?.pushEvent("NEW_PB_BEAR", sym, detail);
       paperBot?.onPullbackBearSignal(sym, pb);
@@ -3662,8 +3681,11 @@ async function main() {
     getBtcBars: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
   });
 
+  const liveBotHistory = createLiveBotHistoryStore({ kv });
+
   liveBot = createLiveBot({
     trader: futuresTrader,
+    historyStore: liveBotHistory,
     onTradeClosed: createTradeClosedHandler("Live bot"),
     onDrawdownStop: handleDrawdownStop,
     onExitOrdersFailed: (pos, detail) =>
@@ -3821,7 +3843,6 @@ async function main() {
   });
   if (futuresTrader.enabled) binanceUserStream.start();
 
-  const positionsHistory = createPositionsHistoryStore({ kv });
   const binanceCreds = resolveBinanceCredentials(kv);
   if (binanceCreds.enabled) {
     console.error("Binance Futures positions: enabled (header panel)");
@@ -3886,11 +3907,25 @@ async function main() {
           return { ok: true, symbol: sym, via: "exchange" };
         },
         getFuturesBalance,
-        getPositionsHistory: async (searchParams) =>
-          positionsHistory.list(searchParams),
-        updatePositionsHistoryComment: async (body) => {
-          const row = positionsHistory.setComment(body?.id, body?.comment ?? "");
-          return { ok: true, item: row };
+        getLiveBotHistory: async (searchParams) =>
+          liveBotHistory.list(searchParams, liveBot?.getClosedTrades?.() ?? []),
+        getLiveBotHistoryExport: async (searchParams, options) => {
+          const history = await liveBotHistory.list(
+            searchParams,
+            liveBot?.getClosedTrades?.() ?? []
+          );
+          const liveState = await liveBot.getPublicState();
+          return buildLiveBotHistoryExport({
+            history,
+            searchParams,
+            liveBotConfig: liveState.config,
+            liveBotSummary: liveState.summary,
+            scannerConfig: scannerConfig.getAll(),
+            signalConfig: pickLiveConfig(cfg),
+            interval: cfg.interval,
+            primaryInterval: PRIMARY_INTERVAL,
+            options,
+          });
         },
         getPaperBot: () => {
           refreshBotPrices(historyBuffers, null, { paperOnly: true });
@@ -4421,6 +4456,7 @@ async function main() {
     }
     paperBot?.flush();
     liveBot?.flush();
+    closeDb();
     sockets.forEach((s) => s.close());
     signalSockets.forEach((s) => s.close());
     process.exit(0);

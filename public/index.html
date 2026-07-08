@@ -137,23 +137,6 @@
     }
     .pnl-pos { color: var(--green); font-weight: 600; }
     .pnl-neg { color: var(--red); font-weight: 600; }
-    .history-comment {
-      width: 100%;
-      min-height: 56px;
-      resize: vertical;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      padding: 6px 8px;
-      font-size: 0.78rem;
-      line-height: 1.25;
-      box-sizing: border-box;
-    }
-    .history-comment:focus {
-      outline: none;
-      border-color: var(--blue);
-    }
     .history-date, .history-duration {
       color: var(--muted);
       white-space: nowrap;
@@ -363,6 +346,26 @@
       font-size: 1.1rem;
       font-weight: 600;
       margin-top: 4px;
+    }
+    .history-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+      margin: 0 12px 16px;
+    }
+    .history-chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .history-chart-card h3 {
+      margin: 0 0 10px;
+      font-size: 0.9rem;
+    }
+    .history-chart-wrap {
+      position: relative;
+      height: 240px;
     }
     .ai-report-grid {
       display: grid;
@@ -3035,31 +3038,63 @@
 
   <div id="panel-history" class="tab-panel" role="tabpanel">
     <section>
-      <h2>Binance positions history <span id="historyCount"></span></h2>
+      <h2>Live bot history <span id="historyCount"></span></h2>
       <div class="pairs-toolbar">
         <div class="field" style="min-width: 220px;">
           <label for="historyFromDate">From date</label>
           <input type="date" id="historyFromDate" />
-          <div class="hint">Show positions closed from this date (inclusive)</div>
+          <div class="hint">Archived live-bot closed trades only (UTC+3)</div>
         </div>
         <button type="button" class="btn secondary sm" id="historyLastDay">Last day</button>
         <button type="button" class="btn secondary sm" id="historyLastWeek">Last week</button>
         <button type="button" class="btn secondary sm" id="historyLastMonth">Last month</button>
         <button type="button" class="btn secondary sm" id="historyRefresh">Refresh</button>
+        <button type="button" class="btn secondary sm" id="historyExport">Export JSON</button>
+        <button type="button" class="btn secondary sm" id="historyReset">Reset history</button>
       </div>
+      <div class="paper-summary" id="historySummary">
+        <div><div class="stat-label">Realized PnL</div><div class="stat-value" id="historyStatRealized">—</div></div>
+        <div><div class="stat-label">Trades</div><div class="stat-value" id="historyStatTrades">—</div></div>
+        <div><div class="stat-label">Win rate</div><div class="stat-value" id="historyStatWinRate">—</div></div>
+        <div><div class="stat-label">TP rate</div><div class="stat-value" id="historyStatTpRate">—</div></div>
+        <div><div class="stat-label">Wins</div><div class="stat-value" id="historyStatWins">—</div></div>
+        <div><div class="stat-label">Losses</div><div class="stat-value" id="historyStatLosses">—</div></div>
+        <div><div class="stat-label">Stop-loss</div><div class="stat-value" id="historyStatSlCount">—</div></div>
+        <div><div class="stat-label">Range start</div><div class="stat-value" id="historyStatFrom">—</div></div>
+      </div>
+      <div class="history-chart-grid">
+        <div class="history-chart-card">
+          <h3>PnL by hour</h3>
+          <div class="history-chart-wrap"><canvas id="historyHourChart"></canvas></div>
+        </div>
+        <div class="history-chart-card">
+          <h3>PnL by day</h3>
+          <div class="history-chart-wrap"><canvas id="historyDayChart"></canvas></div>
+        </div>
+      </div>
+      <h3 id="historyTradesHeading" style="margin: 0 12px 8px; font-size: 0.95rem">Transactions history</h3>
       <div class="pairs-table-wrap table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Pair</th>
-              <th>Date</th>
-              <th>Duration</th>
-              <th>Profit</th>
-              <th>Comments</th>
+              <th class="sortable" data-history-trades-sort="symbol">Symbol <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="signalKind">Signal <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="entryPrice">Entry <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="exitPrice">Exit <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="exitReason">Reason <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="grossPnl">Gross <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="commission">Fees <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="fundingFee">Funding <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="netPnl">Net <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="pnlPct">PnL % <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="durationSec">Duration <span class="sort-mark"></span></th>
+              <th class="sortable" data-history-trades-sort="closedAt">Closed <span class="sort-mark"></span></th>
+              <th>Chart</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="historyBody">
-            <tr><td colspan="5" class="empty">Open this tab to load positions history</td></tr>
+            <tr><td colspan="14" class="empty">Open this tab to load live bot history</td></tr>
           </tbody>
         </table>
       </div>
@@ -3175,9 +3210,13 @@
     let liveBotOpenSort = { key: "durationSec", dir: "asc" };
     let liveBotClosedSort = { key: "closedAt", dir: "desc" };
     let backtestTradesSort = { key: "closedAt", dir: "desc" };
+    let historyTradesSort = { key: "closedAt", dir: "desc" };
     let historyLoading = false;
     let lastInterval = null;
     let diagChartInstance = null;
+    let historyHourChart = null;
+    let historyDayChart = null;
+    let lastHistoryTrades = [];
 
     let uiSettingsCache = {};
     let uiSettingsSaveTimer = null;
@@ -3214,7 +3253,6 @@
           files.scannerConfig ? "scanner-config" : null,
           files.uiSettings ? "ui-settings" : null,
           files.klineCacheFiles ? `${files.klineCacheFiles} kline files` : null,
-          files.historyComments ? "comments" : null,
         ].filter(Boolean);
         el.hidden = false;
         el.innerHTML =
@@ -4393,6 +4431,8 @@
         return '<span class="bad">AI hard</span>';
       if (reason === "ai_early_exit_soft") return '<span class="near">AI soft</span>';
       if (reason === "manual") return '<span class="near">manual</span>';
+      if (reason === "exchange_fill") return '<span class="near">ex fill</span>';
+      if (reason === "exchange_sync") return '<span class="near">ex sync</span>';
       return escapeHtml(reason ?? "—");
     }
 
@@ -5233,9 +5273,11 @@
     function renderBotClosedBody(bodyId, rows, sort, sortAttr, options = {}) {
       const closedBody = document.getElementById(bodyId);
       updateBotSortHeaders(sortAttr, sort);
+      const showExchangeAudit = Boolean(options.showExchangeAudit);
+      const emptyCols = showExchangeAudit ? 14 : 11;
       if (!rows?.length) {
         closedBody.innerHTML =
-          '<tr class="empty-row"><td colspan="11" class="empty">No closed positions yet</td></tr>';
+          `<tr class="empty-row"><td colspan="${emptyCols}" class="empty">No closed positions yet</td></tr>`;
         return;
       }
       const pnlCls = paperBotPnlCls;
@@ -5243,18 +5285,29 @@
       closedBody.innerHTML = sortedBotRows(rows, sort)
         .map((t) => {
           const pnlCls2 = pnlCls(t.pnl);
+          const grossCls = pnlCls(t.grossPnl ?? t.pnl);
+          const feesCls = pnlCls(t.commission);
+          const fundingCls = pnlCls(t.fundingFee);
+          const netCls = pnlCls(t.netPnl ?? t.pnl);
           const reason = paperBotExitReasonHtml(t.exitReason);
           const kind = botSignalKindTag(t.signalKind);
           const previewBtn = t.snapshotId
             ? `<button type="button" class="btn secondary sm ${snapCls}" data-snapshot-id="${escapeHtml(t.snapshotId)}" data-symbol="${escapeHtml(t.symbol)}">Preview</button>`
             : "";
+          const exchangeCells = showExchangeAudit
+            ? `
+              <td class="${grossCls}" data-label="Gross">${fmtUsd(t.grossPnl ?? t.pnl)}</td>
+              <td class="${feesCls}" data-label="Fees">${fmtUsd(t.commission)}</td>
+              <td class="${fundingCls}" data-label="Funding">${fmtUsd(t.fundingFee)}</td>
+              <td class="${netCls}" data-label="Net">${fmtUsd(t.netPnl ?? t.pnl)}</td>`
+            : `<td class="${pnlCls2}" data-label="PnL">${fmtUsd(t.pnl)}</td>`;
           return `<tr class="data-row">
               <td class="sym-cell" data-label="Symbol">${symLink(t.symbol)}</td>
               <td data-label="Signal">${kind}</td>
               <td data-label="Entry">${fmt(t.entryPrice, 6)}</td>
               <td data-label="Exit">${fmt(t.exitPrice, 6)}</td>
               <td data-label="Reason">${reason}</td>
-              <td class="${pnlCls2}" data-label="PnL">${fmtUsd(t.pnl)}</td>
+              ${exchangeCells}
               <td class="${pnlCls2}" data-label="PnL %">${fmt(t.pnlPct, 2)}%</td>
               <td class="history-duration" data-label="Duration">${fmtPositionDuration(t.openedAtIso ?? t.openedAt, t.closedAtIso ?? t.closedAt)}</td>
               <td class="time" data-label="Closed">${fmtDisplayDateTime(t.closedAtIso ?? t.closedAt)}</td>
@@ -7536,6 +7589,14 @@
       () => renderBacktestTradesBody(lastBacktestTrades, lastBacktestTradesTotal)
     );
     wireBotTableSort(
+      "data-history-trades-sort",
+      () => historyTradesSort,
+      (s) => {
+        historyTradesSort = s;
+      },
+      () => renderHistoryTrades(lastHistoryTrades)
+    );
+    wireBotTableSort(
       "data-mover-sort",
       () => moversSort,
       (s) => {
@@ -8497,88 +8558,124 @@
       setCalcMsg(`Generated ${iterations} iterations`, true);
     }
 
-    function renderPositionsHistory(data) {
-      const tbody = document.getElementById("historyBody");
-      document.getElementById("historyCount").textContent =
-        data?.items?.length != null ? `(${data.items.length})` : "";
-
-      if (!data?.enabled) {
-        const hint = data?.hint || "Set BINANCE_API_KEY and BINANCE_API_SECRET in .env";
-        tbody.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(hint)}</td></tr>`;
-        return;
+    function destroyHistoryCharts() {
+      if (historyHourChart) {
+        historyHourChart.destroy();
+        historyHourChart = null;
       }
-      if (data?.error) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty">${escapeHtml(data.error)}</td></tr>`;
-        return;
+      if (historyDayChart) {
+        historyDayChart.destroy();
+        historyDayChart = null;
       }
-      if (!data?.items?.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">No closed positions yet</td></tr>';
-        return;
-      }
+    }
 
-      const rows = [...data.items].sort(
-        (a, b) =>
-          (Date.parse(b.closedAt || b.openedAt || "") || 0) -
-          (Date.parse(a.closedAt || a.openedAt || "") || 0)
-      );
-
-      tbody.innerHTML = rows
-        .map((h) => {
-          const directionRaw = String(h.direction || "").toUpperCase();
-          const isShort = directionRaw === "SHORT";
-          const isLong = directionRaw === "LONG";
-          const dirCls = isShort ? "dir-short" : "dir-long";
-          const dirTri = isShort ? "▼" : isLong ? "▲" : "•";
-          const pnlCls =
-            h.profit == null ? "" : Number(h.profit) >= 0 ? "pnl-pos" : "pnl-neg";
-          return `<tr>
-            <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(h.symbol)}</td>
-            <td class="history-date">${escapeHtml(fmtHistoryDate(h.closedAt || h.openedAt))}</td>
-            <td class="history-duration">${escapeHtml(fmtDuration(h.durationSec))}</td>
-            <td class="${pnlCls}">${fmtPnl(h.profit)}</td>
-            <td>
-              <textarea class="history-comment" data-history-id="${escapeHtml(h.id)}" placeholder="Add comment...">${escapeHtml(h.comment || "")}</textarea>
-            </td>
-          </tr>`;
-        })
-        .join("");
-
-      tbody.querySelectorAll(".history-comment").forEach((el) => {
-        let saveTimer = null;
-        let lastSavedValue = el.value;
-        const save = async () => {
-          const id = el.dataset.historyId;
-          const nextValue = el.value;
-          if (nextValue === lastSavedValue) return;
-          try {
-            const res = await fetch("/api/positions-history/comment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id, comment: nextValue }),
-            });
-            const out = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(out.error || res.statusText);
-            lastSavedValue = nextValue;
-            setHistoryMsg(`Comment saved ${formatTimeShort(Date.now())} ${TZ_LABEL}`, true);
-          } catch (e) {
-            setHistoryMsg(e.message, false);
-          }
-        };
-        el.addEventListener("input", () => {
-          if (saveTimer) clearTimeout(saveTimer);
-          saveTimer = setTimeout(() => {
-            saveTimer = null;
-            save();
-          }, 30_000);
-        });
-        el.addEventListener("blur", () => {
-          if (saveTimer) {
-            clearTimeout(saveTimer);
-            saveTimer = null;
-          }
-          save();
-        });
+    function renderHistoryLineChart(canvasId, rows, label, color) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas || !window.Chart) return null;
+      const labels = rows.map((r) => r.bucket);
+      const values = rows.map((r) => r.cumulativePnl ?? 0);
+      return new Chart(canvas, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label,
+              data: values,
+              borderColor: color,
+              backgroundColor: color,
+              borderWidth: 2,
+              pointRadius: labels.length > 80 ? 0 : 2,
+              pointHoverRadius: 3,
+              tension: 0.2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: "index" },
+          plugins: {
+            legend: { display: false },
+          },
+          scales: {
+            x: {
+              ticks: { color: "#94a3b8", maxRotation: 0, autoSkip: true },
+              grid: { color: "rgba(148, 163, 184, 0.08)" },
+            },
+            y: {
+              ticks: {
+                color: "#94a3b8",
+                callback: (v) => fmtUsd(v),
+              },
+              grid: { color: "rgba(148, 163, 184, 0.08)" },
+            },
+          },
+        },
       });
+    }
+
+    function renderHistorySummary(data) {
+      const s = data?.summary ?? {};
+      const pnlCls = paperBotPnlCls;
+      const realizedEl = document.getElementById("historyStatRealized");
+      realizedEl.textContent = fmtUsd(s.realizedPnl);
+      realizedEl.className = "stat-value " + pnlCls(s.realizedPnl);
+      document.getElementById("historyStatTrades").textContent = String(s.closedCount ?? 0);
+      document.getElementById("historyStatWinRate").textContent = `${fmt(s.winRate, 1)}%`;
+      document.getElementById("historyStatTpRate").textContent = `${fmt(s.tpRate, 1)}%`;
+      document.getElementById("historyStatWins").textContent = String(s.winCount ?? 0);
+      document.getElementById("historyStatLosses").textContent = String(s.lossCount ?? 0);
+      document.getElementById("historyStatSlCount").textContent = String(s.slCount ?? 0);
+      document.getElementById("historyStatFrom").textContent =
+        data?.fromDate ? fmtDisplayDateTime(data.fromDate) : "all";
+    }
+
+    function renderHistoryTrades(rows) {
+      const heading = document.getElementById("historyTradesHeading");
+      const n = rows?.length ?? 0;
+      heading.textContent = n > 0 ? `Transactions history (${n})` : "Transactions history";
+      updateBotSortHeaders("data-history-trades-sort", historyTradesSort);
+      const body = document.getElementById("historyBody");
+      if (!rows?.length) {
+        body.innerHTML =
+          '<tr class="empty-row"><td colspan="14" class="empty">No closed trades in this range</td></tr>';
+        return;
+      }
+      renderBotClosedBody(
+        "historyBody",
+        rows,
+        historyTradesSort,
+        "data-history-trades-sort",
+        { live: true, showExchangeAudit: true }
+      );
+    }
+
+    function renderPositionsHistory(data) {
+      document.getElementById("historyCount").textContent =
+        data?.trades?.length != null ? `(${data.trades.length})` : "";
+      if (data?.error) {
+        destroyHistoryCharts();
+        document.getElementById("historyBody").innerHTML =
+          `<tr><td colspan="14" class="empty">${escapeHtml(data.error)}</td></tr>`;
+        return;
+      }
+      renderHistorySummary(data);
+      lastHistoryTrades = data?.trades ?? [];
+      renderHistoryTrades(lastHistoryTrades);
+      destroyHistoryCharts();
+      historyHourChart = renderHistoryLineChart(
+        "historyHourChart",
+        data?.byHour ?? [],
+        "Hourly cumulative PnL",
+        "#38bdf8"
+      );
+      historyDayChart = renderHistoryLineChart(
+        "historyDayChart",
+        data?.byDay ?? [],
+        "Daily cumulative PnL",
+        "#22c55e"
+      );
     }
 
     async function loadPositionsHistory() {
@@ -8589,18 +8686,21 @@
         const fromDate = document.getElementById("historyFromDate")?.value;
         if (fromDate) params.set("fromDate", fromDate);
         const url = params.toString()
-          ? `/api/positions-history?${params}`
-          : "/api/positions-history";
+          ? `/api/live-bot/history?${params}`
+          : "/api/live-bot/history";
         const res = await fetch(url, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         renderPositionsHistory(data);
         if (activeTab === "history") {
-          setHistoryMsg(`Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`, true);
+          const note = data.exchangeAuditError
+            ? `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · audit fallback: ${data.exchangeAuditError}`
+            : `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL}`;
+          setHistoryMsg(note, !data.exchangeAuditError);
         }
       } catch (e) {
         document.getElementById("historyBody").innerHTML =
-          `<tr><td colspan="5" class="empty">${escapeHtml(e.message)}</td></tr>`;
+          `<tr><td colspan="14" class="empty">${escapeHtml(e.message)}</td></tr>`;
         setHistoryMsg(e.message, false);
       } finally {
         historyLoading = false;
@@ -8630,6 +8730,53 @@
     });
     document.getElementById("historyRefresh")?.addEventListener("click", () => {
       loadPositionsHistory();
+    });
+    document.getElementById("historyExport")?.addEventListener("click", async () => {
+      try {
+        setHistoryMsg("Preparing export…", true);
+        const params = new URLSearchParams();
+        const fromDate = document.getElementById("historyFromDate")?.value;
+        if (fromDate) params.set("fromDate", fromDate);
+        const url = params.toString()
+          ? `/api/live-bot/history/export?${params}`
+          : "/api/live-bot/history/export";
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || res.statusText);
+        }
+        const blob = await res.blob();
+        const disp = res.headers.get("Content-Disposition") || "";
+        const match = disp.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : `live-bot-history-export-${Date.now()}.json`;
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setHistoryMsg("History export downloaded", true);
+      } catch (e) {
+        setHistoryMsg(e.message, false);
+      }
+    });
+    document.getElementById("historyReset")?.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Clear all archived live-bot trade history, closed trades, and event log? Open positions on Binance are not closed."
+        )
+      ) {
+        return;
+      }
+      try {
+        const res = await fetch("/api/live-bot/reset-history", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        if (typeof renderLiveBot === "function") renderLiveBot(data, false);
+        await loadPositionsHistory();
+        setHistoryMsg("History reset", true);
+      } catch (e) {
+        setHistoryMsg(e.message, false);
+      }
     });
     document.getElementById("calcForm")?.addEventListener("submit", (e) => {
       e.preventDefault();
