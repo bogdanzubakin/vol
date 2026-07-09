@@ -97,6 +97,85 @@ async function testSchemaAndMigration(tmpDir) {
   assert(tables.includes("open_positions"), "open_positions table exists");
   assert(tables.includes("bot_state"), "bot_state table exists");
   assert(importResult != null, "json import result returned");
+  const cols = db
+    .prepare("PRAGMA table_info(bot_state)")
+    .all()
+    .map((c) => c.name);
+  assert(cols.includes("current_config_version_id"), "bot_state has current_config_version_id");
+}
+
+async function testConfigVersions(tmpDir) {
+  console.log("\n== config_versions ==");
+  resetRuntime(tmpDir);
+  const { migrate, getDb, repos } = require(path.join(ROOT, "lib/db"));
+  migrate();
+  const db = getDb();
+
+  const cfg1 = {
+    armed: false,
+    leverage: 2,
+    blockedSymbols: [],
+    maxOpenPositions: 4,
+    positionSizeUsdt: 50,
+  };
+  const cfg2 = { ...cfg1, leverage: 3 };
+  const pos = makeOpenPos("cv-1", { symbol: "BTCUSDT" });
+
+  const v1 = repos.botState.saveBotRuntime(
+    db,
+    "live",
+    {
+      config: cfg1,
+      openPositions: [pos],
+      symbolSlStreak: {},
+      drawdownBaseline: null,
+      drawdownTriggeredAt: null,
+      historyDayKey: "2026-07-08",
+    },
+    { gitCommit: "abc123" }
+  );
+  assert(v1 != null, "saveBotRuntime returns config version id");
+
+  const versions = repos.config.listConfigVersions(db, "live");
+  assert(versions.length === 1, "first config creates one version");
+  assert(versions[0].gitCommit === "abc123", "git commit stored");
+  assert(versions[0].config.leverage === 2, "config snapshot stored");
+
+  const v1again = repos.botState.saveBotRuntime(db, "live", {
+    config: cfg1,
+    openPositions: [pos],
+    symbolSlStreak: {},
+    drawdownBaseline: null,
+    drawdownTriggeredAt: null,
+    historyDayKey: "2026-07-08",
+  });
+  assert(v1again === v1, "unchanged config reuses version id");
+  assert(repos.config.listConfigVersions(db, "live").length === 1, "no duplicate version for same config");
+
+  const loaded1 = repos.botState.loadBotRuntime(db, "live");
+  assert(loaded1.configVersionId === v1, "load returns current config version id");
+  assert(loaded1.openPositions[0].configVersionId === v1, "open position stamped with config version");
+
+  const v2 = repos.botState.saveBotRuntime(db, "live", {
+    config: cfg2,
+    openPositions: loaded1.openPositions,
+    symbolSlStreak: {},
+    drawdownBaseline: null,
+    drawdownTriggeredAt: null,
+    historyDayKey: "2026-07-08",
+  });
+  assert(v2 !== v1, "config change creates new version");
+  assert(repos.config.listConfigVersions(db, "live").length === 2, "two versions after config change");
+
+  const loaded2 = repos.botState.loadBotRuntime(db, "live");
+  assert(loaded2.configVersionId === v2, "current version id updated after config change");
+  assert(loaded2.openPositions[0].configVersionId === v1, "open position keeps version from entry");
+
+  const { persistClosedTrade, BOT_TYPE_LIVE } = require(path.join(ROOT, "lib/bot-db-persist"));
+  const trade = makeTrade("cv-trade", { configVersionId: v1 });
+  persistClosedTrade(BOT_TYPE_LIVE, trade);
+  const stored = repos.trades.listClosedTrades(db, { botType: "live" })[0];
+  assert(stored.configVersionId === v1, "closed trade stores configVersionId column");
 }
 
 async function testBotStateRoundtrip(tmpDir) {
@@ -128,6 +207,48 @@ async function testBotStateRoundtrip(tmpDir) {
   assert(loaded.config.blockedSymbols.includes("XRPUSDT"), "blocked symbols persisted");
   assert(loaded.symbolSlStreak.ETHUSDT === 2, "sl streak persisted");
   assert(loaded.log.length >= 1, "bot events loaded as log");
+}
+
+async function testSaveBotRuntimeTransaction(tmpDir) {
+  console.log("\n== saveBotRuntime transaction rollback ==");
+  resetRuntime(tmpDir);
+  const { getDb, repos, migrate } = require(path.join(ROOT, "lib/db"));
+  migrate();
+  const db = getDb();
+  const pos1 = makeOpenPos("pos-1", { symbol: "BTCUSDT" });
+  repos.botState.saveBotRuntime(db, "live", {
+    config: { armed: false, leverage: 2, blockedSymbols: [] },
+    openPositions: [pos1],
+    symbolSlStreak: { BTCUSDT: 2 },
+    drawdownBaseline: 100,
+    drawdownTriggeredAt: null,
+    historyDayKey: "2026-07-08",
+  });
+
+  const pos2 = makeOpenPos("pos-2", { symbol: "ETHUSDT" });
+  let threw = false;
+  try {
+    repos.botState.saveBotRuntime(db, "live", {
+      config: { armed: true, leverage: 5, blockedSymbols: ["ETHUSDT"] },
+      openPositions: [pos2, { ...pos2 }],
+      symbolSlStreak: { ETHUSDT: 9 },
+      drawdownBaseline: 999,
+      drawdownTriggeredAt: Date.now(),
+      historyDayKey: "2026-07-09",
+    });
+  } catch {
+    threw = true;
+  }
+  assert(threw, "duplicate open position id aborts save");
+
+  const loaded = repos.botState.loadBotRuntime(db, "live");
+  assert(loaded.openPositions.length === 1, "rollback keeps prior open position count");
+  assert(loaded.openPositions[0].id === "pos-1", "rollback keeps prior open position");
+  assert(loaded.config.armed === false, "rollback keeps prior config");
+  assert(loaded.symbolSlStreak.BTCUSDT === 2, "rollback keeps prior sl streak");
+  assert(loaded.symbolSlStreak.ETHUSDT == null, "rollback drops partial sl streak writes");
+  assert(loaded.drawdownBaseline === 100, "rollback keeps prior drawdown baseline");
+  assert(loaded.historyDayKey === "2026-07-08", "rollback keeps prior history day key");
 }
 
 async function testClosedTrades(tmpDir) {
@@ -163,12 +284,13 @@ async function testLiveHistoryStore(tmpDir) {
   resetRuntime(tmpDir);
   const { migrate } = require(path.join(ROOT, "lib/db"));
   migrate();
+  const { persistClosedTrade, BOT_TYPE_LIVE } = require(path.join(ROOT, "lib/bot-db-persist"));
   const { createLiveBotHistoryStore } = require(path.join(ROOT, "lib/live-bot-history"));
   const store = createLiveBotHistoryStore({ kv: new Map() });
 
   const trade = makeTrade("hist-1", { pnl: 2.5 });
-  store.appendTrade(trade);
-  store.appendTrade({ ...trade, id: "hist-bad", signalKind: "nope", openedAt: 1, closedAt: 2 });
+  persistClosedTrade(BOT_TYPE_LIVE, trade);
+  persistClosedTrade(BOT_TYPE_LIVE, { ...trade, id: "hist-bad", signalKind: "nope", openedAt: 1, closedAt: 2 });
 
   const listed = await store.list(new URLSearchParams(), []);
   assert(listed.trades.length === 1, "history lists only archivable trades");
@@ -178,7 +300,7 @@ async function testLiveHistoryStore(tmpDir) {
   const afterRemove = await store.list(new URLSearchParams(), []);
   assert(afterRemove.trades.length === 0, "removeTradeIds clears history");
 
-  store.appendTrade(trade);
+  persistClosedTrade(BOT_TYPE_LIVE, trade);
   store.clear();
   const afterClear = await store.list(new URLSearchParams(), []);
   assert(afterClear.trades.length === 0, "clear() empties live history");
@@ -239,10 +361,7 @@ async function testExternalForgetSync(tmpDir) {
     historyDayKey: "2026-07-08",
   });
 
-  const removedIds = [];
-  const historyStore = {
-    removeTradeIds: (ids) => removedIds.push(...ids),
-  };
+  repos.botState.insertClosedTrade(db, "live", makeTrade("ext-1"));
 
   const exPos = {
     positionAmt: 15,
@@ -260,7 +379,7 @@ async function testExternalForgetSync(tmpDir) {
   };
 
   const { createLiveBot } = require(path.join(ROOT, "lib/live-bot"));
-  const bot = createLiveBot({ trader: mockTrader, historyStore });
+  const bot = createLiveBot({ trader: mockTrader });
   const before = (await bot.getPublicState()).openPositions.length;
   assert(before === 1, "one open position before sync");
 
@@ -268,7 +387,8 @@ async function testExternalForgetSync(tmpDir) {
   const after = await bot.getPublicState();
   assert(after.openPositions.length === 0, "position removed after external increase");
   assert(after.config.blockedSymbols.includes("SOLUSDT"), "symbol auto-blocked");
-  assert(removedIds.includes("ext-1"), "historyStore.removeTradeIds called");
+  const staleTrade = repos.trades.listClosedTrades(getDb(), { botType: "live" });
+  assert(!staleTrade.some((t) => t.id === "ext-1"), "forget removes stale closed trade from DB");
 
   bot.flush();
   const reloaded = repos.botState.loadBotRuntime(getDb(), "live");
@@ -294,7 +414,7 @@ async function testManualForget(tmpDir) {
 
   const mockTrader = { enabled: true };
   const { createLiveBot } = require(path.join(ROOT, "lib/live-bot"));
-  const bot = createLiveBot({ trader: mockTrader, historyStore: { removeTradeIds: () => {} } });
+  const bot = createLiveBot({ trader: mockTrader });
   await bot.forgetOpenPositions("ADAUSDT");
   bot.flush();
 
@@ -359,15 +479,30 @@ async function testAuditHelpers(tmpDir) {
 }
 
 async function testPersistClosedOnClose(tmpDir) {
-  console.log("\n== closed trade persisted on recordClose path ==");
+  console.log("\n== unified live closed trade write path ==");
   resetRuntime(tmpDir);
   const { migrate, getDb, repos } = require(path.join(ROOT, "lib/db"));
   migrate();
+  const db = getDb();
+  const { persistClosedTrade, BOT_TYPE_LIVE } = require(path.join(ROOT, "lib/bot-db-persist"));
 
-  const trade = makeTrade("close-1");
-  repos.botState.insertClosedTrade(getDb(), "live", trade);
-  const rows = repos.trades.listClosedTrades(getDb(), { botType: "live" });
-  assert(rows.some((r) => r.id === "close-1"), "insertClosedTrade writes to closed_trades");
+  const trade = makeTrade("close-1", {
+    exitOrderId: 999,
+    slOrderId: 111,
+    tpOrderId: 222,
+    exchangeMatchedEpisodeId: "ep-1",
+    exchangeTradeFills: [{ orderId: 999, price: 101, qty: 0.01 }],
+  });
+  persistClosedTrade(BOT_TYPE_LIVE, trade);
+  persistClosedTrade(BOT_TYPE_LIVE, { ...trade, snapshotId: "snap-1" });
+
+  const rows = repos.trades.listClosedTrades(db, { botType: "live" });
+  assert(rows.length === 1, "single persist path upserts one live trade row");
+  const stored = rows[0];
+  assert(stored.id === "close-1", "trade id preserved");
+  assert(stored.snapshotId === "snap-1", "snapshot patch upserts same row");
+  assert(stored.exitOrderId === 999, "exitOrderId preserved via normalize");
+  assert(stored.exchangeMatchedEpisodeId === "ep-1", "exchangeMatchedEpisodeId preserved");
 }
 
 async function testUiSettings(tmpDir) {
@@ -501,7 +636,9 @@ async function main() {
 
   const tests = [
     ["schema", testSchemaAndMigration],
+    ["config-versions", testConfigVersions],
     ["bot-state", testBotStateRoundtrip],
+    ["bot-state-tx", testSaveBotRuntimeTransaction],
     ["trades", testClosedTrades],
     ["history", testLiveHistoryStore],
     ["import", testJsonImportIdempotent],

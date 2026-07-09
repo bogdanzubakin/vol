@@ -5,6 +5,8 @@
   "scripts": {
     "test": "node scripts/test-db-deep.js",
     "test:db": "node scripts/test-db-deep.js",
+    "db:remote:sync": "bash scripts/db-remote-sync.sh",
+    "db:remote:shell": "bash scripts/db-remote-shell.sh",
     "start": "NODE_OPTIONS='--max-old-space-size=8192' node index.js --all",
     "start:public": "NODE_OPTIONS='--max-old-space-size=8192' node scripts/serve-public.js",
     "start:scanner": "NODE_OPTIONS='--max-old-space-size=8192' node index.js --all",

@@ -3685,7 +3685,6 @@ async function main() {
 
   liveBot = createLiveBot({
     trader: futuresTrader,
-    historyStore: liveBotHistory,
     onTradeClosed: createTradeClosedHandler("Live bot"),
     onDrawdownStop: handleDrawdownStop,
     onExitOrdersFailed: (pos, detail) =>

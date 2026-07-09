@@ -8293,11 +8293,16 @@
 
       const n = data.positions?.length ?? 0;
       const total = data.totalPnl;
+      const totalMargin = (data.positions ?? []).reduce(
+        (s, p) => s + (Number(p.margin) || 0),
+        0
+      );
       updateDocumentTitle(n > 0 ? total : null);
       const totalCls =
         total == null ? "" : total >= 0 ? "pnl-pos" : "pnl-neg";
       meta.innerHTML =
         `${n} open` +
+        (totalMargin > 0 ? ` · margin ${fmtUsd(totalMargin)}` : "") +
         (total != null
           ? ` · <span class="${totalCls}">${fmtPnl(total)} USDT</span>`
           : "") +
@@ -8319,7 +8324,7 @@
       });
 
       body.innerHTML = `<div class="table-wrap"><table class="positions-table">
-        <thead><tr><th>Pair</th><th>SL/TP</th><th>Duration</th><th>PNL</th><th>ROI</th><th></th></tr></thead>
+        <thead><tr><th>Pair</th><th>Margin</th><th>SL/TP</th><th>Duration</th><th>PNL</th><th>ROI</th><th></th></tr></thead>
         <tbody>${sortedPositions
           .map((p) => {
             const dirCls =
@@ -8331,12 +8336,14 @@
             const dirTri = p.direction === "LONG" ? "▲" : "▼";
             const openMs = positionOpenMs(p);
             const duration = fmtLivePositionDuration(p);
+            const marginLabel = fmtMarginLeverage(p);
             const closeBtn = data.enabled
               ? `<button type="button" class="btn secondary sm positions-close-btn" data-symbol="${escapeHtml(p.symbol)}" title="Close position on Binance">Close</button>`
               : "";
             const exits = `<span class="positions-exits">${positionExitFlag("SL", p.hasStopLoss, p.stopLoss)}${positionExitFlag("TP", p.hasTakeProfit, p.takeProfit)}</span>`;
             return `<tr data-symbol="${escapeHtml(p.symbol)}"${openMs != null ? ` data-opened-at-ms="${openMs}"` : ""}>
               <td class="sym"><span class="dir-tri ${dirCls}">${dirTri}</span>${symLink(p.symbol)}</td>
+              <td>${escapeHtml(marginLabel)}</td>
               <td>${exits}</td>
               <td class="positions-duration"${openMs != null ? ` data-opened-at-ms="${openMs}"` : ""}>${escapeHtml(duration)}</td>
               <td class="${pnlCls}">${fmtPnl(p.pnl)}</td>
