@@ -3549,6 +3549,7 @@ async function main() {
 
   function createTradeClosedHandler(botLabel) {
     return async (trade, posSnap) => {
+      telegram?.onTradeClose?.(botLabel, trade) ??
       telegram?.onNonSlTradeClose?.(botLabel, trade);
       return captureTradeSnapshot(trade, posSnap);
     };
@@ -4013,7 +4014,7 @@ async function main() {
         closeAllLiveBot: () => liveBot.closeAll(),
         forgetLiveBotOpen: (symbol) => liveBot.forgetOpenPositions(symbol),
         syncLiveBot: () => liveBot.syncFromExchange(),
-        resetLiveBotHistory: () => liveBot.resetHistory(),
+        resetLiveBotHistory: (opts) => liveBot.resetHistory(opts),
         generatePaperBotOpenSnapshot,
         generateLiveBotOpenSnapshot,
         generateBacktestTradeSnapshot,
