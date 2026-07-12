@@ -40,7 +40,7 @@ function parseArgs(argv) {
   }
   return {
     toDays: Math.max(1, Math.min(60, Math.round(toDays) || 30)),
-    restGapMs: Math.max(500, restGapMs),
+    restGapMs: Math.max(80, restGapMs),
     batchPauseMs: Math.max(0, batchPauseMs),
     symbolPauseMs: Math.max(0, symbolPauseMs),
     dryRun,
