@@ -32,6 +32,7 @@ const {
   fastMoverLookbackFor1m,
   sfpRangeBars,
 } = require("./lib/signal-metrics");
+const { evaluateFoiLong, evaluateFoiBear } = require("./lib/foi-signal");
 const { evaluateExtremalSpikeGate } = require("./lib/extremal-spike-gate");
 const { getChartPayload } = require("./lib/chart-render");
 const { formatIsoUtcPlus3 } = require("./lib/time-format");
@@ -2122,6 +2123,80 @@ function applyPullbackBearSignal(sym, pb, qv, pbBearActive, pbBearHistory, lastP
   lastPbBear.set(sym, pass);
 }
 
+function applyFoiSignal(sym, foi, qv, foiActive, foiHistory, lastFoi) {
+  const pass = Boolean(foi?.passes);
+  const prev = lastFoi.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass) {
+    const existing = foiHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ?? foiActive.get(sym)?.triggeredAt ?? Date.now());
+    const row = {
+      ...foi,
+      signalKind: "foi",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    foiActive.set(sym, row);
+    foiHistory.set(sym, row);
+    if (!prev) {
+      lastFoi.set(sym, true);
+      recordSignalHitDb(sym, "foi", foi, triggeredAt);
+      const detail = `fund ${(foi.fundingRate * 100).toFixed(4)}% · OIΔ ${foi.oiDelta1h?.toFixed?.(2) ?? "—"} · ${foi.confirmKind}`;
+      dashboard?.pushEvent("NEW_FOI", sym, detail);
+      paperBot?.onFoiSignal(sym, foi);
+      liveBot?.onFoiSignal(sym, foi);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, foiActive, foiHistory, "foi", foi);
+    dashboard?.pushEvent("END_FOI", sym);
+  }
+
+  lastFoi.set(sym, pass);
+}
+
+function applyFoiBearSignal(sym, foi, qv, foiBearActive, foiBearHistory, lastFoiBear) {
+  const pass = Boolean(foi?.passes);
+  const prev = lastFoiBear.get(sym) ?? false;
+  const qvRounded = Math.round(qv);
+
+  if (pass) {
+    const existing = foiBearHistory.get(sym);
+    const triggeredAt = !prev
+      ? Date.now()
+      : (existing?.triggeredAt ??
+        foiBearActive.get(sym)?.triggeredAt ??
+        Date.now());
+    const row = {
+      ...foi,
+      signalKind: "foi_bear",
+      signalStatus: "active",
+      quoteVol24h: qvRounded,
+      triggeredAt,
+      ended: false,
+    };
+    foiBearActive.set(sym, row);
+    foiBearHistory.set(sym, row);
+    if (!prev) {
+      lastFoiBear.set(sym, true);
+      recordSignalHitDb(sym, "foi_bear", foi, triggeredAt);
+      const detail = `fund ${(foi.fundingRate * 100).toFixed(4)}% · OIΔ ${foi.oiDelta1h?.toFixed?.(2) ?? "—"} · ${foi.confirmKind}`;
+      dashboard?.pushEvent("NEW_FOI_BEAR", sym, detail);
+      paperBot?.onFoiBearSignal(sym, foi);
+      liveBot?.onFoiBearSignal(sym, foi);
+    }
+  } else if (prev) {
+    markKindSignalEnded(sym, foiBearActive, foiBearHistory, "foi_bear", foi);
+    dashboard?.pushEvent("END_FOI_BEAR", sym);
+  }
+
+  lastFoiBear.set(sym, pass);
+}
+
 function evaluateSymbolSignals(sym, signalBuffers, priceBuffers, qv, maps) {
   let out;
   symbolEvalLock.runExclusive(`eval:${sym}`, () => {
@@ -2140,10 +2215,16 @@ function evaluateSymbolSignalsUnlocked(sym, signalBuffers, priceBuffers, qv, map
     pbHistory,
     pbBearActive,
     pbBearHistory,
+    foiActive,
+    foiHistory,
+    foiBearActive,
+    foiBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
+    lastFoi,
+    lastFoiBear,
   } = maps;
   const signalBars = evalSignalBars(sym, signalBuffers);
   const priceBars = evalBars(sym, priceBuffers);
@@ -2161,6 +2242,26 @@ function evaluateSymbolSignalsUnlocked(sym, signalBuffers, priceBuffers, qv, map
   applySfpBearSignal(sym, sfpBear, qv, sfpBearActive, sfpBearHistory, lastSfpBear);
   applyPullbackSignal(sym, pb, qv, pbActive, pbHistory, lastPb);
   applyPullbackBearSignal(sym, pbBear, qv, pbBearActive, pbBearHistory, lastPbBear);
+
+  const fundingOi = fundingOiProvider?.getFundingOiAt?.(sym) ?? null;
+  const botCfg = {
+    ...cfg,
+    ...(liveBot?.getPublicState?.()?.config || paperBot?.getPublicState?.()?.config || {}),
+  };
+  const foi =
+    signalBars && (botCfg.tradeFoiSignals || botCfg.tradeBearishFoiSignals)
+      ? evaluateFoiLong(signalBars, botCfg, fundingOi, fmOpts, priceBars)
+      : null;
+  const foiBear =
+    signalBars && (botCfg.tradeFoiSignals || botCfg.tradeBearishFoiSignals)
+      ? evaluateFoiBear(signalBars, botCfg, fundingOi, fmOpts, priceBars)
+      : null;
+  if (foiActive && lastFoi) {
+    applyFoiSignal(sym, foi, qv, foiActive, foiHistory, lastFoi);
+  }
+  if (foiBearActive && lastFoiBear) {
+    applyFoiBearSignal(sym, foiBear, qv, foiBearActive, foiBearHistory, lastFoiBear);
+  }
 
   return { sfp, sfpBear, pb, pbBear };
 }
@@ -2971,10 +3072,16 @@ async function main() {
   const pbHistory = new Map();
   const pbBearActive = new Map();
   const pbBearHistory = new Map();
+  const foiActive = new Map();
+  const foiHistory = new Map();
+  const foiBearActive = new Map();
+  const foiBearHistory = new Map();
   const lastSfp = new Map();
   const lastSfpBear = new Map();
   const lastPb = new Map();
   const lastPbBear = new Map();
+  const lastFoi = new Map();
+  const lastFoiBear = new Map();
 
   const signalMaps = () => ({
     sfpActive,
@@ -2985,10 +3092,16 @@ async function main() {
     pbHistory,
     pbBearActive,
     pbBearHistory,
+    foiActive,
+    foiHistory,
+    foiBearActive,
+    foiBearHistory,
     lastSfp,
     lastSfpBear,
     lastPb,
     lastPbBear,
+    lastFoi,
+    lastFoiBear,
   });
 
   let symbols = [];
