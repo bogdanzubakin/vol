@@ -343,6 +343,14 @@
       background: rgba(251, 146, 60, 0.2);
       color: #fdba74;
     }
+    .status-tag.foi {
+      background: rgba(45, 212, 191, 0.2);
+      color: #5eead4;
+    }
+    .status-tag.foi-bear {
+      background: rgba(251, 113, 133, 0.2);
+      color: #fda4af;
+    }
     .strategy-monitor {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -1614,8 +1622,10 @@
       </h2>
       <p class="sub" style="margin: 12px 0 12px 12px; font-size: 0.8rem">
         Simulated Binance futures LONG/SHORT on <span class="status-tag sfp">SFP</span>,
-        <span class="status-tag sfp-bear">SFP↓</span>, and
-        <span class="status-tag pb">PULLBACK</span> signals. No real orders — settings and state are separate from the live bot.
+        <span class="status-tag sfp-bear">SFP↓</span>,
+        <span class="status-tag pb">PULLBACK</span>, and
+        <span class="status-tag foi">FOI</span> /
+        <span class="status-tag foi-bear">FOI↓</span> signals. No real orders — settings and state are separate from the live bot.
       </p>
       <form class="bot-settings-form" id="paperBotConfigForm" novalidate>
         <details class="settings-pane settings-pane-root" open>
@@ -1783,6 +1793,41 @@
           <label>
             <input type="checkbox" id="paperBotTradePullbackBear" name="tradeBearishPullbackSignals" checked />
             Trade bearish pullback (SHORT)
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeFoi" name="tradeFoiSignals" />
+            Trade FOI (LONG) — crowded shorts / negative funding
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotTradeFoiBear" name="tradeBearishFoiSignals" />
+            Trade FOI↓ (SHORT) — crowded longs / positive funding
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label for="paperBotFoiMinAbsFunding">FOI min |funding| rate</label>
+          <input type="number" id="paperBotFoiMinAbsFunding" step="0.00001" min="0" max="0.01" value="0.00012" />
+          <div class="hint">e.g. 0.00008 ≈ 0.008%. Best 10d short-only used 0.00008</div>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotFoiRequireOi" checked />
+            FOI require OI / funding-trend confirm
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotFoiConfirmSfp" checked />
+            FOI confirm via soft SFP
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="paperBotFoiConfirmPullback" checked />
+            FOI confirm via soft pullback
           </label>
         </div>
         <div class="field" style="min-width: 260px;">
@@ -2418,6 +2463,41 @@
         </div>
         <div class="field" style="min-width: 200px;">
           <label><input type="checkbox" id="liveBotTradePullbackBear" checked /> Trade bearish pullback (SHORT)</label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="liveBotTradeFoi" />
+            Trade FOI (LONG) — crowded shorts / negative funding
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="liveBotTradeFoiBear" />
+            Trade FOI↓ (SHORT) — crowded longs / positive funding
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label for="liveBotFoiMinAbsFunding">FOI min |funding| rate</label>
+          <input type="number" id="liveBotFoiMinAbsFunding" step="0.00001" min="0" max="0.01" value="0.00012" />
+          <div class="hint">e.g. 0.00008 ≈ 0.008%. Best 10d short-only used 0.00008</div>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="liveBotFoiRequireOi" checked />
+            FOI require OI / funding-trend confirm
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="liveBotFoiConfirmSfp" checked />
+            FOI confirm via soft SFP
+          </label>
+        </div>
+        <div class="field" style="min-width: 200px;">
+          <label>
+            <input type="checkbox" id="liveBotFoiConfirmPullback" checked />
+            FOI confirm via soft pullback
+          </label>
         </div>
         <div class="field" style="min-width: 260px;">
           <label>
@@ -4497,6 +4577,8 @@
       if (kind === "sfp_bear") return '<span class="status-tag sfp-bear">SFP↓</span>';
       if (kind === "pullback") return '<span class="status-tag pb">PB</span>';
       if (kind === "pullback_bear") return '<span class="status-tag pb-bear">PB↓</span>';
+      if (kind === "foi") return '<span class="status-tag foi">FOI</span>';
+      if (kind === "foi_bear") return '<span class="status-tag foi-bear">FOI↓</span>';
       return '<span class="status-tag muted">—</span>';
     }
 
@@ -4504,7 +4586,8 @@
       return (
         p?.side === "SHORT" ||
         p?.signalKind === "sfp_bear" ||
-        p?.signalKind === "pullback_bear"
+        p?.signalKind === "pullback_bear" ||
+        p?.signalKind === "foi_bear"
       );
     }
 
@@ -4625,6 +4708,12 @@
         tradeBearishSfpSignals: document.getElementById("paperBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("paperBotTradePullback").checked,
         tradeBearishPullbackSignals: document.getElementById("paperBotTradePullbackBear").checked,
+        tradeFoiSignals: document.getElementById("paperBotTradeFoi").checked,
+        tradeBearishFoiSignals: document.getElementById("paperBotTradeFoiBear").checked,
+        foiMinAbsFundingRate: Number(document.getElementById("paperBotFoiMinAbsFunding").value),
+        foiRequireOiConfirm: document.getElementById("paperBotFoiRequireOi").checked,
+        foiConfirmSfp: document.getElementById("paperBotFoiConfirmSfp").checked,
+        foiConfirmPullback: document.getElementById("paperBotFoiConfirmPullback").checked,
         extremalSpikeGateEnabled: document.getElementById("paperBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("paperBotAddOnEnabled").checked,
         addOnMarginUsdt: Number(document.getElementById("paperBotAddOnMarginUsdt").value),
@@ -4774,6 +4863,17 @@
         Boolean(cfg.tradePullbackSignals);
       document.getElementById("paperBotTradePullbackBear").checked =
         cfg.tradeBearishPullbackSignals !== false;
+      document.getElementById("paperBotTradeFoi").checked = Boolean(cfg.tradeFoiSignals);
+      document.getElementById("paperBotTradeFoiBear").checked =
+        Boolean(cfg.tradeBearishFoiSignals);
+      document.getElementById("paperBotFoiMinAbsFunding").value =
+        cfg.foiMinAbsFundingRate ?? 0.00012;
+      document.getElementById("paperBotFoiRequireOi").checked =
+        cfg.foiRequireOiConfirm !== false;
+      document.getElementById("paperBotFoiConfirmSfp").checked =
+        cfg.foiConfirmSfp !== false;
+      document.getElementById("paperBotFoiConfirmPullback").checked =
+        cfg.foiConfirmPullback !== false;
       document.getElementById("paperBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled === true;
       document.getElementById("paperBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
@@ -6732,6 +6832,12 @@
         tradeBearishSfpSignals: document.getElementById("liveBotTradeSfpBear").checked,
         tradePullbackSignals: document.getElementById("liveBotTradePullback").checked,
         tradeBearishPullbackSignals: document.getElementById("liveBotTradePullbackBear").checked,
+        tradeFoiSignals: document.getElementById("liveBotTradeFoi").checked,
+        tradeBearishFoiSignals: document.getElementById("liveBotTradeFoiBear").checked,
+        foiMinAbsFundingRate: Number(document.getElementById("liveBotFoiMinAbsFunding").value),
+        foiRequireOiConfirm: document.getElementById("liveBotFoiRequireOi").checked,
+        foiConfirmSfp: document.getElementById("liveBotFoiConfirmSfp").checked,
+        foiConfirmPullback: document.getElementById("liveBotFoiConfirmPullback").checked,
         extremalSpikeGateEnabled: document.getElementById("liveBotExtremalSpikeGate").checked,
         addOnEnabled: document.getElementById("liveBotAddOnEnabled").checked,
         addOnMarginUsdt: Number(document.getElementById("liveBotAddOnMarginUsdt").value),
@@ -6833,6 +6939,16 @@
       document.getElementById("liveBotTradePullback").checked = Boolean(cfg.tradePullbackSignals);
       document.getElementById("liveBotTradePullbackBear").checked =
         cfg.tradeBearishPullbackSignals !== false;
+      document.getElementById("liveBotTradeFoi").checked = Boolean(cfg.tradeFoiSignals);
+      document.getElementById("liveBotTradeFoiBear").checked =
+        Boolean(cfg.tradeBearishFoiSignals);
+      document.getElementById("liveBotFoiMinAbsFunding").value =
+        cfg.foiMinAbsFundingRate ?? 0.00012;
+      document.getElementById("liveBotFoiRequireOi").checked =
+        cfg.foiRequireOiConfirm !== false;
+      document.getElementById("liveBotFoiConfirmSfp").checked = cfg.foiConfirmSfp !== false;
+      document.getElementById("liveBotFoiConfirmPullback").checked =
+        cfg.foiConfirmPullback !== false;
       document.getElementById("liveBotExtremalSpikeGate").checked =
         cfg.extremalSpikeGateEnabled === true;
       document.getElementById("liveBotAddOnEnabled").checked = Boolean(cfg.addOnEnabled);
