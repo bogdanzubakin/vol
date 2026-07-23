@@ -2,6 +2,7 @@
 /**
  * Validate FOI best patch on full universe (and optional short-only).
  *   node scripts/validate-foi-best-10d.js --days 10
+ *   node scripts/validate-foi-best-10d.js --days 10 --only best_short_only
  */
 const fs = require("fs");
 const path = require("path");
@@ -173,8 +174,18 @@ async function runOne(label, botConfig, days, syms, f, getFundingOiAt, signalCfg
   return row;
 }
 
+function parseArgs(argv) {
+  let days = 10;
+  let only = null;
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === "--days" && argv[i + 1]) days = Math.max(1, Number(argv[++i]) || 10);
+    else if (argv[i] === "--only" && argv[i + 1]) only = String(argv[++i]);
+  }
+  return { days, only };
+}
+
 async function main() {
-  const days = 10;
+  const { days, only } = parseArgs(process.argv);
   for (const scope of ["paper", "live"]) {
     reloadSfp(scope);
     reloadPbSignal(scope);
@@ -189,10 +200,10 @@ async function main() {
   const { lookup: getFundingOiAt } = loadFundingOiCache(syms);
   const foiBest = readJsonFile(dataPath("foi-best-10d.json"), null)?.patch ?? {};
 
-  log(`Validate FOI best · ${days}d · ${syms.length} symbols`);
+  log(`Validate FOI best · ${days}d · ${syms.length} symbols${only ? ` · only ${only}` : ""}`);
   log(`patch ${JSON.stringify(foiBest)}`);
 
-  const variants = [
+  let variants = [
     { label: "baseline_default", bot: makeBot({ ...Object.fromEntries(Object.keys(foiBest).map((k) => [k, undefined])), tradeFoiSignals: true, tradeBearishFoiSignals: true, foiMinAbsFundingRate: 0.00012, foiRequireOiConfirm: true, foiConfirmSfp: true, foiConfirmPullback: true, takeProfitPct: undefined, sfpTakeProfitPct: undefined, takeProfitMinPct: undefined }) },
     { label: "best_both", bot: makeBot({}) },
     {
@@ -200,29 +211,38 @@ async function main() {
       bot: makeBot({ tradeFoiSignals: false, tradeBearishFoiSignals: true }),
     },
   ];
+  if (only) {
+    variants = variants.filter((v) => v.label === only);
+    if (!variants.length) {
+      throw new Error(`Unknown --only ${only} (expected baseline_default|best_both|best_short_only)`);
+    }
+  }
 
   // Fix baseline: explicitly clear FOI best overrides
-  const { local, best10d, bearExit } = loadBase();
-  variants[0].bot = normalizeLiveConfig({
-    enabled: true,
-    ...local,
-    ...(best10d?.patch ?? {}),
-    ...(bearExit?.patch ?? {}),
-    tradeSfpSignals: false,
-    tradeBearishSfpSignals: false,
-    tradePullbackSignals: false,
-    tradeBearishPullbackSignals: false,
-    tradeFoiSignals: true,
-    tradeBearishFoiSignals: true,
-    foiMinAbsFundingRate: 0.00012,
-    foiMinAbsFundingRateBull: null,
-    foiMinAbsFundingRateBear: null,
-    foiRequireOiConfirm: true,
-    foiConfirmSfp: true,
-    foiConfirmPullback: true,
-    armed: false,
-    drawdownStopEnabled: false,
-  });
+  const baseline = variants.find((v) => v.label === "baseline_default");
+  if (baseline) {
+    const { local, best10d, bearExit } = loadBase();
+    baseline.bot = normalizeLiveConfig({
+      enabled: true,
+      ...local,
+      ...(best10d?.patch ?? {}),
+      ...(bearExit?.patch ?? {}),
+      tradeSfpSignals: false,
+      tradeBearishSfpSignals: false,
+      tradePullbackSignals: false,
+      tradeBearishPullbackSignals: false,
+      tradeFoiSignals: true,
+      tradeBearishFoiSignals: true,
+      foiMinAbsFundingRate: 0.00012,
+      foiMinAbsFundingRateBull: null,
+      foiMinAbsFundingRateBear: null,
+      foiRequireOiConfirm: true,
+      foiConfirmSfp: true,
+      foiConfirmPullback: true,
+      armed: false,
+      drawdownStopEnabled: false,
+    });
+  }
 
   const rows = [];
   for (const v of variants) {
