@@ -3662,8 +3662,9 @@ async function main() {
 
   function createTradeClosedHandler(botLabel) {
     return async (trade, posSnap) => {
-      telegram?.onTradeClose?.(botLabel, trade) ??
-      telegram?.onNonSlTradeClose?.(botLabel, trade);
+      // onTradeClose is void (returns undefined) — do not ??-fallback to
+      // onNonSlTradeClose or every close sends the Telegram report twice.
+      telegram?.onTradeClose?.(botLabel, trade);
       return captureTradeSnapshot(trade, posSnap);
     };
   }
