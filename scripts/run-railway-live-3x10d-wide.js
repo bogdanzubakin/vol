@@ -23,7 +23,7 @@ const { dataPath, readJsonFile, writeJsonFile } = require("../lib/data-dir");
 const { modelFileFor } = require("../lib/ai-model-scope");
 const { normalizeLiveConfig } = require("../lib/live-bot");
 const { applyBarConfig } = require("../lib/signal-metrics");
-const { readSymbolBars } = require("../lib/backtest-kline-cache");
+const { readSymbolBars, readBest1mBars } = require("../lib/backtest-kline-cache");
 const { runPaperBotBacktest } = require("../lib/paper-bot-backtest");
 const { loadFundingOiCache } = require("../lib/funding-oi-cache");
 const { reloadModel: reloadExitLevels } = require("../lib/ai-exit-levels-model");
@@ -182,12 +182,7 @@ function loadSignalConfig() {
 }
 
 function bars1m(sym) {
-  const signal = readSymbolBars("signal", sym);
-  const mover = readSymbolBars("mover", sym);
-  if (signal?.length && mover?.length) {
-    return signal.length >= mover.length ? signal : mover;
-  }
-  return signal ?? mover ?? null;
+  return readBest1mBars(String(sym).toUpperCase(), 200);
 }
 
 function symbols() {
@@ -528,6 +523,7 @@ async function runWindow({ win, dataEndMs, botConfig, syms, signalCfg, getFundin
       saveLastResult: false,
       saveKlineCache: false,
       forceKlineFetch: true,
+      simYieldEvery: 0,
       modelScope: "live",
       foiFollowthroughTracker: tracker,
       runMeta: { eval: "railway-live-3x10d-wide", window: win.id },
