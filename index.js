@@ -3765,7 +3765,7 @@ async function main() {
     sfpRegimeMonitor,
     pullbackRegimeMonitor,
     pullbackPatternBreakMonitor,
-    getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+    getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 400),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
     getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
   });
@@ -3809,7 +3809,8 @@ async function main() {
     pullbackPatternBreakMonitor: livePullbackPatternBreakMonitor,
     getRecentBars: (sym, limit) =>
       getRecentBarsForBot(sym, historyBuffers, limit),
-    getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 120),
+    // ≥400×1m for FOI BTC lookalike 4h pathCosine gate
+    getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 400),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
     getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
   });
