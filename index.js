@@ -95,6 +95,11 @@ const {
 const { ensureGbmModelsForScope: ensurePullbackGbm } = require("./lib/pullback-signal-onnx");
 const { ensureGbmModelsForScope: ensureSfpRegimeGbm } = require("./lib/sfp-regime-onnx");
 const { createFundingOiProvider } = require("./lib/funding-oi-provider");
+const { createObiLiveRunner } = require("./lib/obi-live-runner");
+const { createTapeLiveRunner } = require("./lib/tape-live-runner");
+const { fetchDepthSnapshot } = require("./lib/binance-futures-depth");
+const { fetchAggTrades } = require("./lib/binance-futures-aggtrade");
+const { computeBookTapeCombo } = require("./lib/book-tape-combo");
 const {
   ensureAllDefaultModelsOnDisk: ensureAllAiExitLevelsModelsOnDisk,
   getModel: getAiExitLevelsModel,
@@ -238,6 +243,8 @@ let pullbackPatternBreakMonitor = null;
 let livePullbackPatternBreakMonitor = null;
 let liveBot = null;
 let fundingOiProvider = null;
+let obiLiveRunner = null;
+let tapeLiveRunner = null;
 let futuresTrader = null;
 let dashboardWs = null;
 let fetchPositionsPayload = null;
@@ -3769,6 +3776,21 @@ async function main() {
     getBarsForSymbol: (sym) => getRecentBarsForBot(sym, historyBuffers, 400),
     getBtcBarsForRegime: (asOf) => getBtcBarsForRegime(historyBuffers, asOf),
     getFundingOiAt: (sym, asOf) => fundingOiProvider?.getFundingOiAt(sym, asOf),
+    resolveBookTapeCombo: async (sym, side) => {
+      const cfg = paperBot?.getPublicState?.()?.config ?? {};
+      const [book, trades] = await Promise.all([
+        fetchDepthSnapshot(sym, { limit: cfg.obiLevels || 20 }),
+        fetchAggTrades(sym, { limit: cfg.tapeTradeCount || 100 }),
+      ]);
+      return computeBookTapeCombo({
+        book,
+        trades,
+        side,
+        levels: cfg.obiLevels || 20,
+        tapeCount: cfg.tapeTradeCount || 100,
+        cfg,
+      });
+    },
   });
   console.error(
     `Paper bot: simulated $${paperBot.getPublicState().config.initialDeposit} · ` +
@@ -4388,6 +4410,76 @@ async function main() {
     void fundingOiProvider.refreshAll().then((r) => {
       console.error(`Funding/OI provider: cached ${r.ok} symbols (${r.fail} failed)`);
     }).catch((e) => console.error(`Funding/OI refresh: ${e.message}`));
+  }
+
+  obiLiveRunner = createObiLiveRunner({
+    maxSymbols: 40,
+    getConfig: () => ({
+      ...(paperBot?.getPublicState?.()?.config || {}),
+      ...(liveBot?.getPublicState?.()?.config || {}),
+    }),
+    getSymbols: () => symbols,
+    onLong: (sym, metrics) => {
+      dashboard?.pushEvent(
+        "NEW_OBI",
+        sym,
+        `Bid/Ask ${metrics.imbalance?.toFixed?.(2) ?? "?"} · bid $${Math.round(metrics.bidVol || 0)} / ask $${Math.round(metrics.askVol || 0)}`
+      );
+      paperBot?.onObiSignal?.(sym, metrics);
+      liveBot?.onObiSignal?.(sym, metrics);
+    },
+    onShort: (sym, metrics) => {
+      dashboard?.pushEvent(
+        "NEW_OBI_BEAR",
+        sym,
+        `Ask/Bid ${metrics.askBidRatio?.toFixed?.(2) ?? "?"} · bid $${Math.round(metrics.bidVol || 0)} / ask $${Math.round(metrics.askVol || 0)}`
+      );
+      paperBot?.onObiBearSignal?.(sym, metrics);
+      liveBot?.onObiBearSignal?.(sym, metrics);
+    },
+  });
+  {
+    const obiStart = obiLiveRunner.start();
+    if (obiStart.started) {
+      console.error(`OBI depth runner: ${obiStart.symbols} symbols (WS depth20)`);
+    } else {
+      console.error(`OBI depth runner idle (${obiStart.reason}) — enable tradeObiSignals to start`);
+    }
+  }
+
+  tapeLiveRunner = createTapeLiveRunner({
+    maxSymbols: 40,
+    getConfig: () => ({
+      ...(paperBot?.getPublicState?.()?.config || {}),
+      ...(liveBot?.getPublicState?.()?.config || {}),
+    }),
+    getSymbols: () => symbols,
+    onLong: (sym, metrics) => {
+      dashboard?.pushEvent(
+        "NEW_TAPE",
+        sym,
+        `sell ${(100 * (metrics.sellShare || 0)).toFixed(0)}% · Δpx ${metrics.priceChangePct?.toFixed?.(3) ?? "?"}% · seller absorption`
+      );
+      paperBot?.onTapeSignal?.(sym, metrics);
+      liveBot?.onTapeSignal?.(sym, metrics);
+    },
+    onShort: (sym, metrics) => {
+      dashboard?.pushEvent(
+        "NEW_TAPE_BEAR",
+        sym,
+        `buy ${(100 * (metrics.buyShare || 0)).toFixed(0)}% · Δpx ${metrics.priceChangePct?.toFixed?.(3) ?? "?"}% · buyer absorption`
+      );
+      paperBot?.onTapeBearSignal?.(sym, metrics);
+      liveBot?.onTapeBearSignal?.(sym, metrics);
+    },
+  });
+  {
+    const tapeStart = tapeLiveRunner.start();
+    if (tapeStart.started) {
+      console.error(`Tape runner: ${tapeStart.symbols} symbols (WS @trade)`);
+    } else {
+      console.error(`Tape runner idle (${tapeStart.reason}) — enable tradeTapeSignals to start`);
+    }
   }
 
   const snapshotClean = cleanOldSnapshots();

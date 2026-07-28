@@ -30,6 +30,7 @@ const { onnxDir: pbOnnxDir } = require("../lib/pullback-signal-onnx");
 const { onnxDir: sfpOnnxDir } = require("../lib/sfp-regime-onnx");
 const { createFoiFollowthroughRegimeTracker } = require("../lib/foi-followthrough-regime");
 const { createFoiColdDayTracker } = require("../lib/foi-cold-day-regime");
+const { createFoiMiddayColdPauseTracker } = require("../lib/foi-midday-cold-pause");
 
 const ROOT = path.join(__dirname, "..");
 const MIRROR = path.join(ROOT, ".cache", "railway-mirror");
@@ -70,6 +71,18 @@ const FEATURE_PATCH_AB_PATHCOSINE = {
   foiColdDayPolicy: "half",
 };
 
+/** Champion + mid-day cold pause (2h WR<25% OR dayPnL<-1.5 → block). */
+const FEATURE_PATCH_AB_PATHCOSINE_MIDDAY = {
+  ...FEATURE_PATCH_AB_PATHCOSINE,
+  foiMiddayColdPauseEnabled: true,
+  foiMiddayColdPauseWindowHours: 2,
+  foiMiddayColdPauseMinSamples: 6,
+  foiMiddayColdPauseMaxWr: 0.25,
+  foiMiddayColdPauseMaxDayPnl: -1.5,
+  foiMiddayColdPauseRequireBoth: false,
+  foiMiddayColdPausePolicy: "block",
+};
+
 function featurePatchFor(features) {
   const f = String(features || "").toLowerCase();
   if (f === "ab" || f === "a+b") return FEATURE_PATCH_AB;
@@ -80,6 +93,14 @@ function featurePatchFor(features) {
     f === "champion"
   ) {
     return FEATURE_PATCH_AB_PATHCOSINE;
+  }
+  if (
+    f === "ab-pathcosine-midday" ||
+    f === "ab-pc-midday" ||
+    f === "champion-midday" ||
+    f === "midday"
+  ) {
+    return FEATURE_PATCH_AB_PATHCOSINE_MIDDAY;
   }
   return {};
 }
@@ -94,6 +115,14 @@ function featureTag(features) {
     f === "champion"
   ) {
     return "ab-pathcosine";
+  }
+  if (
+    f === "ab-pathcosine-midday" ||
+    f === "ab-pc-midday" ||
+    f === "champion-midday" ||
+    f === "midday"
+  ) {
+    return "ab-pathcosine-midday";
   }
   return null;
 }
@@ -568,6 +597,11 @@ function configSnapshot(cfg) {
     foiColdDayEnabled: cfg.foiColdDayEnabled,
     foiColdDayPolicy: cfg.foiColdDayPolicy,
     foiColdDayMaxWinRate: cfg.foiColdDayMaxWinRate,
+    foiMiddayColdPauseEnabled: cfg.foiMiddayColdPauseEnabled,
+    foiMiddayColdPauseWindowHours: cfg.foiMiddayColdPauseWindowHours,
+    foiMiddayColdPauseMaxWr: cfg.foiMiddayColdPauseMaxWr,
+    foiMiddayColdPauseMaxDayPnl: cfg.foiMiddayColdPauseMaxDayPnl,
+    foiMiddayColdPausePolicy: cfg.foiMiddayColdPausePolicy,
     foiBlockedUtcHours: cfg.foiBlockedUtcHours,
     aiSfpRegimeEnabled: cfg.aiSfpRegimeEnabled,
     aiPullbackSignalEnabled: cfg.aiPullbackSignalEnabled,
@@ -589,6 +623,7 @@ async function main() {
   const fetchers = createFetchers(dataEndMs, days);
   const tracker = createFoiFollowthroughRegimeTracker();
   const coldDayTracker = createFoiColdDayTracker();
+  const middayColdPauseTracker = createFoiMiddayColdPauseTracker();
 
   log(`Railway live ${days}d daily · features=${features || "none"} · ${syms.length} symbols · cache ~${spanDays}d`);
   log(`Config: ${JSON.stringify(configSnapshot(botConfig))}`);
@@ -614,6 +649,7 @@ async function main() {
       modelScope: "live",
       foiFollowthroughTracker: tracker,
       foiColdDayTracker: coldDayTracker,
+      foiMiddayColdPauseTracker: middayColdPauseTracker,
       runMeta: { eval: "railway-live-30d-daily", days, features },
     });
     for (const t of result.closedTrades ?? []) {
