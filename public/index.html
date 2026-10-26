@@ -1370,9 +1370,19 @@
           <div class="hint">Min avg (H−L) % of price after exclusions</div>
         </div>
         <div class="field">
+          <label for="maxAvgMovePct">Max avg move %</label>
+          <input type="number" id="maxAvgMovePct" name="maxAvgMovePct" step="0.01" min="0" max="50" value="0" />
+          <div class="hint">Max avg (H−L) % after exclusions. Use 0 to disable.</div>
+        </div>
+        <div class="field">
           <label for="minLinearChangePct">Min linear change %</label>
           <input type="number" id="minLinearChangePct" name="minLinearChangePct" step="0.01" min="0" max="100" value="0.5" required />
           <div class="hint">Min |close−close| % over lookback (first to last bar). Use 0 to disable.</div>
+        </div>
+        <div class="field">
+          <label for="maxLinearChangePct">Max linear change %</label>
+          <input type="number" id="maxLinearChangePct" name="maxLinearChangePct" step="0.01" min="0" max="100" value="0" />
+          <div class="hint">Max |close−close| % over lookback. Use 0 to disable.</div>
         </div>
         <div class="field">
           <label for="fastMoveExcludeMult">Exclude spike ×</label>
@@ -4019,7 +4029,9 @@
     const MOVERS_CONFIG_KEYS = [
       "fastMoveLookbackCandles",
       "minAvgMovePct",
+      "maxAvgMovePct",
       "minLinearChangePct",
+      "maxLinearChangePct",
       "fastMoveExcludeMult",
     ];
 
@@ -4119,8 +4131,16 @@
         const wsText = ws.lastUpdateAt
           ? ` · data ${fmtTimeShort(ws.lastUpdateAt)} (${ws.updates ?? 0} WS, ${ws.restRepairs ?? 0} REST)`
           : ` · stream waiting (${ws.connectedShards ?? 0}/${ws.shardCount ?? 0} shards)`;
+        const maxAvgText =
+          data.maxAvgMovePct > 0 ? `–${data.maxAvgMovePct}%` : "";
+        const maxLinearText =
+          data.maxLinearChangePct > 0 ? `–${data.maxLinearChangePct}%` : "";
+        const linearText =
+          data.minLinearChangePct > 0 || data.maxLinearChangePct > 0
+            ? ` · linear ${data.minLinearChangePct}%${maxLinearText}`
+            : "";
         setMoversMsg(
-          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · avg ≥${data.minAvgMovePct}% · linear ≥${data.minLinearChangePct}% · ${data.lookback} × 1m · excl. >${data.excludeMult}× avg${wsText}`,
+          `Updated ${fmtTimeShort(data.updatedAt)} ${TZ_LABEL} · avg ${data.minAvgMovePct}%${maxAvgText}${linearText} · ${data.lookback} × 1m · excl. >${data.excludeMult}× avg${wsText}`,
           true
         );
       } catch (e) {
@@ -4476,6 +4496,7 @@
       const fastMap = {
         fastMoveLookbackCandles: "fastLookback",
         minAvgMovePct: "fastMinAvgMovePct",
+        maxAvgMovePct: "fastMaxAvgMovePct",
         fastMoveExcludeMult: "fastExcludeMult",
       };
       for (const [key, param] of Object.entries(fastMap)) {

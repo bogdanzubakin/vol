@@ -176,7 +176,9 @@ const cfg = {
   prefetchDays: 3,
   fastMoveLookbackCandles: 15,
   minAvgMovePct: 0.4,
+  maxAvgMovePct: 0,
   minLinearChangePct: 0.5,
+  maxLinearChangePct: 0,
   fastMoveExcludeMult: 3,
   topMoveMinPct: 15,
   sfpLookbackBars: 30,
@@ -3192,6 +3194,16 @@ async function main() {
           Number(searchParams.get("minAvgMovePct")) || cfg.minAvgMovePct
         )
       );
+      const maxAvgMovePctRaw = searchParams.get("maxAvgMovePct");
+      const maxAvgMovePct = Math.max(
+        0,
+        Math.min(
+          50,
+          maxAvgMovePctRaw != null && maxAvgMovePctRaw !== ""
+            ? Number(maxAvgMovePctRaw)
+            : cfg.maxAvgMovePct ?? 0
+        )
+      );
       const excludeMult = Math.max(
         1.5,
         Math.min(
@@ -3206,10 +3218,22 @@ async function main() {
           Number(searchParams.get("minLinearChangePct")) || cfg.minLinearChangePct
         )
       );
+      const maxLinearChangePctRaw = searchParams.get("maxLinearChangePct");
+      const maxLinearChangePct = Math.max(
+        0,
+        Math.min(
+          100,
+          maxLinearChangePctRaw != null && maxLinearChangePctRaw !== ""
+            ? Number(maxLinearChangePctRaw)
+            : cfg.maxLinearChangePct ?? 0
+        )
+      );
       const moverOpts = {
         fastMoveLookbackCandles: lookback,
         minAvgMovePct,
+        maxAvgMovePct,
         minLinearChangePct,
+        maxLinearChangePct,
         fastMoveExcludeMult: excludeMult,
       };
 
@@ -3275,7 +3299,9 @@ async function main() {
         moverInterval: PRIMARY_INTERVAL,
         lookback,
         minAvgMovePct,
+        maxAvgMovePct,
         minLinearChangePct,
+        maxLinearChangePct,
         excludeMult,
         pairCount: movers.length,
         movers,
@@ -3328,6 +3354,16 @@ async function main() {
           Number(searchParams.get("fastMinAvgMovePct")) || cfg.minAvgMovePct
         )
       );
+      const fastMaxAvgRaw = searchParams.get("fastMaxAvgMovePct");
+      const fastMaxAvgMovePct = Math.max(
+        0,
+        Math.min(
+          50,
+          fastMaxAvgRaw != null && fastMaxAvgRaw !== ""
+            ? Number(fastMaxAvgRaw)
+            : cfg.maxAvgMovePct ?? 0
+        )
+      );
       const fastExcludeMult = Math.max(
         1.5,
         Math.min(
@@ -3339,7 +3375,9 @@ async function main() {
       const fastMoverOpts = {
         fastMoveLookbackCandles: fastLookback,
         minAvgMovePct: fastMinAvgMovePct,
+        maxAvgMovePct: fastMaxAvgMovePct,
         minLinearChangePct: cfg.minLinearChangePct,
+        maxLinearChangePct: cfg.maxLinearChangePct ?? 0,
         fastMoveExcludeMult: fastExcludeMult,
       };
       const now = Date.now();
